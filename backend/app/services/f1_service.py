@@ -634,9 +634,18 @@ async def get_news() -> List[Dict[str, str]]:
                             "source": source_name,
                             "tag": "F1 News",
                             "link": link,
-                            "published": pub_date
+                            "published": pub_date,
                         })
             if news_items:
+                # Deduplicate by first 60 chars of title (case-insensitive)
+                seen: set = set()
+                unique = []
+                for item in news_items:
+                    key = item["title"][:60].lower()
+                    if key not in seen:
+                        seen.add(key)
+                        unique.append(item)
+                news_items = unique[:8]
                 _news_cache[cache_key] = news_items
                 return news_items
         except Exception as e:
@@ -647,14 +656,12 @@ async def get_news() -> List[Dict[str, str]]:
     return news_items
 
 
-# 2026 Power Unit supplier mappings
 _ENGINE_SUPPLIER_COLORS: Dict[str, str] = {
     "Mercedes": "#27F4D2",
-    "Ferrari": "#E8002D",
-    "Ford RBPT": "#3671C6",
-    "Honda": "#229971",
-    "Renault": "#FF87BC",
-    "Audi": "#C0C0C0",
+    "Ferrari":  "#E8002D",
+    "Ford RBPT":"#3671C6",
+    "Honda":    "#229971",
+    "Audi":     "#C0C0C0",
 }
 
 async def get_engine_standings(year: int):
@@ -662,26 +669,24 @@ async def get_engine_standings(year: int):
     if cache_key in _data_cache:
         return _data_cache[cache_key]
 
-    # 2026 Power Unit mappings (correct for current grid)
+    # 2026 Power Unit mappings — official FIA grid
     ENGINE_MAP: Dict[str, str] = {
-        # Mercedes PU
-        "Mercedes": "Mercedes",
-        "McLaren": "Mercedes",
-        "Williams": "Mercedes",
-        # Ferrari PU
-        "Ferrari": "Ferrari",
-        "Haas F1 Team": "Ferrari",
-        "Cadillac": "Ferrari",
-        # Ford RBPT PU
-        "Red Bull Racing": "Ford RBPT",
-        "RB": "Ford RBPT",
-        # Honda PU
-        "Aston Martin": "Honda",
-        # Renault PU
-        "Alpine": "Renault",
-        # Audi PU
-        "Audi": "Audi",
-        "Kick Sauber": "Audi",
+        # Mercedes PU — Mercedes, McLaren, Alpine, Williams
+        "Mercedes":         "Mercedes",
+        "McLaren":          "Mercedes",
+        "Alpine":           "Mercedes",  # Alpine switched from Renault to Mercedes PU for 2026
+        "Williams":         "Mercedes",
+        # Ferrari PU — Ferrari, Haas, Cadillac
+        "Ferrari":          "Ferrari",
+        "Haas F1 Team":     "Ferrari",
+        "Cadillac":         "Ferrari",
+        # Ford RBPT PU — Red Bull Racing, Racing Bulls
+        "Red Bull Racing":  "Ford RBPT",
+        "Racing Bulls":     "Ford RBPT",  # was "RB"
+        # Honda PU — Aston Martin
+        "Aston Martin":     "Honda",
+        # Audi PU — Audi (was Kick Sauber)
+        "Audi":             "Audi",
     }
     
     standings = await _fetch_jolpica_constructor_standings(year)

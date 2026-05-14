@@ -180,12 +180,24 @@ export default function TelemetryPage() {
           {/* Track map removed — was a generic SVG unrelated to actual circuit */}
           
           {driver1Data.length === 0 ? (
-            <div className="bg-black/20 backdrop-blur-xl border border-white/5 rounded-3xl py-32 text-center flex flex-col items-center justify-center shadow-[0_8px_32px_rgba(0,0,0,0.3)] mt-4">
-              <div className="w-20 h-20 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mb-8 shadow-[0_0_40px_rgba(255,255,255,0.02)]">
+            <div className="bg-black/20 backdrop-blur-xl border border-white/5 rounded-3xl py-24 text-center flex flex-col items-center justify-center shadow-[0_8px_32px_rgba(0,0,0,0.3)] mt-4">
+              <div className="w-20 h-20 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mb-8">
                 <Activity className="w-10 h-10 text-white/20" />
               </div>
-              <h2 className="text-white font-orbitron font-bold text-xl mb-3 tracking-wide">TELEMETRY UNAVAILABLE</h2>
-              <p className="text-white/40 text-sm max-w-md font-rajdhani tracking-widest uppercase">No telemetry data is currently available for this session and driver combination.</p>
+              <h2 className="text-white font-orbitron font-bold text-xl mb-3 tracking-wide">NO TELEMETRY DATA</h2>
+              <p className="text-white/40 text-sm max-w-sm font-rajdhani leading-relaxed mb-2">
+                FastF1 did not return telemetry for the selected session, driver, or lap.
+              </p>
+              <div className="mt-4 bg-white/5 border border-white/10 rounded-xl px-6 py-4 text-left max-w-xs space-y-2">
+                <p className="text-[10px] text-white/50 uppercase font-rajdhani tracking-widest font-bold mb-3">Possible Reasons</p>
+                <p className="text-xs text-white/40 font-rajdhani">· Session telemetry not yet available</p>
+                <p className="text-xs text-white/40 font-rajdhani">· Driver did not participate this session</p>
+                <p className="text-xs text-white/40 font-rajdhani">· Selected lap exceeds race length</p>
+                <p className="text-xs text-white/40 font-rajdhani">· FastF1 cache still processing</p>
+              </div>
+              <p className="mt-6 text-white/30 text-xs font-rajdhani">
+                Try selecting a different session type or press <span className="text-white/60 font-bold">RELOAD</span>.
+              </p>
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-4 mt-4">

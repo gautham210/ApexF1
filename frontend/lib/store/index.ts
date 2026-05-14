@@ -112,8 +112,32 @@ export function getDriverByYear(year: number, driverNumber: string): DriverEntry
   return db[driverNumber] || { abbr: `#${driverNumber}`, team: "Unknown", color: "#888888", name: `Driver #${driverNumber}` };
 }
 
+/** Reverse lookup: full name → driver number for a given year */
+export function getDriverNumberByName(year: number, fullName: string): string | null {
+  const db = year >= 2026 ? DRIVER_DB_2026 : year === 2025 ? DRIVER_DB_2025 : DRIVER_DB_HISTORICAL;
+  const normalised = fullName.toLowerCase().trim();
+  for (const [num, d] of Object.entries(db)) {
+    if (d.name.toLowerCase() === normalised) return num;
+    // Partial match — last name only (Jolpica sometimes returns just surname)
+    const lastName = d.name.split(" ").pop()?.toLowerCase();
+    if (lastName && normalised.endsWith(lastName)) return num;
+  }
+  return null;
+}
+
+/** Reverse lookup: three-letter abbreviation → driver number */
+export function getDriverNumberByAbbr(year: number, abbr: string): string | null {
+  const db = year >= 2026 ? DRIVER_DB_2026 : year === 2025 ? DRIVER_DB_2025 : DRIVER_DB_HISTORICAL;
+  const upper = abbr.toUpperCase();
+  for (const [num, d] of Object.entries(db)) {
+    if (d.abbr === upper) return num;
+  }
+  return null;
+}
+
 /** Default export for backward compat and dropdown rendering */
 export const DRIVER_DATABASE = DRIVER_DB_2026;
+
 
 // ─── Settings Store ──────────────────────────────────────────────────────────
 
