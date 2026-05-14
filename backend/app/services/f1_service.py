@@ -18,8 +18,9 @@ from app.models.schemas import (
 logger = logging.getLogger(__name__)
 
 # In-memory TTL caches
-_session_cache: TTLCache = TTLCache(maxsize=10, ttl=300)
-_data_cache: TTLCache = TTLCache(maxsize=100, ttl=60)
+_session_cache: TTLCache = TTLCache(maxsize=20, ttl=600)   # sessions live 10 min
+_data_cache: TTLCache = TTLCache(maxsize=200, ttl=300)     # general data: 5 min
+_news_cache: TTLCache = TTLCache(maxsize=5, ttl=600)       # news: 10 min
 
 # Disk cache directory (alongside existing fastf1 cache)
 _DISK_CACHE_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "cache", "standings")
@@ -209,7 +210,7 @@ async def _load_session(year: int, round_number: int, session_name: str = "Race"
         return _session_cache[cache_key]
     
     try:
-        return await asyncio.wait_for(asyncio.to_thread(_load_session_sync, year, round_number, session_name, full), timeout=2.5)
+        return await asyncio.wait_for(asyncio.to_thread(_load_session_sync, year, round_number, session_name, full), timeout=30.0)
     except asyncio.TimeoutError:
         logger.warning(f"Session load timed out for {year} R{round_number}")
         return None
@@ -564,66 +565,114 @@ async def get_standings(year: int) -> Dict[str, List[StandingsEntry]]:
 
 import xml.etree.ElementTree as ET
 
+# Multiple RSS feeds tried in order until one succeeds
+_NEWS_FEEDS = [
+    ("https://www.motorsport.com/rss/f1/news/", "Motorsport.com"),
+    ("https://www.autosport.com/rss/f1/news/", "Autosport"),
+    ("https://www.racefans.net/feed/", "RaceFans"),
+]
+
 async def get_news() -> List[Dict[str, str]]:
     cache_key = "news_feed"
-    if cache_key in _data_cache:
-        return _data_cache[cache_key]
+    if cache_key in _news_cache:
+        return _news_cache[cache_key]
         
     news_items = []
-    try:
-        feed_url = "https://www.motorsport.com/rss/f1/news/"
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-            resp = await client.get(feed_url)
-            resp.raise_for_status()
-            root = ET.fromstring(resp.text)
-            
-            for item in root.findall('.//item')[:5]:
-                title = item.find('title').text if item.find('title') is not None else ""
-                link = item.find('link').text if item.find('link') is not None else ""
-                pubDate = item.find('pubDate').text if item.find('pubDate') is not None else ""
+    for feed_url, source_name in _NEWS_FEEDS:
+        try:
+            async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+                resp = await client.get(feed_url)
+                resp.raise_for_status()
+                root = ET.fromstring(resp.text)
                 
-                news_items.append({
-                    "title": title,
-                    "source": "Motorsport.com",
-                    "tag": "F1 News",
-                    "link": link,
-                    "published": pubDate
-                })
-        _data_cache[cache_key] = news_items
-    except Exception as e:
-        logger.error(f"get_news error: {e}")
+                for item in root.findall('.//item')[:6]:
+                    title_el = item.find('title')
+                    link_el = item.find('link')
+                    date_el = item.find('pubDate')
+                    title = title_el.text.strip() if title_el is not None and title_el.text else ""
+                    link = link_el.text.strip() if link_el is not None and link_el.text else ""
+                    pub_date = date_el.text.strip() if date_el is not None and date_el.text else ""
+                    if title and link:
+                        news_items.append({
+                            "title": title,
+                            "source": source_name,
+                            "tag": "F1 News",
+                            "link": link,
+                            "published": pub_date
+                        })
+            if news_items:
+                _news_cache[cache_key] = news_items
+                return news_items
+        except Exception as e:
+            logger.warning(f"get_news feed {feed_url} failed: {e}")
+            continue
         
+    logger.error("All news feeds failed")
     return news_items
 
+
+# 2026 Power Unit supplier mappings
+_ENGINE_SUPPLIER_COLORS: Dict[str, str] = {
+    "Mercedes": "#27F4D2",
+    "Ferrari": "#E8002D",
+    "Ford RBPT": "#3671C6",
+    "Honda": "#229971",
+    "Renault": "#FF87BC",
+    "Audi": "#C0C0C0",
+}
 
 async def get_engine_standings(year: int):
     cache_key = f"engine_standings_{year}"
     if cache_key in _data_cache:
         return _data_cache[cache_key]
 
-    ENGINE_MAP = {
-        "Mercedes": "Mercedes", "McLaren": "Mercedes", "Williams": "Mercedes", "Aston Martin": "Mercedes",
-        "Ferrari": "Ferrari", "Haas F1 Team": "Ferrari", "Kick Sauber": "Ferrari", "Cadillac": "Ferrari",
-        "Red Bull Racing": "Honda RBPT", "RB": "Honda RBPT",
+    # 2026 Power Unit mappings (correct for current grid)
+    ENGINE_MAP: Dict[str, str] = {
+        # Mercedes PU
+        "Mercedes": "Mercedes",
+        "McLaren": "Mercedes",
+        "Williams": "Mercedes",
+        # Ferrari PU
+        "Ferrari": "Ferrari",
+        "Haas F1 Team": "Ferrari",
+        "Cadillac": "Ferrari",
+        # Ford RBPT PU
+        "Red Bull Racing": "Ford RBPT",
+        "RB": "Ford RBPT",
+        # Honda PU
+        "Aston Martin": "Honda",
+        # Renault PU
         "Alpine": "Renault",
-        "Audi": "Audi"
+        # Audi PU
+        "Audi": "Audi",
+        "Kick Sauber": "Audi",
     }
     
     standings = await _fetch_jolpica_constructor_standings(year)
-    engines = {}
+    engines: Dict[str, Any] = {}
+    team_points: Dict[str, Dict[str, Any]] = {}  # for contribution tracking
+    
     for c in standings:
         engine = ENGINE_MAP.get(c.name, "Other")
         if engine not in engines:
-            engines[engine] = {"name": engine, "points": 0, "wins": 0, "teams": []}
+            engines[engine] = {"name": engine, "points": 0.0, "wins": 0, "teams": [], "team_points": {}}
         engines[engine]["points"] += c.points
         engines[engine]["wins"] += c.wins
         engines[engine]["teams"].append(c.name)
+        engines[engine]["team_points"][c.name] = c.points
         
     engine_list = list(engines.values())
     engine_list.sort(key=lambda x: x["points"], reverse=True)
     for i, eng in enumerate(engine_list):
         eng["position"] = i + 1
-        eng["color"] = TEAM_COLORS.get(eng["teams"][0] if eng["teams"] else "", "#888888")
+        eng["color"] = _ENGINE_SUPPLIER_COLORS.get(eng["name"], "#888888")
+        # Compute percentage breakdown
+        total = eng["points"] or 1
+        eng["breakdown"] = [
+            {"team": t, "points": p, "pct": round(p / total * 100, 1)}
+            for t, p in eng["team_points"].items()
+        ]
+        del eng["team_points"]
         
     _data_cache[cache_key] = engine_list
     return engine_list
@@ -686,22 +735,27 @@ async def get_insights(year: int) -> Dict[str, Any]:
                             if max_gained > 0:
                                 insights["biggest_gainer"] = {"name": gainer_name, "stat": f"+{max_gained} Positions"}
                                 
-            url_qual = f"{_JOLPICA_BASE}/{year}/qualifying/1.json"
+            # Fetch ALL qualifying results for the season to count poles
+            url_qual = f"{_JOLPICA_BASE}/{year}/qualifying.json?limit=50"
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(url_qual)
                 if resp.status_code == 200:
                     data = resp.json()
                     races = data["MRData"]["RaceTable"]["Races"]
-                    pole_counts = {}
+                    pole_counts: Dict[str, int] = {}
                     for r in races:
                         try:
-                            driver = r["QualifyingResults"][0]["Driver"]
-                            name = f"{driver['givenName']} {driver['familyName']}"
-                            pole_counts[name] = pole_counts.get(name, 0) + 1
+                            qual_results = r.get("QualifyingResults", [])
+                            if qual_results:
+                                # position "1" is pole — sort by position
+                                sorted_q = sorted(qual_results, key=lambda x: int(x.get("position", 99)))
+                                driver = sorted_q[0]["Driver"]
+                                name = f"{driver['givenName']} {driver['familyName']}"
+                                pole_counts[name] = pole_counts.get(name, 0) + 1
                         except: pass
                     if pole_counts:
                         fastest = max(pole_counts.items(), key=lambda x: x[1])
-                        insights["fastest_qualifier"] = {"name": fastest[0], "stat": f"{fastest[1]} Poles"}
+                        insights["fastest_qualifier"] = {"name": fastest[0], "stat": f"{fastest[1]} Pole{'s' if fastest[1] > 1 else ''} This Season"}
 
         _data_cache[cache_key] = insights
     except Exception as e:

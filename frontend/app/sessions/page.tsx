@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useSettingsStore } from "@/lib/store";
 import { f1Api } from "@/lib/api/client";
-import { CalendarDays, ChevronRight, Play, CheckCircle2, LayoutDashboard } from "lucide-react";
+import { CalendarDays, ChevronRight, Activity, Radio, CheckCircle2, Clock } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 
@@ -32,10 +32,12 @@ export default function SessionsPage() {
     load();
   }, [selectedYear]);
 
-  const handleSelectSession = (round: number, session: string) => {
+  // Smart routing: completed sessions → Telemetry (archive browse)
+  //                upcoming/live sessions → Live Timing
+  const handleSelectSession = (round: number, session: string, isCompleted: boolean) => {
     setSelectedRound(round);
     setSelectedSession(session);
-    router.push("/live-timing");
+    router.push(isCompleted ? "/telemetry" : "/live-timing");
   };
 
   return (
@@ -92,7 +94,10 @@ export default function SessionsPage() {
                       <h3 className="font-rajdhani font-bold text-white/90 text-xl tracking-wide">{event.event_name || `${event.country} Grand Prix`}</h3>
                       <div className="flex items-center gap-3 text-xs text-white/40 mt-1 font-bold">
                         <span className="uppercase tracking-widest">{event.location || event.country}</span>
-                        {event.is_completed && <span className="text-[#229971] flex items-center gap-1.5 bg-[#229971]/10 px-2 py-0.5 rounded-md"><CheckCircle2 className="w-3.5 h-3.5" /> COMPLETED</span>}
+                        {event.is_completed
+                          ? <span className="text-[#229971] flex items-center gap-1.5 bg-[#229971]/10 px-2 py-0.5 rounded-md"><CheckCircle2 className="w-3.5 h-3.5" /> COMPLETED</span>
+                          : <span className="text-blue-400 flex items-center gap-1.5 bg-blue-400/10 px-2 py-0.5 rounded-md"><Clock className="w-3.5 h-3.5" /> UPCOMING</span>
+                        }
                       </div>
                     </div>
                   </div>
@@ -122,7 +127,7 @@ export default function SessionsPage() {
                           return (
                             <div 
                               key={session}
-                              onClick={() => handleSelectSession(event.round_number, session)}
+                            onClick={() => handleSelectSession(event.round_number, session, event.is_completed)}
                               className={`group p-4 rounded-2xl border cursor-pointer transition-all duration-300 ${
                                 isSelected 
                                   ? "bg-white/10 border-white/20 shadow-[0_8px_32px_rgba(255,255,255,0.05)] scale-[1.02]" 
@@ -136,7 +141,10 @@ export default function SessionsPage() {
                                 {isSelected && <div className="w-2 h-2 rounded-full bg-apex-red shadow-[0_0_10px_#e10600]" />}
                               </div>
                               <div className="flex items-center text-[10px] font-rajdhani font-bold text-white/40 uppercase tracking-widest mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <Play className="w-3.5 h-3.5 mr-1.5" /> Select Context
+                                {event.is_completed
+                                  ? <><Activity className="w-3.5 h-3.5 mr-1.5" /> Browse Archive</>
+                                  : <><Radio className="w-3.5 h-3.5 mr-1.5" /> Live Timing</>
+                                }
                               </div>
                             </div>
                           );
