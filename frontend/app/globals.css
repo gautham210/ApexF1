@@ -1,0 +1,142 @@
+@import "tailwindcss";
+
+@theme {
+  /* Colors */
+  --color-apex-red: #e10600;
+  --color-apex-red-dark: #cc0500;
+  --color-apex-bg: #09090b; /* zinc-950 */
+  --color-apex-surface: #18181b; /* zinc-900 */
+  --color-apex-surface-2: #27272a; /* zinc-800 */
+  --color-apex-surface-3: #3f3f46; /* zinc-700 */
+  --color-apex-text: #f4f4f5; /* zinc-50 */
+  --color-apex-muted: #a1a1aa; /* zinc-400 */
+  --color-apex-border: #27272a; /* zinc-800 */
+
+  /* Team colors */
+  --color-team-redbull: #3671C6;
+  --color-team-ferrari: #E8002D;
+  --color-team-mercedes: #27F4D2;
+  --color-team-mclaren: #FF8000;
+  --color-team-astonmartin: #229971;
+  --color-team-alpine: #FF87BC;
+  --color-team-williams: #64C4FF;
+  --color-team-rb: #6692FF;
+  --color-team-sauber: #52E252;
+  --color-team-haas: #B6BABD;
+
+  /* Fonts */
+  --font-family-sans: 'Inter', system-ui, sans-serif;
+  --font-family-orbitron: 'Inter', system-ui, sans-serif; /* Fallback to clean sans */
+  --font-family-rajdhani: 'Inter', system-ui, sans-serif;
+
+  /* Box shadows */
+  --shadow-card: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+
+  /* Animations */
+  --animate-shimmer: shimmer 1.5s infinite;
+
+  @keyframes shimmer {
+    from { background-position: -200% 0; }
+    to { background-position: 200% 0; }
+  }
+}
+
+:root {
+  --apex-red: #e10600;
+  --apex-red-dark: #cc0500;
+  --apex-bg: #09090b;
+  --apex-surface: #18181b;
+  --apex-surface-2: #27272a;
+  --apex-border: #27272a;
+  --apex-text: #f4f4f5;
+  --apex-text-muted: #a1a1aa;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  height: 100%;
+}
+
+body {
+  background-color: var(--apex-bg);
+  color: var(--apex-text);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  min-height: 100vh;
+  height: 100%;
+  overflow-x: hidden;
+  line-height: 1.5;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--apex-bg); }
+::-webkit-scrollbar-thumb { background: var(--apex-surface-3); border-radius: 3px; }
+
+::selection { background: var(--apex-red); color: white; }
+
+*:focus-visible {
+  outline: 2px solid var(--apex-red);
+  outline-offset: 2px;
+}
+
+/* Minimal card */
+.glass {
+  background: rgba(20, 20, 23, 0.6);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0.75rem;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.03), 0 4px 24px -4px rgba(0, 0, 0, 0.6);
+}
+
+.glass-strong {
+  background: rgba(20, 20, 23, 0.85);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.75rem;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.04), 0 4px 24px -4px rgba(0, 0, 0, 0.8);
+}
+
+.ambient-bg {
+  background-color: var(--apex-bg);
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--apex-surface-2) 25%,
+    var(--apex-surface-3) 50%,
+    var(--apex-surface-2) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 0.375rem;
+}
+
+/* Typography utilities mapped to clean sans-serif */
+.font-orbitron { font-family: 'Inter', sans-serif !important; font-weight: 600; font-variant-numeric: tabular-nums; }
+.font-rajdhani { font-family: 'Inter', sans-serif !important; font-weight: 500; font-variant-numeric: tabular-nums; }
+
+.bg-apex-bg { background-color: var(--apex-bg) !important; }
+.bg-apex-surface { background-color: var(--apex-surface) !important; }
+.bg-apex-surface-2 { background-color: var(--apex-surface-2) !important; }
+.bg-apex-surface-3 { background-color: var(--apex-surface-3) !important; }
+.bg-apex-red { background-color: var(--apex-red) !important; }
+
+.text-apex-text { color: var(--apex-text) !important; }
+.text-apex-muted { color: var(--apex-text-muted) !important; }
+.text-apex-red { color: var(--apex-red) !important; }
+
+.border-apex-border { border-color: var(--apex-border) !important; }
+.border-apex-red { border-color: var(--apex-red) !important; }
+
