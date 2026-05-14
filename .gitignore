@@ -1,3 +1,4 @@
+
 # Logs
 logs
 *.log
@@ -141,3 +142,20 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+node_modules/
+dist/
+.next/
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.env
+
+# Cache
+cache/
+
+# OS
+.DS_Store
+.Thumbs.db
