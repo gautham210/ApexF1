@@ -158,20 +158,27 @@ export const useSettingsStore = create<SettingsState>()(
       setSelectedLap: (l) => set({ selectedLap: l }),
       setSelectedDrivers: (d) => set({ selectedDrivers: d }),
       syncGlobalContext: (schedule: ScheduleEvent[]) => {
-        const state = get();
         if (schedule.length === 0) return;
         
-        // Find the current active or next upcoming race
-        const nextRace = schedule.find((e) => e.is_upcoming);
-        const lastCompleted = [...schedule].reverse().find((e) => e.is_completed);
-        const currentActive = nextRace || lastCompleted || schedule[0];
-        
-        // Set everything to match this unified context exactly
+        // CANONICAL RULE: default context = latest COMPLETED race.
+        // Only fall back to next upcoming if season hasn't started yet.
+        const completed = schedule
+          .filter((e) => e.is_completed)
+          .sort((a, b) => b.round_number - a.round_number);
+        const upcoming = schedule
+          .filter((e) => !e.is_completed)
+          .sort((a, b) => a.round_number - b.round_number);
+
+        const lastCompleted = completed[0] || null;
+        const nextRace = upcoming[0] || null;
+        // Context = most recent completed race (what we know about), not the future
+        const currentContext = lastCompleted || nextRace || schedule[0];
+
         set({
-          activeRace: currentActive,
-          selectedRound: currentActive.round_number,
-          selectedRace: currentActive,
-          globalContextSynced: true
+          activeRace: currentContext,
+          selectedRound: currentContext.round_number,
+          selectedRace: currentContext,
+          globalContextSynced: true,
         });
       }
     }),

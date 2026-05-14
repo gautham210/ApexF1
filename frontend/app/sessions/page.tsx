@@ -10,12 +10,38 @@ const AVAILABLE_YEARS = [2026, 2025, 2024, 2023, 2022, 2021, 2020];
 const STANDARD_SESSIONS = ["FP1", "FP2", "FP3", "Qualifying", "Race"];
 const SPRINT_SESSIONS = ["FP1", "Sprint Qualifying", "Sprint", "Qualifying", "Race"];
 
+const MONTHS = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
+
+function formatDateRange(session1Date?: string, session5Date?: string): string {
+  try {
+    const start = session1Date ? new Date(session1Date) : null;
+    const end   = session5Date ? new Date(session5Date) : (session1Date ? new Date(session1Date) : null);
+    if (!start && !end) return "";
+    const endD   = end!;
+    const month  = MONTHS[endD.getMonth()];
+    if (start && end && start.getMonth() === end.getMonth()) {
+      return `${start.getDate()}\u2013${end.getDate()} ${month}`;
+    }
+    if (start && end) {
+      return `${start.getDate()} ${MONTHS[start.getMonth()]} \u2013 ${end.getDate()} ${month}`;
+    }
+    return `${endD.getDate()} ${month}`;
+  } catch {
+    return "";
+  }
+}
+
 export default function SessionsPage() {
   const router = useRouter();
   const { selectedYear, selectedRound, selectedSession, setSelectedYear, setSelectedRound, setSelectedSession } = useSettingsStore();
   const [schedule, setSchedule] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedRound, setExpandedRound] = useState<number | null>(null);
+
+  // The one and only NEXT round — smallest round_number that is not completed
+  const nextRound = schedule
+    .filter(e => !e.is_completed)
+    .sort((a, b) => a.round_number - b.round_number)[0] ?? null;
 
   useEffect(() => {
     async function load() {
@@ -92,12 +118,27 @@ export default function SessionsPage() {
                     </div>
                     <div>
                       <h3 className="font-rajdhani font-bold text-white/90 text-xl tracking-wide">{event.event_name || `${event.country} Grand Prix`}</h3>
-                      <div className="flex items-center gap-3 text-xs text-white/40 mt-1 font-bold">
+                    <div className="flex items-center gap-3 text-xs text-white/40 mt-1 font-bold">
                         <span className="uppercase tracking-widest">{event.location || event.country}</span>
-                        {event.is_completed
-                          ? <span className="text-[#229971] flex items-center gap-1.5 bg-[#229971]/10 px-2 py-0.5 rounded-md"><CheckCircle2 className="w-3.5 h-3.5" /> COMPLETED</span>
-                          : <span className="text-blue-400 flex items-center gap-1.5 bg-blue-400/10 px-2 py-0.5 rounded-md"><Clock className="w-3.5 h-3.5" /> UPCOMING</span>
-                        }
+                        {event.is_completed ? (
+                          <span className="text-[#229971] flex items-center gap-1.5 bg-[#229971]/10 px-2 py-0.5 rounded-md">
+                            <CheckCircle2 className="w-3.5 h-3.5" /> COMPLETED
+                          </span>
+                        ) : nextRound?.round_number === event.round_number ? (
+                          <span className="text-apex-red flex items-center gap-1.5 bg-apex-red/10 px-2 py-0.5 rounded-md border border-apex-red/20">
+                            <Clock className="w-3.5 h-3.5" /> NEXT RACE
+                          </span>
+                        ) : (
+                          <span className="text-blue-400 flex items-center gap-1.5 bg-blue-400/10 px-2 py-0.5 rounded-md">
+                            <Clock className="w-3.5 h-3.5" /> UPCOMING
+                          </span>
+                        )}
+                        {/* Date range */}
+                        {formatDateRange(event.session1_date, event.session5_date) && (
+                          <span className="text-white/20 font-rajdhani text-[10px] tracking-widest">
+                            {formatDateRange(event.session1_date, event.session5_date)}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>

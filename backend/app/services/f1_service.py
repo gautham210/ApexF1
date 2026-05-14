@@ -762,3 +762,82 @@ async def get_insights(year: int) -> Dict[str, Any]:
         logger.error(f"get_insights error: {e}")
         
     return insights
+
+
+async def get_season_context(year: int) -> Dict[str, Any]:
+    """
+    Canonical season state resolver — SINGLE SOURCE OF TRUTH.
+    Determines: current_round, latest completed race, next race.
+    Uses official schedule event dates ONLY — never infers from standings or cache.
+    """
+    cache_key = f"season_context_{year}"
+    if cache_key in _data_cache:
+        return _data_cache[cache_key]
+
+    schedule = await get_schedule(year)
+    if not schedule:
+        return {
+            "year": year, "completed_rounds": 0, "total_rounds": 0,
+            "current_round": 1, "latest_completed_race": None, "next_race": None,
+        }
+
+    completed = sorted([e for e in schedule if e.is_completed], key=lambda x: x.round_number)
+    upcoming = sorted([e for e in schedule if not e.is_completed], key=lambda x: x.round_number)
+
+    latest_completed = completed[-1] if completed else None
+    next_race = upcoming[0] if upcoming else None
+
+    ctx = {
+        "year": year,
+        "completed_rounds": len(completed),
+        "total_rounds": len(schedule),
+        # current_round = latest completed round (what we know most about)
+        "current_round": latest_completed.round_number if latest_completed else (next_race.round_number if next_race else 1),
+        "latest_completed_race": latest_completed.model_dump() if latest_completed else None,
+        "next_race": next_race.model_dump() if next_race else None,
+    }
+
+    _data_cache[cache_key] = ctx
+    return ctx
+
+
+async def get_dashboard_context(year: int) -> Dict[str, Any]:
+    """
+    Single aggregated response for the Dashboard page.
+    Parallel-fetches season context, standings, insights, news, schedule.
+    Frontend must NEVER independently compute these — consume this endpoint only.
+    """
+    cache_key = f"dashboard_context_{year}"
+    if cache_key in _data_cache:
+        return _data_cache[cache_key]
+
+    results = await asyncio.gather(
+        get_season_context(year),
+        get_standings(year),
+        get_insights(year),
+        get_news(),
+        get_schedule(year),
+        return_exceptions=True,
+    )
+
+    season_ctx  = results[0] if isinstance(results[0], dict) else {}
+    standings   = results[1] if isinstance(results[1], dict) else {}
+    insights    = results[2] if isinstance(results[2], dict) else {}
+    news        = results[3] if isinstance(results[3], list) else []
+    schedule    = results[4] if isinstance(results[4], list) else []
+
+    drivers      = standings.get("drivers", [])
+    constructors = standings.get("constructors", [])
+    upcoming     = sorted([e for e in schedule if not e.is_completed], key=lambda x: x.round_number)[:5]
+
+    result = {
+        "season_context": season_ctx,
+        "driver_standings":      [e.model_dump() for e in drivers[:15]],
+        "constructor_standings": [e.model_dump() for e in constructors[:10]],
+        "insights": insights,
+        "news": news[:6],
+        "upcoming_schedule": [e.model_dump() for e in upcoming],
+    }
+
+    _data_cache[cache_key] = result
+    return result

@@ -4,7 +4,7 @@ let BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export const api = axios.create({
   baseURL: BASE_URL,
-  timeout: 5000,
+  timeout: 30000,
   headers: { "Content-Type": "application/json" },
 });
 
@@ -61,4 +61,5 @@ export const f1Api = {
   getInsights: (year?: number) => api.get("/api/insights", { params: { year } }),
   getNews: () => api.get("/api/news"),
   getEngineStandings: (year?: number) => api.get("/api/engine-standings", { params: { year } }),
+  getDashboardContext: (year?: number) => api.get("/api/dashboard-context", { params: { year } }),
 };

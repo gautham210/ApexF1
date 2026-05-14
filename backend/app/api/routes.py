@@ -140,3 +140,8 @@ async def news():
 async def engine_standings(year: int = Query(default=datetime.now().year)):
     data = await f1_service.get_engine_standings(year)
     return APIResponse(success=True, data=data)
+
+@router.get("/dashboard-context", response_model=APIResponse)
+async def dashboard_context(year: int = Query(default=datetime.now().year)):
+    data = await f1_service.get_dashboard_context(year)
+    return APIResponse(success=True, data=data)

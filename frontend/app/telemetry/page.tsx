@@ -94,7 +94,8 @@ export default function TelemetryPage() {
     setLoading(false);
   }
 
-  useEffect(() => { loadTelemetry(); }, [driver1, driver2, selectedYear, selectedRound, selectedSession, selectedLap]);
+  // NO auto-fetch on mount — telemetry is expensive (FastF1 cold-load can take 30s+).
+  // User must explicitly press LOAD to trigger a fetch.
 
   const DriverSelect = ({ value, onChange, color }: { value: string; onChange: (v: string) => void; color: string }) => (
     <div className="relative flex items-center">
