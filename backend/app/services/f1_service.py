@@ -30,20 +30,57 @@ os.makedirs(_DISK_CACHE_DIR, exist_ok=True)
 _JOLPICA_BASE = "https://api.jolpi.ca/ergast/f1"
 _JOLPICA_CACHE_TTL_SECONDS = 3600  # 1 hour
 
-# Constructor name normalization map (Jolpica name -> our TEAM_COLORS key)
+# Constructor name normalization map — canonical mapping from ALL Jolpica/Ergast/FastF1
+# variant strings to our internal canonical name used in TEAM_COLORS.
 _CONSTRUCTOR_NAME_MAP: Dict[str, str] = {
+    # Mercedes
     "Mercedes": "Mercedes",
+    "Mercedes-AMG Petronas F1 Team": "Mercedes",
+    # Ferrari
     "Ferrari": "Ferrari",
+    "Scuderia Ferrari": "Ferrari",
+    "Scuderia Ferrari HP": "Ferrari",
+    # McLaren
     "McLaren": "McLaren",
+    "McLaren F1 Team": "McLaren",
+    # Red Bull
     "Red Bull": "Red Bull Racing",
+    "Red Bull Racing": "Red Bull Racing",
+    "Red Bull Racing Honda RBPT": "Red Bull Racing",
+    # Aston Martin
     "Aston Martin": "Aston Martin",
+    "Aston Martin Aramco F1 Team": "Aston Martin",
+    "Aston Martin F1 Team": "Aston Martin",
+    # Alpine
     "Alpine F1 Team": "Alpine",
+    "Alpine": "Alpine",
+    "Alpine BWT F1 Team": "Alpine",
+    "BWT Alpine F1 Team": "Alpine",
+    # Williams
     "Williams": "Williams",
-    "RB F1 Team": "RB",
+    "Williams Racing": "Williams",
+    # Racing Bulls / RB
+    "RB F1 Team": "Racing Bulls",
+    "RB": "Racing Bulls",
+    "Racing Bulls": "Racing Bulls",
+    "Visa Cash App RB F1 Team": "Racing Bulls",
+    "AlphaTauri": "Racing Bulls",
+    "Alpha Tauri": "Racing Bulls",
+    "Scuderia AlphaTauri Honda": "Racing Bulls",
+    # Haas
     "Haas F1 Team": "Haas F1 Team",
-    "Kick Sauber": "Kick Sauber",
+    "Haas": "Haas F1 Team",
+    "MoneyGram Haas F1 Team": "Haas F1 Team",
+    # Kick Sauber / Audi
+    "Kick Sauber": "Audi",
+    "Sauber": "Audi",
+    "Stake F1 Team Kick Sauber": "Audi",
+    "Alfa Romeo": "Audi",
     "Audi": "Audi",
+    # Cadillac
     "Cadillac F1 Team": "Cadillac",
+    "Cadillac": "Cadillac",
+    "Andretti Global": "Cadillac",
 }
 
 TEAM_COLORS: Dict[str, str] = {
@@ -54,10 +91,9 @@ TEAM_COLORS: Dict[str, str] = {
     "Aston Martin": "#229971",
     "Alpine": "#FF87BC",
     "Williams": "#64C4FF",
-    "RB": "#6692FF",
-    "Kick Sauber": "#52E252",
+    "Racing Bulls": "#6692FF",   # was "RB"
     "Haas F1 Team": "#B6BABD",
-    "Audi": "#C0C0C0",
+    "Audi": "#C0C0C0",           # was "Kick Sauber"
     "Cadillac": "#BA0000",
 }
 
@@ -356,7 +392,7 @@ async def get_weather(year: int, round_number: int, session_name: str = "Race") 
     try:
         session = await _load_session(year, round_number, session_name, full=False)
         if session is None or session.weather_data is None or session.weather_data.empty:
-            return WeatherData(air_temp=25.0, track_temp=35.0, humidity=50.0, pressure=1013.0, wind_speed=2.5, wind_direction=180, rainfall=False)
+            return None  # Do NOT fabricate weather data
 
         last = session.weather_data.iloc[-1]
         data = WeatherData(
@@ -718,8 +754,10 @@ async def get_insights(year: int) -> Dict[str, Any]:
                         results = races[0]["Results"]
                         if results:
                             winner = results[0]
+                            # Use event_name or location — NEVER country (country = "United States" for Miami)
+                            gp_label = last_race.event_name or f"{last_race.location or last_race.country} Grand Prix"
                             w_name = f"{winner['Driver']['givenName']} {winner['Driver']['familyName']}"
-                            insights["recent_winner"] = {"name": w_name, "stat": f"{last_race.country} GP Winner"}
+                            insights["recent_winner"] = {"name": w_name, "stat": f"{gp_label} Winner"}
                             
                             max_gained = 0
                             gainer_name = "—"
@@ -731,7 +769,7 @@ async def get_insights(year: int) -> Dict[str, Any]:
                                     if gained > max_gained and grid > 0:
                                         max_gained = gained
                                         gainer_name = f"{res['Driver']['givenName']} {res['Driver']['familyName']}"
-                                except: pass
+                                except Exception as _e: logger.warning(f"insights sub-fetch error: {_e}")
                             if max_gained > 0:
                                 insights["biggest_gainer"] = {"name": gainer_name, "stat": f"+{max_gained} Positions"}
                                 
@@ -752,7 +790,7 @@ async def get_insights(year: int) -> Dict[str, Any]:
                                 driver = sorted_q[0]["Driver"]
                                 name = f"{driver['givenName']} {driver['familyName']}"
                                 pole_counts[name] = pole_counts.get(name, 0) + 1
-                        except: pass
+                        except Exception as _e: logger.warning(f"insights sub-fetch error: {_e}")
                     if pole_counts:
                         fastest = max(pole_counts.items(), key=lambda x: x[1])
                         insights["fastest_qualifier"] = {"name": fastest[0], "stat": f"{fastest[1]} Pole{'s' if fastest[1] > 1 else ''} This Season"}
@@ -791,10 +829,11 @@ async def get_season_context(year: int) -> Dict[str, Any]:
         "year": year,
         "completed_rounds": len(completed),
         "total_rounds": len(schedule),
-        # current_round = latest completed round (what we know most about)
         "current_round": latest_completed.round_number if latest_completed else (next_race.round_number if next_race else 1),
         "latest_completed_race": latest_completed.model_dump() if latest_completed else None,
         "next_race": next_race.model_dump() if next_race else None,
+        # Include first 5 upcoming races for dashboard panel (avoids separate schedule fetch)
+        "upcoming_schedule": [e.model_dump() for e in upcoming[:5]],
     }
 
     _data_cache[cache_key] = ctx
@@ -816,7 +855,6 @@ async def get_dashboard_context(year: int) -> Dict[str, Any]:
         get_standings(year),
         get_insights(year),
         get_news(),
-        get_schedule(year),
         return_exceptions=True,
     )
 
@@ -824,11 +862,11 @@ async def get_dashboard_context(year: int) -> Dict[str, Any]:
     standings   = results[1] if isinstance(results[1], dict) else {}
     insights    = results[2] if isinstance(results[2], dict) else {}
     news        = results[3] if isinstance(results[3], list) else []
-    schedule    = results[4] if isinstance(results[4], list) else []
 
     drivers      = standings.get("drivers", [])
     constructors = standings.get("constructors", [])
-    upcoming     = sorted([e for e in schedule if not e.is_completed], key=lambda x: x.round_number)[:5]
+    # upcoming comes from season_context (already computed, no duplicate schedule fetch)
+    upcoming     = season_ctx.get("upcoming_schedule", [])
 
     result = {
         "season_context": season_ctx,
@@ -836,7 +874,7 @@ async def get_dashboard_context(year: int) -> Dict[str, Any]:
         "constructor_standings": [e.model_dump() for e in constructors[:10]],
         "insights": insights,
         "news": news[:6],
-        "upcoming_schedule": [e.model_dump() for e in upcoming],
+        "upcoming_schedule": upcoming,
     }
 
     _data_cache[cache_key] = result

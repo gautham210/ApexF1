@@ -135,7 +135,7 @@ export default function SessionsPage() {
                         )}
                         {/* Date range */}
                         {formatDateRange(event.session1_date, event.session5_date) && (
-                          <span className="text-white/20 font-rajdhani text-[10px] tracking-widest">
+                          <span className="text-white/50 font-rajdhani text-[10px] tracking-widest font-bold">
                             {formatDateRange(event.session1_date, event.session5_date)}
                           </span>
                         )}

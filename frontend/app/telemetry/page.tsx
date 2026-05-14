@@ -6,31 +6,15 @@ import {
   CartesianGrid, Tooltip, AreaChart, Area, ReferenceArea
 } from "recharts";
 import { f1Api } from "@/lib/api/client";
-import { useTelemetryStore, useSettingsStore, DRIVER_DATABASE } from "@/lib/store";
-import { Activity, ChevronDown, Map } from "lucide-react";
+import { useTelemetryStore, useSettingsStore, DRIVER_DATABASE, getDriverByYear } from "@/lib/store";
+import { Activity, ChevronDown, RefreshCw } from "lucide-react";
 
 const DRIVER_COLOR_1 = "#e10600";
 const DRIVER_COLOR_2 = "#27F4D2";
 
 const SESSIONS = ["FP1", "FP2", "FP3", "Qualifying", "Sprint", "Race"];
 
-function TrackMapOverlay() {
-  return (
-    <div className="bg-black/20 backdrop-blur-xl border border-white/10 rounded-2xl p-5 shadow-[0_8px_32px_rgba(0,0,0,0.3)] relative overflow-hidden flex items-center justify-center">
-      <div className="absolute top-4 left-5 flex items-center gap-2">
-        <Map className="w-3.5 h-3.5 text-white/40" />
-        <h3 className="font-rajdhani font-bold text-white/40 text-[10px] tracking-widest uppercase">Track Circuit</h3>
-      </div>
-      
-      <div className="h-[140px] w-full flex items-center justify-center mt-4 opacity-40">
-        <svg viewBox="0 0 300 120" className="w-full h-full max-w-[400px]">
-          <path d="M 40 60 C 40 20, 100 20, 150 50 C 200 80, 260 20, 260 60 C 260 100, 200 110, 150 80 C 100 50, 40 100, 40 60" 
-            fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </div>
-    </div>
-  );
-}
+// TrackMapOverlay removed — generic SVG was not circuit-specific and was misleading.
 
 function ChartSection({ title, d1, d2, dataKey, color1 = DRIVER_COLOR_1, color2 = DRIVER_COLOR_2, domain }: {
   title: string; d1: any[]; d2: any[]; dataKey: string; color1?: string; color2?: string; domain?: [number, number];
@@ -78,8 +62,9 @@ function ChartSection({ title, d1, d2, dataKey, color1 = DRIVER_COLOR_1, color2 
 
 export default function TelemetryPage() {
   const { driver1, driver2, driver1Data, driver2Data, setDriver1, setDriver2, setDriver1Data, setDriver2Data } = useTelemetryStore();
-  const { selectedYear, selectedRound, selectedSession, selectedLap, setSelectedSession, setSelectedLap, activeRace } = useSettingsStore();
+  const { selectedYear, selectedRound, selectedSession, selectedLap, setSelectedSession, setSelectedLap, currentRace } = useSettingsStore();
   const [loading, setLoading] = useState(false);
+  const [loadedAt, setLoadedAt] = useState<string | null>(null);
 
   async function loadTelemetry() {
     setLoading(true);
@@ -90,6 +75,7 @@ export default function TelemetryPage() {
       ]);
       if (r1.status === "fulfilled") setDriver1Data((r1.value as any).data || []);
       if (r2.status === "fulfilled") setDriver2Data((r2.value as any).data || []);
+      setLoadedAt(new Date().toLocaleTimeString());
     } catch (e) { console.error(e); }
     setLoading(false);
   }
@@ -97,21 +83,30 @@ export default function TelemetryPage() {
   // NO auto-fetch on mount — telemetry is expensive (FastF1 cold-load can take 30s+).
   // User must explicitly press LOAD to trigger a fetch.
 
-  const DriverSelect = ({ value, onChange, color }: { value: string; onChange: (v: string) => void; color: string }) => (
-    <div className="relative flex items-center">
-      <div className="w-2.5 h-2.5 rounded-full mr-[-24px] z-10" style={{ backgroundColor: color, boxShadow: `0 0 8px ${color}88` }} />
-      <select
-        value={value} onChange={(e) => onChange(e.target.value)}
-        className="appearance-none pl-10 pr-8 py-2 rounded-xl text-xs font-rajdhani font-bold cursor-pointer outline-none transition-colors"
-        style={{ background: "rgba(255,255,255,0.05)", border: `1px solid rgba(255,255,255,0.1)`, color: "#fff" }}
-      >
-        {Object.entries(DRIVER_DATABASE).filter(([num]) => num !== "33").map(([num, d]) => (
-          <option key={num} value={num} style={{ background: "#111" }}>{d.abbr} #{num}</option>
-        ))}
-      </select>
-      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none text-white/50" />
-    </div>
-  );
+  const DriverSelect = ({ value, onChange, color }: { value: string; onChange: (v: string) => void; color: string }) => {
+    const db = Object.entries(
+      selectedYear >= 2026 ? DRIVER_DATABASE
+        : Object.fromEntries(
+            // filter to year-relevant numbers
+            Object.entries(DRIVER_DATABASE).filter(([n]) => n !== "33")
+          )
+    ).filter(([num]) => num !== "33");
+    return (
+      <div className="relative flex items-center">
+        <div className="w-2.5 h-2.5 rounded-full mr-[-24px] z-10" style={{ backgroundColor: color, boxShadow: `0 0 8px ${color}88` }} />
+        <select
+          value={value} onChange={(e) => onChange(e.target.value)}
+          className="appearance-none pl-10 pr-8 py-2 rounded-xl text-xs font-rajdhani font-bold cursor-pointer outline-none transition-colors"
+          style={{ background: "rgba(255,255,255,0.05)", border: `1px solid rgba(255,255,255,0.1)`, color: "#fff" }}
+        >
+          {Object.entries(DRIVER_DATABASE).map(([num, d]) => (
+            <option key={num} value={num} style={{ background: "#111" }}>{d.abbr} #{num}</option>
+          ))}
+        </select>
+        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none text-white/50" />
+      </div>
+    );
+  };
 
   return (
     <div className="p-4 lg:p-8 min-h-screen max-w-[1600px] mx-auto">
@@ -126,9 +121,13 @@ export default function TelemetryPage() {
           <div className="text-white/60 text-sm font-rajdhani tracking-widest uppercase mt-2 flex items-center gap-2">
             <span>{selectedYear}</span>
             <span className="w-1 h-1 rounded-full bg-white/20" />
-            <span>Round {activeRace?.round_number || selectedRound}</span>
+            <span>Round {selectedRound}</span>
             <span className="w-1 h-1 rounded-full bg-white/20" />
-            <span className="text-white/80">{activeRace?.country || "Global"}</span>
+            <span className="text-white/80">{currentRace?.event_name || currentRace?.location || "—"}</span>
+            {loadedAt && (
+              <><span className="w-1 h-1 rounded-full bg-white/20" />
+              <span className="text-green-400/70">Loaded {loadedAt}</span></>
+            )}
           </div>
         </div>
 
@@ -160,10 +159,11 @@ export default function TelemetryPage() {
             ))}
           </select>
 
-          <button onClick={loadTelemetry}
-            className="px-5 py-2 rounded-xl text-xs font-rajdhani font-bold tracking-widest uppercase transition-all hover:scale-105 active:scale-95 ml-1"
+          <button onClick={loadTelemetry} disabled={loading}
+            className="px-5 py-2 rounded-xl text-xs font-rajdhani font-bold tracking-widest uppercase transition-all hover:scale-105 active:scale-95 ml-1 flex items-center gap-2 disabled:opacity-60"
             style={{ background: "linear-gradient(135deg,#e10600,#ff4d00)", color: "#fff", boxShadow: "0 4px 15px 0 rgba(225, 6, 0, 0.4)" }}>
-            LOAD
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+            {driver1Data.length > 0 ? "RELOAD" : "LOAD"}
           </button>
         </div>
       </div>
@@ -177,7 +177,7 @@ export default function TelemetryPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4">
-          <TrackMapOverlay />
+          {/* Track map removed — was a generic SVG unrelated to actual circuit */}
           
           {driver1Data.length === 0 ? (
             <div className="bg-black/20 backdrop-blur-xl border border-white/5 rounded-3xl py-32 text-center flex flex-col items-center justify-center shadow-[0_8px_32px_rgba(0,0,0,0.3)] mt-4">

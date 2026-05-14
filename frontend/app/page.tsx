@@ -12,7 +12,7 @@ const TEAM_COLORS: Record<string, string> = {
 };
 
 export default function HomePage() {
-  const { selectedYear, setSelectedRound, setActiveRace, setSelectedRace } = useSettingsStore();
+  const { selectedYear, setSelectedRound, setCurrentRace } = useSettingsStore();
   const [ctx, setCtx] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [mounted, setMounted] = useState(false);
@@ -31,11 +31,7 @@ export default function HomePage() {
         const sc = data?.season_context;
         if (sc?.current_round) {
           setSelectedRound(sc.current_round);
-          const latestRace = sc.latest_completed_race;
-          if (latestRace) {
-            setActiveRace(latestRace);
-            setSelectedRace(latestRace);
-          }
+          if (sc.latest_completed_race) setCurrentRace(sc.latest_completed_race);
         }
       } catch (e) {
         console.error(e);
