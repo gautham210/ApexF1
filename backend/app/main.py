@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.core.cache import setup_fastf1_cache
 from app.core.logging import setup_logging
 from app.api.routes import router as api_router
+from app.services.live_service import start_live_service, stop_live_service
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -22,14 +23,16 @@ limiter = Limiter(key_func=get_remote_address, default_limits=[f"{settings.RATE_
 async def lifespan(app: FastAPI):
     logger.info("🏁 ApexF1 Backend starting up...")
     setup_fastf1_cache()
+    start_live_service()   # start OpenF1 live broadcaster
     yield
+    stop_live_service()
     logger.info("🏁 ApexF1 Backend shutting down...")
 
 
 app = FastAPI(
-    title="ApexF1 API MVP",
-    description="Formula 1 Analytics Platform",
-    version="1.0.0",
+    title="ApexF1 API",
+    description="Formula 1 Real-Time Analytics Platform",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
@@ -52,7 +55,7 @@ app.include_router(api_router, prefix="/api")
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "ApexF1 API"}
+    return {"status": "ok", "service": "ApexF1 API v2", "version": "2.0.0"}
 
 
 @app.exception_handler(Exception)

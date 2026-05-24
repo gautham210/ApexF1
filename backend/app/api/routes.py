@@ -1,5 +1,6 @@
-from fastapi import APIRouter, HTTPException, Query
-from app.services import f1_service
+from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
+from app.services import f1_service, openf1_service
+from app.websockets.manager import manager
 from app.models.schemas import APIResponse
 from datetime import datetime
 
@@ -7,10 +8,12 @@ router = APIRouter()
 
 _CURRENT_YEAR = datetime.now().year
 
+
 def _validate_year(year: int) -> int:
     if year < 2018 or year > _CURRENT_YEAR + 1:
         raise HTTPException(status_code=422, detail=f"year must be between 2018 and {_CURRENT_YEAR + 1}")
     return year
+
 
 def _validate_round(round: int) -> int:
     if round < 1 or round > 24:
@@ -18,11 +21,27 @@ def _validate_round(round: int) -> int:
     return round
 
 
+# ─── Session State (OpenF1 primary) ──────────────────────────────────────────
+
+@router.get("/session/state", response_model=APIResponse)
+async def session_state():
+    """
+    Real session state from OpenF1.
+    Returns: state, is_live, session_info.
+    Frontend must use this to determine whether to show LIVE indicators.
+    """
+    data = await openf1_service.get_session_state()
+    return APIResponse(success=True, data=data)
+
+
 @router.get("/session/current", response_model=APIResponse)
 async def current_session():
+    """Legacy endpoint — returns FastF1 session info."""
     data = await f1_service.get_current_session_info()
     return APIResponse(success=True, data=data.model_dump() if data else None)
 
+
+# ─── Schedule (FastF1) ───────────────────────────────────────────────────────
 
 @router.get("/schedule", response_model=APIResponse)
 async def schedule(year: int = Query(default=_CURRENT_YEAR)):
@@ -31,15 +50,20 @@ async def schedule(year: int = Query(default=_CURRENT_YEAR)):
     return APIResponse(success=True, data=[e.model_dump() for e in data])
 
 
+# ─── Drivers ─────────────────────────────────────────────────────────────────
+
 @router.get("/drivers", response_model=APIResponse)
 async def drivers(
     year: int = Query(default=_CURRENT_YEAR),
     round: int = Query(default=1),
 ):
-    _validate_year(year); _validate_round(round)
+    _validate_year(year)
+    _validate_round(round)
     data = await f1_service.get_drivers(year, round)
     return APIResponse(success=True, data=[d.model_dump() for d in data])
 
+
+# ─── Live Timing (OpenF1 primary, FastF1 fallback) ───────────────────────────
 
 @router.get("/leaderboard", response_model=APIResponse)
 async def leaderboard(
@@ -47,10 +71,83 @@ async def leaderboard(
     round: int = Query(default=1),
     session: str = Query(default="Race"),
 ):
-    _validate_year(year); _validate_round(round)
+    """
+    Live: served from OpenF1 if session is active.
+    Archive: served from FastF1.
+    """
+    _validate_year(year)
+    _validate_round(round)
+
+    # Check if OpenF1 has a live session
+    state_info = await openf1_service.get_session_state()
+    if state_info.get("is_live") and state_info.get("session_key"):
+        data = await openf1_service.get_live_timing(state_info["session_key"])
+        return APIResponse(success=True, data=data)
+
+    # Fall back to FastF1 for historical data
     data = await f1_service.get_leaderboard(year, round, session)
     return APIResponse(success=True, data=[e.model_dump() for e in data])
 
+
+@router.get("/live/snapshot", response_model=APIResponse)
+async def live_snapshot():
+    """
+    Full live snapshot: timing + weather + race control.
+    Returns empty data with is_live=False when no session is active.
+    """
+    state_info = await openf1_service.get_session_state()
+    if not state_info.get("is_live") or not state_info.get("session_key"):
+        return APIResponse(success=True, data={
+            "is_live": False,
+            "state": state_info.get("state", "ARCHIVE"),
+            "session_info": {
+                "session_name": state_info.get("session_name"),
+                "display_name": state_info.get("display_name"),
+                "circuit": state_info.get("circuit"),
+                "country": state_info.get("country"),
+                "year": state_info.get("year"),
+                "track_status": "GREEN",
+            },
+            "leaderboard": [],
+            "weather": None,
+            "race_control": [],
+        })
+
+    snapshot = await openf1_service.get_live_snapshot(state_info["session_key"])
+    return APIResponse(success=True, data={
+        "is_live": True,
+        "state": state_info.get("state"),
+        "session_info": {
+            "session_name": state_info.get("session_name"),
+            "display_name": state_info.get("display_name"),
+            "circuit": state_info.get("circuit"),
+            "country": state_info.get("country"),
+            "year": state_info.get("year"),
+            "track_status": state_info.get("track_status", "GREEN"),
+        },
+        **snapshot,
+    })
+
+
+@router.get("/live/race-control", response_model=APIResponse)
+async def live_race_control():
+    state_info = await openf1_service.get_session_state()
+    if not state_info.get("session_key"):
+        return APIResponse(success=True, data=[])
+    data = await openf1_service.get_race_control_messages(state_info["session_key"])
+    return APIResponse(success=True, data=data)
+
+
+@router.get("/live/stints", response_model=APIResponse)
+async def live_stints():
+    state_info = await openf1_service.get_session_state()
+    if not state_info.get("session_key"):
+        return APIResponse(success=True, data={})
+    data = await openf1_service.get_stints(state_info["session_key"])
+    return APIResponse(success=True, data=data)
+
+
+# ─── Archive data (FastF1 only) ───────────────────────────────────────────────
 
 @router.get("/laps", response_model=APIResponse)
 async def laps(
@@ -59,7 +156,8 @@ async def laps(
     session: str = Query(default="Race"),
     driver: str = Query(default=None),
 ):
-    _validate_year(year); _validate_round(round)
+    _validate_year(year)
+    _validate_round(round)
     data = await f1_service.get_laps(year, round, session, driver)
     return APIResponse(success=True, data=[l.model_dump() for l in data])
 
@@ -72,7 +170,8 @@ async def telemetry(
     driver: str = Query(default="1"),
     lap: int = Query(default=None),
 ):
-    _validate_year(year); _validate_round(round)
+    _validate_year(year)
+    _validate_round(round)
     if lap is not None and (lap < 1 or lap > 100):
         raise HTTPException(status_code=422, detail="lap must be between 1 and 100")
     data = await f1_service.get_telemetry(year, round, session, driver, lap)
@@ -85,7 +184,16 @@ async def weather(
     round: int = Query(default=1),
     session: str = Query(default="Race"),
 ):
-    _validate_year(year); _validate_round(round)
+    _validate_year(year)
+    _validate_round(round)
+
+    # Try OpenF1 first for live weather
+    state_info = await openf1_service.get_session_state()
+    if state_info.get("is_live") and state_info.get("session_key"):
+        live_w = await openf1_service.get_live_weather(state_info["session_key"])
+        if live_w:
+            return APIResponse(success=True, data=live_w)
+
     data = await f1_service.get_weather(year, round, session)
     return APIResponse(success=True, data=data.model_dump() if data else None)
 
@@ -96,7 +204,8 @@ async def race_control(
     round: int = Query(default=1),
     session: str = Query(default="Race"),
 ):
-    _validate_year(year); _validate_round(round)
+    _validate_year(year)
+    _validate_round(round)
     data = await f1_service.get_race_control(year, round, session)
     return APIResponse(success=True, data=[m.model_dump() for m in data])
 
@@ -127,7 +236,8 @@ async def track_status(
     round: int = Query(default=1),
     session: str = Query(default="Race"),
 ):
-    _validate_year(year); _validate_round(round)
+    _validate_year(year)
+    _validate_round(round)
     messages = await f1_service.get_race_control(year, round, session)
     flags = [m for m in messages if m.flag]
     latest_flag = flags[-1].flag if flags else "GREEN"
@@ -140,7 +250,8 @@ async def tyres(
     round: int = Query(default=1),
     session: str = Query(default="Race"),
 ):
-    _validate_year(year); _validate_round(round)
+    _validate_year(year)
+    _validate_round(round)
     all_laps = await f1_service.get_laps(year, round, session)
     tyre_data: dict = {}
     for lap in all_laps:
@@ -177,3 +288,72 @@ async def dashboard_context(year: int = Query(default=_CURRENT_YEAR)):
     _validate_year(year)
     data = await f1_service.get_dashboard_context(year)
     return APIResponse(success=True, data=data)
+
+
+# ─── WebSocket ────────────────────────────────────────────────────────────────
+
+@router.websocket("/ws/live")
+async def websocket_live(ws: WebSocket):
+    """
+    WebSocket endpoint for live timing.
+
+    On connect: immediately sends current state snapshot.
+    Stays connected to receive push updates from the live broadcaster.
+    Frontend should reconnect automatically on disconnect.
+    """
+    await manager.connect(ws, channel="live")
+    try:
+        # Send immediate state snapshot on connect
+        state_info = await openf1_service.get_session_state()
+        if state_info.get("is_live") and state_info.get("session_key"):
+            snapshot = await openf1_service.get_live_snapshot(state_info["session_key"])
+            initial = {
+                "type": "live_update",
+                "state": state_info.get("state"),
+                "is_live": True,
+                "session_info": {
+                    "session_name": state_info.get("session_name"),
+                    "display_name": state_info.get("display_name"),
+                    "circuit": state_info.get("circuit"),
+                    "country": state_info.get("country"),
+                    "year": state_info.get("year"),
+                    "track_status": state_info.get("track_status", "GREEN"),
+                },
+                **snapshot,
+            }
+        else:
+            initial = {
+                "type": "session_state",
+                "state": state_info.get("state", "ARCHIVE"),
+                "is_live": False,
+                "session_info": {
+                    "session_name": state_info.get("session_name"),
+                    "display_name": state_info.get("display_name"),
+                    "circuit": state_info.get("circuit"),
+                    "country": state_info.get("country"),
+                    "year": state_info.get("year"),
+                    "track_status": "GREEN",
+                },
+                "leaderboard": [],
+                "weather": None,
+                "race_control": [],
+            }
+        await manager.send_to(ws, initial)
+
+        # Keep connection alive — updates come from the broadcaster
+        while True:
+            # Heartbeat: wait for client ping or disconnect
+            try:
+                msg = await ws.receive_text()
+                if msg == "ping":
+                    await ws.send_text('{"type":"pong"}')
+            except WebSocketDisconnect:
+                break
+
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"WS error: {e}")
+    finally:
+        await manager.disconnect(ws, channel="live")
