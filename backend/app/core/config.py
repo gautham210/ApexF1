@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     APP_ENV: str = "development"
     APP_HOST: str = "0.0.0.0"
     APP_PORT: int = 8000
-    CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
+    CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000,https://apex-f1-one.vercel.app"
     CACHE_DIR: str = "./cache"
     LOG_LEVEL: str = "INFO"
     RATE_LIMIT_PER_MINUTE: int = 60
