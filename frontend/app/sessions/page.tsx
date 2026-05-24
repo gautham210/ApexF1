@@ -103,28 +103,29 @@ export default function SessionsPage() {
   };
 
   return (
-    <div className="p-6 lg:p-12 min-h-screen max-w-[1500px] mx-auto space-y-10 animate-fade-up">
+    <div className="p-6 lg:p-12 min-h-screen max-w-[1500px] mx-auto space-y-10 animate-fade-up relative">
+
+      {/* Soft atmospheric blurred race backdrop */}
+      <div className="absolute top-[5%] left-[20%] w-[60%] h-[35%] bg-gradient-to-br from-apex-red/5 via-blue-500/5 to-transparent blur-[120px] pointer-events-none rounded-full z-0" />
 
       {/* ── Cinematic Header ── */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-white/5">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-white/5 z-10 relative">
         <div>
-          <p className="text-xs font-bold text-white/40 tracking-widest uppercase mb-2">Grand Prix Calendar</p>
+          <p className="text-xs font-bold text-white/35 tracking-widest uppercase mb-2">Grand Prix Calendar</p>
           <h1 className="font-sans font-bold text-white text-3xl lg:text-4xl tracking-tight uppercase">
             Weekend Session Browser
           </h1>
         </div>
 
         {/* Year selector */}
-        <div className="flex items-center gap-1.5 bg-white/5 p-1 rounded-2xl border border-white/5">
+        <div className="flex items-center gap-1 bg-white/5 p-1 rounded-2xl border border-white/10 self-start md:self-auto backdrop-blur-md">
           {AVAILABLE_YEARS.map(y => (
             <button
               key={y}
               onClick={() => setSelectedYear(y)}
-              className="px-4 py-2 rounded-xl font-sans font-bold text-xs flex-shrink-0 transition-all duration-200"
-              style={{
-                background: season === y ? "rgba(255,255,255,0.08)" : "transparent",
-                color:      season === y ? "#fff" : "rgba(255,255,255,0.4)",
-              }}
+              className={`px-4 py-2 rounded-xl font-sans font-bold text-xs flex-shrink-0 transition-all duration-300 cursor-pointer ${
+                season === y ? "bg-white/10 text-white border border-white/10 shadow-lg" : "text-white/45 hover:text-white/90 border border-transparent"
+              }`}
             >
               {y}
             </button>
@@ -133,16 +134,16 @@ export default function SessionsPage() {
       </div>
 
       {loading ? (
-        <div className="space-y-4">
+        <div className="space-y-4 z-10 relative">
           <div className="h-[200px] skeleton rounded-3xl" />
           <div className="h-[120px] skeleton rounded-3xl" />
         </div>
       ) : schedule.length === 0 ? (
-        <div className="py-24 text-center text-white/30 text-xs font-sans uppercase">
+        <div className="py-24 text-center text-white/30 text-xs font-sans uppercase z-10 relative">
           No calendar sessions retrieved for {season}
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 z-10 relative">
           
           {/* Left: Netflix episode list (Races) */}
           <div className="lg:col-span-1 space-y-3 max-h-[650px] overflow-y-auto pr-2 hide-scrollbar">
@@ -158,16 +159,16 @@ export default function SessionsPage() {
                 <div
                   key={event.round_number}
                   onClick={() => setSelectedEventIndex(idx)}
-                  className={`p-4 rounded-xl border transition-all duration-200 cursor-pointer flex items-center justify-between ${
+                  className={`p-4 rounded-xl border transition-all duration-300 cursor-pointer flex items-center justify-between apple-rail-item ${
                     isActive
-                      ? "bg-white/[0.04] border-white/15"
+                      ? "glass-strong border-white/15 bg-white/5"
                       : isNext
-                      ? "bg-apex-red/[0.01] border-apex-red/20 hover:border-apex-red/40"
-                      : "bg-[#0b0b14]/30 border-white/[0.03] hover:border-white/[0.08]"
+                      ? "glass border-apex-red/30 hover:border-apex-red/50 bg-[#ff3333]/5"
+                      : "glass border-white/5 hover:border-white/10"
                   }`}
                 >
                   <div className="min-w-0">
-                    <p className="text-[9px] font-bold text-white/40 tracking-wider">
+                    <p className="text-[9px] font-bold text-white/30 tracking-wider">
                       ROUND {event.round_number} · {dateRange}
                     </p>
                     <h3 className="font-sans font-bold text-white text-[14px] tracking-tight leading-tight mt-1.5 truncate">
@@ -177,11 +178,11 @@ export default function SessionsPage() {
 
                   <div className="flex items-center gap-3">
                     {event.is_completed ? (
-                      <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-wider">Completed</span>
+                      <span className="text-[9px] font-semibold text-emerald-400 uppercase tracking-wider">Completed</span>
                     ) : isNext ? (
-                      <span className="text-[9px] font-bold text-apex-red uppercase tracking-wider animate-pulse">Next GP</span>
+                      <span className="text-[9px] font-semibold text-[#ff3333] uppercase tracking-wider animate-pulse">Next GP</span>
                     ) : (
-                      <span className="text-[9px] font-bold text-white/35 uppercase tracking-wider">Upcoming</span>
+                      <span className="text-[9px] font-semibold text-white/30 uppercase tracking-wider">Upcoming</span>
                     )}
                     <ChevronRight className={`w-4 h-4 transition-transform ${isActive ? "text-white" : "text-white/20"}`} />
                   </div>
@@ -202,10 +203,10 @@ export default function SessionsPage() {
                   className="space-y-8"
                 >
                   {/* Cinematic Mini-Hero for active event */}
-                  <div className="relative overflow-hidden rounded-[24px] border border-white/[0.04] bg-gradient-to-br from-white/[0.01] to-transparent p-8 flex flex-col md:flex-row justify-between gap-6 min-h-[160px]">
-                    <div className="absolute top-0 right-0 w-64 h-64 rounded-full bg-apex-red/[0.02] blur-3xl pointer-events-none" />
+                  <div className="relative overflow-hidden rounded-[24px] border border-white/5 glass-strong p-8 flex flex-col md:flex-row justify-between gap-6 min-h-[160px]">
+                    <div className="absolute top-0 right-0 w-64 h-64 rounded-full bg-white/[0.01] blur-3xl pointer-events-none" />
                     <div>
-                      <span className="text-[10px] font-bold text-white/35 tracking-widest uppercase">
+                      <span className="text-[10px] font-bold text-white/30 tracking-widest uppercase">
                         Round {activeEvent.round_number} · {activeEvent.country}
                       </span>
                       <h2 className="font-sans font-bold text-white text-2xl tracking-tight mt-2 uppercase">
@@ -214,14 +215,14 @@ export default function SessionsPage() {
                       <p className="font-sans text-white/40 text-xs mt-3 flex items-center gap-2">
                         <span>{activeEvent.location}</span>
                         <span>·</span>
-                        <span className="flex items-center gap-1">
+                        <span className="flex items-center gap-1 font-semibold">
                           {weatherIcon(activeEvent.round_number)}
                           Forecast Clear
                         </span>
                       </p>
                     </div>
 
-                    <div className="self-end md:self-auto flex items-center bg-white/[0.02] border border-white/5 p-4 rounded-xl">
+                    <div className="self-end md:self-auto flex items-center bg-white/5 border border-white/10 p-4 rounded-xl">
                       <Calendar className="w-5 h-5 text-white/30 mr-3" />
                       <div>
                         <p className="text-[9px] text-white/30 font-bold uppercase tracking-widest leading-none">Schedule Dates</p>
@@ -250,31 +251,31 @@ export default function SessionsPage() {
                           <div
                             key={s.code}
                             onClick={() => handleSelectSession(activeEvent, s.code)}
-                            className="bg-[#0b0b14]/20 hover:bg-white/[0.015] rounded-2xl border border-white/[0.03] hover:border-white/[0.08] p-5 flex flex-col justify-between h-[120px] transition-all cursor-pointer group"
+                            className="glass rounded-2xl p-5 flex flex-col justify-between h-[120px] transition-all cursor-pointer group border border-white/5 apple-rail-item"
                           >
                             <div className="flex justify-between items-start">
                               <div>
-                                <span className="text-[9px] font-bold text-white/30 uppercase tracking-wider">{s.code}</span>
-                                <h4 className="font-sans font-bold text-white text-base tracking-tight mt-1 group-hover:text-apex-red transition-colors">
+                                <span className="text-[9px] font-bold text-white/20 uppercase tracking-wider">{s.code}</span>
+                                <h4 className="font-sans font-bold text-white text-base tracking-tight mt-1 group-hover:text-[#ff3333] transition-colors">
                                   {s.name}
                                 </h4>
                               </div>
 
                               {activeEvent.is_completed ? (
-                                <span className="text-[9px] font-bold text-emerald-400 flex items-center gap-1">
-                                  <CheckCircle2 className="w-3 h-3" /> Logs Ready
+                                <span className="text-[9px] font-semibold text-emerald-400 flex items-center gap-1">
+                                  <CheckCircle2 className="w-3 h-3" /> Replay Log Ready
                                 </span>
                               ) : (
-                                <span className="text-[9px] font-bold text-white/20 flex items-center gap-1">
-                                  <Clock className="w-3 h-3" /> Stream pending
+                                <span className="text-[9px] font-semibold text-white/25 flex items-center gap-1">
+                                  <Clock className="w-3 h-3" /> Standby
                                 </span>
                               )}
                             </div>
 
                             <div className="flex justify-between items-center border-t border-white/5 pt-2 mt-2">
-                              <span className="text-[10px] text-white/40">{dateStr}</span>
-                              <span className="text-[10px] font-bold text-[#e10600] opacity-0 group-hover:opacity-100 transition-opacity uppercase tracking-wider">
-                                {activeEvent.is_completed ? "Open Logs" : "Launch Stream"} →
+                              <span className="text-[10px] text-white/35 font-medium">{dateStr}</span>
+                              <span className="text-[10px] font-bold text-[#ff3333] opacity-0 group-hover:opacity-100 transition-opacity uppercase tracking-wider">
+                                {activeEvent.is_completed ? "Load Replay" : "Standby"} →
                               </span>
                             </div>
                           </div>

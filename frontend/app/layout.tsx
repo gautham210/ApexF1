@@ -25,7 +25,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           rel="stylesheet"
         />
       </head>
-      <body className="bg-apex-bg text-apex-text antialiased">
+      <body className="bg-apex-bg text-apex-text antialiased relative">
+        <div className="noise-overlay" />
         <AppLayout>
           {children}
         </AppLayout>

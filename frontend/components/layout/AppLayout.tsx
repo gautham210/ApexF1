@@ -69,12 +69,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [expanded, setExpanded] = useState(true);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-apex-bg">
+    <div className="flex h-screen overflow-hidden bg-apex-bg p-4 gap-4 relative">
       <GlobalContextInit />
       <Sidebar expanded={expanded} setExpanded={setExpanded} />
       <div
-        className="flex flex-col min-w-0 transition-all duration-300 flex-1"
-        style={{ marginLeft: expanded ? "260px" : "80px" }}
+        className="flex flex-col min-w-0 transition-all duration-300 flex-1 relative rounded-3xl overflow-hidden glass border border-white/5 shadow-2xl"
+        style={{ marginLeft: expanded ? "240px" : "72px" }}
       >
         <TopBar />
         <main className="flex-1 overflow-y-auto ambient-bg">{children}</main>

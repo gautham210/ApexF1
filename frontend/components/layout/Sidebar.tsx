@@ -22,8 +22,8 @@ export default function Sidebar({ expanded, setExpanded }: SidebarProps) {
 
   return (
     <aside 
-      className="fixed left-0 top-0 h-full z-50 flex flex-col bg-black/40 backdrop-blur-2xl border-r border-white/10 transition-all duration-300 shadow-[10px_0_30px_rgba(0,0,0,0.5)]"
-      style={{ width: expanded ? '260px' : '80px' }}
+      className="fixed left-4 top-4 bottom-4 z-50 flex flex-col glass rounded-3xl border border-white/10 transition-all duration-300 shadow-[0_20px_50px_rgba(0,0,0,0.6)]"
+      style={{ width: expanded ? '240px' : '72px' }}
     >
       
       {/* Logo */}

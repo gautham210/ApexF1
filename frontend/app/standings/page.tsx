@@ -112,7 +112,7 @@ export default function StandingsPage() {
       {/* ── Cinematic Header ── */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-white/5">
         <div>
-          <p className="text-xs font-bold text-white/40 tracking-widest uppercase mb-2">{selectedYear} Season Context</p>
+          <p className="text-xs font-bold text-white/35 tracking-widest uppercase mb-2">{selectedYear} Season Context</p>
           <h1 className="font-sans font-bold text-white text-3xl lg:text-4xl tracking-tight uppercase">
             Championship Standings
           </h1>
@@ -122,13 +122,13 @@ export default function StandingsPage() {
         </div>
 
         {/* Apple TV styled Segmented Controls */}
-        <div className="flex items-center gap-1.5 bg-white/5 p-1 rounded-2xl border border-white/5 self-start md:self-auto">
+        <div className="flex items-center gap-1 bg-white/5 p-1 rounded-2xl border border-white/10 self-start md:self-auto backdrop-blur-md">
           {(["drivers", "constructors", "engines"] as const).map(t => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`px-6 py-2.5 rounded-xl text-xs font-sans font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer ${
-                tab === t ? "bg-white/10 text-white shadow-lg" : "text-white/40 hover:text-white/80"
+              className={`px-5 py-2 rounded-xl text-xs font-sans font-bold uppercase tracking-wider transition-all duration-300 cursor-pointer ${
+                tab === t ? "bg-white/10 text-white border border-white/10 shadow-lg" : "text-white/45 hover:text-white/90 border border-transparent"
               }`}
             >
               {t === "drivers" ? "Drivers" : t === "constructors" ? "Constructors" : "Power Units"}
@@ -143,13 +143,13 @@ export default function StandingsPage() {
         {loading ? (
           <div className="space-y-4">
             {Array(8).fill(0).map((_, i) => (
-              <div key={i} className="h-16 skeleton rounded-2xl bg-white/5" />
+              <div key={i} className="h-16 skeleton rounded-2xl" />
             ))}
           </div>
         ) : error ? (
-          <div className="bg-[#0c0c16]/30 border border-red-500/10 rounded-3xl py-20 text-center max-w-lg mx-auto p-8">
+          <div className="glass border border-white/5 rounded-3xl py-20 text-center max-w-lg mx-auto p-8">
             <Trophy className="w-12 h-12 text-white/10 mx-auto mb-4" />
-            <h3 className="text-apex-red font-sans font-bold text-base tracking-widest uppercase">Database Connection Standby</h3>
+            <h3 className="text-white font-sans font-bold text-base tracking-widest uppercase">Database Connection Standby</h3>
             <p className="text-white/40 text-xs font-sans mt-2 leading-relaxed">
               {error}
             </p>
@@ -176,7 +176,7 @@ export default function StandingsPage() {
                       initial={{ opacity: 0, x: -10 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: Math.min(i * 0.03, 0.4) }}
-                      className="bg-[#0b0b14]/30 rounded-2xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-6 border border-white/[0.04] hover:border-white/[0.1] hover:bg-white/[0.01] transition-all"
+                      className="glass rounded-2xl p-6 flex flex-col md:flex-row md:items-center justify-between gap-6 border border-white/5 hover:border-white/10 transition-all duration-300 apple-rail-item"
                     >
                       <div className="flex items-center gap-6">
                         {/* Position Indicator */}
@@ -189,8 +189,8 @@ export default function StandingsPage() {
                           </div>
                         </div>
 
-                        {/* Team Accent Bar */}
-                        <div className="w-1 h-10 rounded-full flex-shrink-0" style={{ backgroundColor: teamColor }} />
+                        {/* Team Accent Bar (Subtle split left margin moment!) */}
+                        <div className="w-1 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: teamColor }} />
 
                         {/* Driver Info */}
                         <div>
@@ -199,12 +199,12 @@ export default function StandingsPage() {
                               {entry.name}
                             </h2>
                             {driverNum !== "—" && (
-                              <span className="font-sans text-[10px] font-bold text-white/35">
+                              <span className="font-sans text-[10px] font-bold text-white/30">
                                 #{driverNum}
                               </span>
                             )}
                           </div>
-                          <p className="text-[10px] text-white/40 font-sans font-semibold uppercase tracking-wider mt-0.5">
+                          <p className="text-[10px] text-white/35 font-sans font-semibold uppercase tracking-wider mt-0.5">
                             {entry.team || "Independent"} · {entry.nationality}
                           </p>
                         </div>
@@ -221,7 +221,7 @@ export default function StandingsPage() {
                         {/* Wins count */}
                         <div className="flex flex-col items-center min-w-[50px]">
                           <span className="text-[9px] text-white/35 font-bold uppercase tracking-widest">Wins</span>
-                          <span className={`font-sans text-xs font-bold mt-1 ${entry.wins > 0 ? "text-yellow-400" : "text-white/20"}`}>
+                          <span className={`font-sans text-xs font-bold mt-1 ${entry.wins > 0 ? "text-yellow-500" : "text-white/20"}`}>
                             {entry.wins ?? 0}
                           </span>
                         </div>
@@ -249,7 +249,7 @@ export default function StandingsPage() {
                       initial={{ opacity: 0, x: -10 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: Math.min(i * 0.04, 0.4) }}
-                      className="bg-[#0b0b14]/30 rounded-2xl p-5 flex flex-col gap-5 border border-white/[0.04] hover:border-white/[0.1] hover:bg-white/[0.01] transition-all"
+                      className="glass rounded-2xl p-6 flex flex-col gap-5 border border-white/5 hover:border-white/10 transition-all duration-300 apple-rail-item"
                     >
                       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                         <div className="flex items-center gap-6">
@@ -261,7 +261,7 @@ export default function StandingsPage() {
                             <h2 className="font-sans font-bold text-base text-white tracking-tight uppercase">
                               {entry.name}
                             </h2>
-                            <p className="text-[10px] text-white/40 font-sans font-semibold uppercase tracking-wider mt-0.5">
+                            <p className="text-[10px] text-white/35 font-sans font-semibold uppercase tracking-wider mt-0.5">
                               {entry.wins ?? 0} Victories
                             </p>
                           </div>
@@ -281,7 +281,7 @@ export default function StandingsPage() {
                       {/* Mercedes-Pit-Wall Stacked Driver Contributions */}
                       {driverContrib.length > 0 && (
                         <div className="space-y-2 bg-white/[0.01] p-4 rounded-xl border border-white/5">
-                          <div className="flex justify-between text-[9px] font-bold text-white/40 uppercase tracking-widest">
+                          <div className="flex justify-between text-[9px] font-bold text-white/35 uppercase tracking-widest">
                             <span>Contribution Split</span>
                             <div className="flex gap-4">
                               {driverContrib.map((dc: any, idx: number) => (
@@ -293,7 +293,7 @@ export default function StandingsPage() {
                           </div>
                           
                           {/* Stacked Percentage Bar */}
-                          <div className="w-full h-1.5 rounded-full bg-white/5 overflow-hidden flex">
+                          <div className="w-full h-1 rounded-full bg-white/5 overflow-hidden flex">
                             {driverContrib.map((dc: any, idx: number) => {
                               const opacity = idx === 0 ? "100%" : idx === 1 ? "60%" : "30%";
                               return (
@@ -327,7 +327,7 @@ export default function StandingsPage() {
                       initial={{ opacity: 0, x: -10 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: Math.min(i * 0.04, 0.4) }}
-                      className="bg-[#0b0b14]/30 rounded-2xl p-5 flex flex-col gap-5 border border-white/[0.04] hover:border-white/[0.1] hover:bg-white/[0.01] transition-all"
+                      className="glass rounded-2xl p-6 flex flex-col gap-5 border border-white/5 hover:border-white/10 transition-all duration-300 apple-rail-item"
                     >
                       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                         <div className="flex items-center gap-6">
@@ -339,7 +339,7 @@ export default function StandingsPage() {
                             <h2 className="font-sans font-bold text-base text-white tracking-tight uppercase">
                               {entry.name} Power Unit
                             </h2>
-                            <p className="text-[10px] text-white/40 font-sans font-semibold uppercase tracking-wider mt-0.5">
+                            <p className="text-[10px] text-white/35 font-sans font-semibold uppercase tracking-wider mt-0.5">
                               Supplier Championship · {entry.wins ?? 0} Victories
                             </p>
                           </div>
@@ -358,11 +358,11 @@ export default function StandingsPage() {
                       {/* Visual multi-colored PU stacked supplier split */}
                       {breakdown.length > 0 && (
                         <div className="space-y-2 bg-white/[0.01] p-4 rounded-xl border border-white/5">
-                          <div className="flex justify-between text-[9px] font-bold text-white/40 uppercase tracking-widest">
+                          <div className="flex justify-between text-[9px] font-bold text-white/35 uppercase tracking-widest">
                             <span>Supplier Customer Distribution</span>
                             <div className="flex flex-wrap gap-x-4 gap-y-1 justify-end">
                               {breakdown.map((b: any, idx: number) => (
-                                <span key={idx} className="flex items-center gap-1.5">
+                                <span key={idx} className="flex items-center gap-1.5 font-sans">
                                   <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: b.color || engineColor }} />
                                   {b.team}: <strong className="text-white">{b.points} pts ({b.pct}%)</strong>
                                 </span>
@@ -371,7 +371,7 @@ export default function StandingsPage() {
                           </div>
 
                           {/* Multi-Colored Stacked Split Bar */}
-                          <div className="w-full h-1.5 rounded-full bg-white/5 overflow-hidden flex">
+                          <div className="w-full h-1 rounded-full bg-white/5 overflow-hidden flex">
                             {breakdown.map((b: any, idx: number) => {
                               const constructorNameMap: Record<string, string> = {
                                 "Red Bull Racing": "#3671C6",
