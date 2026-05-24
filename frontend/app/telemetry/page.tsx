@@ -31,9 +31,9 @@ function ChartSection({ title, d1, d2, dataKey, color1, color2, domain, activeDi
     <motion.div
       initial={{ opacity: 0, y: 15 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-black/30 backdrop-blur-xl border border-white/5 rounded-2xl p-4 shadow-xl"
+      className="bg-white/[0.02] backdrop-blur-2xl border border-white/5 rounded-2xl p-4 shadow-xl"
     >
-      <h3 className="font-rajdhani font-bold text-white/70 text-[10px] tracking-widest mb-3 uppercase flex items-center gap-1.5">
+      <h3 className="font-sans font-semibold text-white/50 text-[10px] tracking-widest mb-3 uppercase flex items-center gap-1.5">
         <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color1 }} />
         {title}
       </h3>
@@ -51,10 +51,10 @@ function ChartSection({ title, d1, d2, dataKey, color1, color2, domain, activeDi
           </defs>
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.02)" vertical={false} />
           <XAxis dataKey="dist" tick={false} tickLine={false} axisLine={false} />
-          <YAxis domain={domain} tick={{ fill: "rgba(255,255,255,0.3)", fontSize: 8, fontFamily: "Rajdhani" }} tickLine={false} axisLine={false} width={40} />
+          <YAxis domain={domain} tick={{ fill: "rgba(255,255,255,0.3)", fontSize: 8, fontFamily: "sans-serif" }} tickLine={false} axisLine={false} width={40} />
           <Tooltip
             cursor={{ stroke: "rgba(255,255,255,0.1)", strokeWidth: 1 }}
-            contentStyle={{ background: "rgba(0,0,0,0.85)", backdropFilter: "blur(10px)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 10, fontFamily: "Rajdhani", color: "#fff", padding: "4px 8px" }}
+            contentStyle={{ background: "rgba(0,0,0,0.85)", backdropFilter: "blur(10px)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 10, fontFamily: "sans-serif", color: "#fff", padding: "4px 8px" }}
             labelStyle={{ display: "none" }}
           />
           <Area type="monotone" dataKey="driver1" stroke={color1} fill={`url(#g1-${dataKey})`} strokeWidth={1.5} dot={false} activeDot={false} />
@@ -244,10 +244,10 @@ export default function TelemetryPage() {
   const DriverSelect = ({ value, onChange, color }: { value: string; onChange: (v: string) => void; color: string }) => {
     return (
       <div className="relative flex items-center">
-        <div className="w-2.5 h-2.5 rounded-full mr-[-24px] z-10 shadow" style={{ backgroundColor: color }} />
+        <div className="w-2 h-2 rounded-full mr-[-24px] z-10 shadow" style={{ backgroundColor: color }} />
         <select
           value={value} onChange={(e) => onChange(e.target.value)}
-          className="appearance-none pl-10 pr-8 py-2 rounded-xl text-xs font-rajdhani font-bold cursor-pointer outline-none bg-white/5 border border-white/10 text-white"
+          className="appearance-none pl-10 pr-8 py-2 rounded-xl text-xs font-sans font-semibold cursor-pointer outline-none bg-white/5 border border-white/10 text-white"
         >
           {Object.entries(db).map(([num, d]) => (
             <option key={num} value={num} className="bg-[#111]">{d.abbr} #{num}</option>
@@ -261,25 +261,25 @@ export default function TelemetryPage() {
   if (!isArchive) {
     return (
       <div className="p-4 lg:p-6 min-h-screen max-w-[1600px] mx-auto flex items-center justify-center animate-fade-up">
-        <div className="glass rounded-3xl p-8 max-w-md text-center border border-white/5 space-y-6">
-          <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mx-auto animate-pulse">
-            <Shield className="w-8 h-8 text-amber-500" />
+        <div className="bg-white/[0.02] border border-white/5 backdrop-blur-2xl rounded-3xl p-8 max-w-md text-center space-y-6">
+          <div className="w-16 h-16 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mx-auto">
+            <Activity className="w-8 h-8 text-white/40" />
           </div>
           <div className="space-y-2">
-            <h2 className="font-orbitron font-bold text-white text-base tracking-widest uppercase">
-              TELEMETRY RESERVED FOR HISTORICAL REPLAYS
+            <h2 className="font-sans font-bold text-white text-base tracking-wider uppercase">
+              TELEMETRY STANDBY MODE
             </h2>
-            <p className="font-rajdhani text-white/40 text-xs tracking-wider uppercase">
-              ACTIVE GP WEEKEND · {raceLabel.toUpperCase()}
+            <p className="font-sans text-white/40 text-[10px] tracking-widest uppercase font-semibold">
+              UPCOMING EVENT · {raceLabel.toUpperCase()}
             </p>
           </div>
-          <p className="font-rajdhani text-white/50 text-xs leading-relaxed">
-            Lap-by-lap physical telemetric captures are compiled and calibrated following the final checkered flag of the race.
+          <p className="font-sans text-white/50 text-xs leading-relaxed">
+            Lap-by-lap physical telemetry comparison charts are logged following the session completion. Historical replays are fully accessible.
           </p>
           <div className="bg-white/5 p-4 rounded-xl border border-white/5 text-left">
-            <p className="text-[9px] text-white/40 font-rajdhani font-black uppercase tracking-widest mb-1.5">Action Required</p>
-            <p className="text-[11px] text-white/60 font-rajdhani leading-relaxed">
-              Use the Year and Calendar controls in the top navigation to select any completed historical F1 session (e.g. 2025 or finished rounds of the current year) to access interactive telemetry.
+            <p className="text-[9px] text-white/40 font-sans font-bold uppercase tracking-widest mb-1.5">Action Required</p>
+            <p className="text-[11px] text-white/60 font-sans leading-relaxed">
+              Use the Year and Calendar controls in the top navigation to select any completed historical F1 session (e.g. 2025 or finished rounds of the current year) to access telemetry comparison.
             </p>
           </div>
         </div>
@@ -294,21 +294,21 @@ export default function TelemetryPage() {
       <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-4">
         <div>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-apex-red/10 border border-apex-red/20 flex items-center justify-center">
-              <Activity className="w-5 h-5 text-apex-red animate-pulse" />
+            <div className="w-10 h-10 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center">
+              <Activity className="w-5 h-5 text-white/80" />
             </div>
-            <h1 className="font-orbitron font-bold text-white text-2xl lg:text-3xl tracking-tight">TELEMETRY ANALYSIS</h1>
+            <h1 className="font-sans font-bold text-white text-2xl lg:text-3xl tracking-tight">LAP TELEMETRY</h1>
           </div>
-          <div className="text-white/60 text-xs font-rajdhani tracking-widest uppercase mt-2.5 flex flex-wrap items-center gap-2">
+          <div className="text-white/40 text-xs font-sans tracking-wider uppercase mt-2.5 flex flex-wrap items-center gap-2">
             <span>{selectedYear} Season</span>
             <span className="w-1 h-1 rounded-full bg-white/20" />
             <span>Round {selectedRound}</span>
             <span className="w-1 h-1 rounded-full bg-white/20" />
-            <span className="text-white">{raceLabel}</span>
+            <span className="text-white/60">{raceLabel}</span>
             {loadedAt && (
               <>
                 <span className="w-1 h-1 rounded-full bg-white/20" />
-                <span className="text-[#00ff66]/80 font-bold uppercase">Sync Time: {loadedAt}</span>
+                <span className="text-emerald-400 font-semibold uppercase">Telemetry Loaded: {loadedAt}</span>
               </>
             )}
           </div>
@@ -317,7 +317,7 @@ export default function TelemetryPage() {
         {/* Configuration Bar */}
         <div className="flex flex-wrap items-center gap-3 bg-white/[0.02] border border-white/5 p-3 rounded-2xl">
           <DriverSelect value={driver1} onChange={setDriver1} color={DRIVER_COLOR_1} />
-          <span className="text-white/30 text-[10px] font-rajdhani font-bold uppercase">VS</span>
+          <span className="text-white/30 text-[10px] font-sans font-bold uppercase">VS</span>
           <DriverSelect value={driver2} onChange={setDriver2} color={DRIVER_COLOR_2} />
           
           <div className="h-6 w-px bg-white/10" />
@@ -325,7 +325,7 @@ export default function TelemetryPage() {
           <select 
             value={selectedSession} 
             onChange={(e) => setSelectedSession(e.target.value)}
-            className="appearance-none bg-white/5 hover:bg-white/10 transition-colors border border-white/10 px-4 py-2 rounded-xl text-xs font-rajdhani font-bold text-white outline-none cursor-pointer"
+            className="appearance-none bg-white/5 hover:bg-white/10 transition-colors border border-white/10 px-4 py-2 rounded-xl text-xs font-sans font-semibold text-white outline-none cursor-pointer"
           >
             {SESSIONS.map(s => (
               <option key={s} value={s} className="bg-[#111]">{s}</option>
@@ -335,7 +335,7 @@ export default function TelemetryPage() {
           <select 
             value={selectedLap.toString()} 
             onChange={(e) => setSelectedLap(e.target.value === "all" ? "all" : parseInt(e.target.value))}
-            className="appearance-none bg-white/5 hover:bg-white/10 transition-colors border border-white/10 px-4 py-2 rounded-xl text-xs font-rajdhani font-bold text-white outline-none cursor-pointer"
+            className="appearance-none bg-white/5 hover:bg-white/10 transition-colors border border-white/10 px-4 py-2 rounded-xl text-xs font-sans font-semibold text-white outline-none cursor-pointer"
           >
             <option value="all" className="bg-[#111]">Fastest Lap</option>
             {Array.from({length: 80}, (_, i) => i + 1).map(l => (
@@ -344,8 +344,7 @@ export default function TelemetryPage() {
           </select>
 
           <button onClick={loadTelemetry} disabled={loading}
-            className="px-5 py-2 rounded-xl text-xs font-rajdhani font-bold tracking-widest uppercase transition-all hover:scale-105 active:scale-95 flex items-center gap-2 text-white bg-gradient-to-r from-apex-red to-orange-600 disabled:opacity-60"
-            style={{ boxShadow: "0 4px 15px rgba(225, 6, 0, 0.3)" }}>
+            className="px-5 py-2 rounded-xl text-xs font-sans font-bold tracking-wider uppercase transition-all hover:scale-105 active:scale-95 flex items-center gap-2 text-white bg-white/10 hover:bg-white/20 border border-white/15 disabled:opacity-60">
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
             {driver1Data.length > 0 ? "RELOAD" : "LOAD DATA"}
           </button>
@@ -364,19 +363,19 @@ export default function TelemetryPage() {
         </div>
       ) : driver1Data.length === 0 ? (
         // Empty State
-        <div className="glass border border-white/5 rounded-3xl py-20 text-center flex flex-col items-center justify-center">
+        <div className="bg-white/[0.02] border border-white/5 rounded-3xl py-20 text-center flex flex-col items-center justify-center">
           <div className="w-16 h-16 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mb-6">
             <Activity className="w-8 h-8 text-white/20" />
           </div>
-          <h2 className="text-white font-orbitron font-bold text-lg mb-2 tracking-wide">TELEMETRY STANDBY</h2>
-          <p className="text-white/40 text-xs max-w-sm font-rajdhani leading-relaxed mb-6 uppercase tracking-wider">
-            FastF1 is ready to extract core lap telemetry for selected parameters.
+          <h2 className="text-white font-sans font-bold text-lg mb-2 tracking-wide">TELEMETRY DATA ARCHIVE</h2>
+          <p className="text-white/40 text-xs max-w-sm font-sans leading-relaxed mb-6 uppercase tracking-wider font-semibold">
+            Lap performance traces across timing loops and channels.
           </p>
           <div className="bg-white/[0.02] border border-white/5 rounded-2xl px-6 py-4 text-left max-w-xs space-y-2">
-            <p className="text-[9px] text-white/50 uppercase font-rajdhani tracking-widest font-bold mb-2">Instructions</p>
-            <p className="text-xs text-white/40 font-rajdhani">1. Choose Drivers 1 and 2 to compare.</p>
-            <p className="text-xs text-white/40 font-rajdhani">2. Select Session type and Lap number.</p>
-            <p className="text-xs text-white/40 font-rajdhani">3. Click <span className="text-apex-red font-bold">LOAD DATA</span> to compile.</p>
+            <p className="text-[9px] text-white/50 uppercase font-sans tracking-widest font-bold mb-2">Instructions</p>
+            <p className="text-xs text-white/40 font-sans">1. Choose Drivers 1 and 2 to compare.</p>
+            <p className="text-xs text-white/40 font-sans">2. Select Session type and Lap number.</p>
+            <p className="text-xs text-white/40 font-sans">3. Click <span className="text-white font-bold">LOAD DATA</span> to sync telemetry.</p>
           </div>
         </div>
       ) : (
@@ -396,20 +395,20 @@ export default function TelemetryPage() {
             <motion.div
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
-              className="bg-black/30 backdrop-blur-xl border border-white/5 rounded-2xl p-4 shadow-xl"
+              className="bg-white/[0.02] backdrop-blur-2xl border border-white/5 rounded-2xl p-4 shadow-xl"
             >
-              <h3 className="font-rajdhani font-bold text-white/70 text-[10px] tracking-widest mb-3 uppercase flex items-center gap-1.5">
+              <h3 className="font-sans font-semibold text-white/50 text-[10px] tracking-widest mb-3 uppercase flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-                Gear Selection Shift Profiler
+                Gear Selection Profile
               </h3>
               <ResponsiveContainer width="100%" height={80}>
                 <LineChart data={driver1Data.map((p, i) => ({ dist: p.distance ? Math.round(p.distance) : p.time ? Math.round(p.time * 10) : i, gear: p.gear, gear2: driver2Data[i]?.gear }))} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.02)" vertical={false} />
                   <XAxis dataKey="dist" tick={false} tickLine={false} axisLine={false} />
-                  <YAxis domain={[1, 8]} ticks={[1,2,3,4,5,6,7,8]} tick={{ fill: "rgba(255,255,255,0.3)", fontSize: 8, fontFamily: "Rajdhani" }} tickLine={false} axisLine={false} width={40} />
+                  <YAxis domain={[1, 8]} ticks={[1,2,3,4,5,6,7,8]} tick={{ fill: "rgba(255,255,255,0.3)", fontSize: 8, fontFamily: "sans-serif" }} tickLine={false} axisLine={false} width={40} />
                   <Tooltip
                     cursor={{ stroke: "rgba(255,255,255,0.1)", strokeWidth: 1 }}
-                    contentStyle={{ background: "rgba(0,0,0,0.85)", backdropFilter: "blur(10px)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 10, fontFamily: "Rajdhani", color: "#fff", padding: "4px 8px" }}
+                    contentStyle={{ background: "rgba(0,0,0,0.85)", backdropFilter: "blur(10px)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 10, fontFamily: "sans-serif", color: "#fff", padding: "4px 8px" }}
                     labelStyle={{ display: "none" }}
                   />
                   <Line type="stepAfter" dataKey="gear" stroke={DRIVER_COLOR_1} strokeWidth={1.5} dot={false} activeDot={false} />
@@ -426,15 +425,14 @@ export default function TelemetryPage() {
           <div className="space-y-6">
             
             {/* SVG Interactive Circuit Card */}
-            <div className="glass rounded-3xl p-5 border border-white/5 flex flex-col items-center relative overflow-hidden">
-              <div className="scan-line" />
+            <div className="bg-white/[0.02] border border-white/5 backdrop-blur-2xl rounded-3xl p-5 flex flex-col items-center relative overflow-hidden">
               <div className="w-full flex items-center justify-between mb-4">
-                <span className="label-xs flex items-center gap-1.5 text-apex-red">
+                <span className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 text-white/70">
                   <Gauge className="w-3.5 h-3.5" />
-                  Synchronized Map
+                  Lap Trace Map
                 </span>
                 {activePt1 && (
-                  <span className="font-orbitron text-[10px] text-white/50">
+                  <span className="font-sans font-bold text-[10px] text-white/40">
                     DIST: {Math.round(activePt1.distance || 0)}m
                   </span>
                 )}
@@ -471,7 +469,6 @@ export default function TelemetryPage() {
                         r="3.5"
                         fill={DRIVER_COLOR_1}
                         className="animate-pulse"
-                        style={{ filter: `drop-shadow(0 0 4px ${DRIVER_COLOR_1})` }}
                       />
                     )}
 
@@ -483,14 +480,13 @@ export default function TelemetryPage() {
                         r="3"
                         fill={DRIVER_COLOR_2}
                         className="animate-pulse"
-                        style={{ filter: `drop-shadow(0 0 4px ${DRIVER_COLOR_2})` }}
                       />
                     )}
                   </svg>
                 </div>
               ) : (
-                <div className="w-full h-[220px] bg-black/20 border border-white/5 rounded-2xl flex items-center justify-center text-[10px] font-rajdhani text-white/30 uppercase tracking-widest">
-                  Map trace offline
+                <div className="w-full h-[220px] bg-black/20 border border-white/5 rounded-2xl flex items-center justify-center text-[10px] font-sans text-white/30 uppercase tracking-widest">
+                  Lap trace unavailable
                 </div>
               )}
 
@@ -518,7 +514,7 @@ export default function TelemetryPage() {
                       <button
                         key={s}
                         onClick={() => setPlaybackSpeed(s)}
-                        className={`text-[9px] font-orbitron font-bold px-2 py-1 rounded transition-colors cursor-pointer ${playbackSpeed === s ? "bg-apex-red text-white" : "text-white/40 hover:text-white"}`}
+                        className={`text-[9px] font-sans font-bold px-2.5 py-1 rounded transition-colors cursor-pointer ${playbackSpeed === s ? "bg-white/10 text-white" : "text-white/40 hover:text-white"}`}
                       >
                         {s}x
                       </button>
@@ -533,12 +529,12 @@ export default function TelemetryPage() {
                     max={driver1Data.length - 1}
                     value={scrubberPosition}
                     onChange={(e) => { setIsPlaying(false); setScrubberPosition(parseInt(e.target.value)); }}
-                    className="w-full accent-apex-red cursor-pointer"
+                    className="w-full accent-white cursor-pointer"
                   />
-                  <div className="flex justify-between text-[9px] font-rajdhani text-white/30 uppercase">
+                  <div className="flex justify-between text-[9px] font-sans text-white/30 uppercase font-semibold">
                     <span>Start</span>
                     <span>Lap Scrubber</span>
-                    <span>Checkered</span>
+                    <span>Finish</span>
                   </div>
                 </div>
               </div>
@@ -546,48 +542,48 @@ export default function TelemetryPage() {
 
             {/* Live Metrics Dials */}
             {activePt1 && (
-              <div className="glass rounded-3xl p-5 border border-white/5 space-y-4">
-                <span className="label-xs flex items-center gap-1.5">
-                  <Gauge className="w-3.5 h-3.5 text-blue-400" />
-                  Interactive Telemetry Values
+              <div className="bg-white/[0.02] border border-white/5 backdrop-blur-2xl rounded-3xl p-5 space-y-4">
+                <span className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 text-white/70">
+                  <Gauge className="w-3.5 h-3.5 text-white/60" />
+                  Session Telemetry Values
                 </span>
 
                 <div className="grid grid-cols-2 gap-4">
                   {/* Driver 1 Metrics Column */}
                   <div className="space-y-3 bg-white/[0.01] border border-white/5 rounded-2xl p-3.5 relative">
                     <div className="absolute top-3 right-3 w-2 h-2 rounded-full" style={{ backgroundColor: DRIVER_COLOR_1 }} />
-                    <p className="font-orbitron font-bold text-xs text-white tracking-widest">{d1Meta.abbr}</p>
+                    <p className="font-sans font-bold text-xs text-white tracking-wider">{d1Meta.abbr}</p>
 
                     <div>
-                      <p className="text-[8px] text-white/30 uppercase font-rajdhani">Velocity</p>
-                      <p className="font-orbitron font-bold text-xl text-white leading-none mt-1">
+                      <p className="text-[8px] text-white/40 uppercase font-sans font-semibold">Velocity</p>
+                      <p className="font-sans font-bold text-xl text-white leading-none mt-1">
                         {activePt1.speed || 0} <span className="text-[10px] text-white/40 font-normal">KM/H</span>
                       </p>
                     </div>
 
                     <div>
-                      <p className="text-[8px] text-white/30 uppercase font-rajdhani">Gear shift</p>
-                      <p className="font-orbitron font-bold text-lg text-white mt-0.5">GEAR {activePt1.gear || "—"}</p>
+                      <p className="text-[8px] text-white/40 uppercase font-sans font-semibold">Gear Shift</p>
+                      <p className="font-sans font-bold text-lg text-white mt-0.5">GEAR {activePt1.gear || "—"}</p>
                     </div>
 
                     {/* Throttle Gauge bar */}
                     <div className="space-y-1">
-                      <div className="flex justify-between text-[8px] font-rajdhani uppercase text-white/40">
+                      <div className="flex justify-between text-[8px] font-sans uppercase text-white/40 font-semibold">
                         <span>Throttle</span>
                         <span>{activePt1.throttle || 0}%</span>
                       </div>
-                      <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
+                      <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
                         <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${activePt1.throttle || 0}%` }} />
                       </div>
                     </div>
 
                     {/* Brake Gauge bar */}
                     <div className="space-y-1">
-                      <div className="flex justify-between text-[8px] font-rajdhani uppercase text-white/40">
+                      <div className="flex justify-between text-[8px] font-sans uppercase text-white/40 font-semibold">
                         <span>Brake</span>
                         <span>{Math.round((activePt1.brake || 0) * 100)}%</span>
                       </div>
-                      <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
+                      <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
                         <div className="h-full bg-red-500 rounded-full" style={{ width: `${Math.round((activePt1.brake || 0) * 100)}%` }} />
                       </div>
                     </div>
@@ -596,38 +592,38 @@ export default function TelemetryPage() {
                   {/* Driver 2 Metrics Column */}
                   <div className="space-y-3 bg-white/[0.01] border border-white/5 rounded-2xl p-3.5 relative">
                     <div className="absolute top-3 right-3 w-2 h-2 rounded-full" style={{ backgroundColor: DRIVER_COLOR_2 }} />
-                    <p className="font-orbitron font-bold text-xs text-white tracking-widest">{d2Meta.abbr}</p>
+                    <p className="font-sans font-bold text-xs text-white tracking-wider">{d2Meta.abbr}</p>
 
                     <div>
-                      <p className="text-[8px] text-white/30 uppercase font-rajdhani">Velocity</p>
-                      <p className="font-orbitron font-bold text-xl text-white leading-none mt-1">
+                      <p className="text-[8px] text-white/40 uppercase font-sans font-semibold">Velocity</p>
+                      <p className="font-sans font-bold text-xl text-white leading-none mt-1">
                         {activePt2?.speed || 0} <span className="text-[10px] text-white/40 font-normal">KM/H</span>
                       </p>
                     </div>
 
                     <div>
-                      <p className="text-[8px] text-white/30 uppercase font-rajdhani">Gear shift</p>
-                      <p className="font-orbitron font-bold text-lg text-white mt-0.5">GEAR {activePt2?.gear || "—"}</p>
+                      <p className="text-[8px] text-white/40 uppercase font-sans font-semibold">Gear Shift</p>
+                      <p className="font-sans font-bold text-lg text-white mt-0.5">GEAR {activePt2?.gear || "—"}</p>
                     </div>
 
                     {/* Throttle Gauge bar */}
                     <div className="space-y-1">
-                      <div className="flex justify-between text-[8px] font-rajdhani uppercase text-white/40">
+                      <div className="flex justify-between text-[8px] font-sans uppercase text-white/40 font-semibold">
                         <span>Throttle</span>
                         <span>{activePt2?.throttle || 0}%</span>
                       </div>
-                      <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
+                      <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
                         <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${activePt2?.throttle || 0}%` }} />
                       </div>
                     </div>
 
                     {/* Brake Gauge bar */}
                     <div className="space-y-1">
-                      <div className="flex justify-between text-[8px] font-rajdhani uppercase text-white/40">
+                      <div className="flex justify-between text-[8px] font-sans uppercase text-white/40 font-semibold">
                         <span>Brake</span>
                         <span>{activePt2 ? Math.round((activePt2.brake || 0) * 100) : 0}%</span>
                       </div>
-                      <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
+                      <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
                         <div className="h-full bg-red-500 rounded-full" style={{ width: `${activePt2 ? Math.round((activePt2.brake || 0) * 100) : 0}%` }} />
                       </div>
                     </div>
@@ -638,31 +634,31 @@ export default function TelemetryPage() {
 
             {/* AI Reactive Intelligence Panel */}
             {analysis && (
-              <div className="glass rounded-3xl p-5 border border-white/5 space-y-4">
-                <span className="label-xs flex items-center gap-1.5 text-yellow-400">
-                  <Cpu className="w-3.5 h-3.5" />
-                  Tactical Coach Analytics
+              <div className="bg-white/[0.02] border border-white/5 backdrop-blur-2xl rounded-3xl p-5 space-y-4">
+                <span className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 text-white/70">
+                  <Cpu className="w-3.5 h-3.5 text-white/60" />
+                  Driver Performance Analysis
                 </span>
 
-                <div className="space-y-3 font-rajdhani text-xs text-white/70 leading-relaxed">
+                <div className="space-y-3 font-sans text-xs text-white/50 leading-relaxed font-medium">
                   <div className="flex items-start gap-2.5">
                     <TrendingUp className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
                     <p>
-                      <strong className="text-white font-bold">{d1Meta.name} ({d1Meta.abbr})</strong> hit a top speed of <span className="text-white font-bold font-orbitron">{analysis.d1MaxSpeed} km/h</span> compared to <span className="text-white font-bold font-orbitron">{analysis.d2MaxSpeed} km/h</span> for <strong className="text-white/90">{d2Meta.abbr}</strong> (Delta: <span className="text-emerald-400 font-bold">+{analysis.speedDelta.toFixed(1)} km/h</span>).
+                      <strong className="text-white font-semibold">{d1Meta.name} ({d1Meta.abbr})</strong> hit a top speed of <span className="text-white font-bold">{analysis.d1MaxSpeed} km/h</span> compared to <span className="text-white font-bold">{analysis.d2MaxSpeed} km/h</span> for <strong className="text-white/90">{d2Meta.abbr}</strong> (Delta: <span className="text-emerald-400 font-semibold">+{analysis.speedDelta.toFixed(1)} km/h</span>).
                     </p>
                   </div>
 
                   <div className="flex items-start gap-2.5">
                     <Zap className="w-4 h-4 text-orange-400 flex-shrink-0 mt-0.5" />
                     <p>
-                      Average throttle percentage was <span className="text-white font-bold">{analysis.d1AvgThrottle}%</span> vs <span className="text-white font-bold">{analysis.d2AvgThrottle}%</span>. A higher throttle percentage indicates earlier corner exit application or longer straight sections.
+                      Average throttle percentage was <span className="text-white font-semibold">{analysis.d1AvgThrottle}%</span> vs <span className="text-white font-semibold">{analysis.d2AvgThrottle}%</span>. A higher throttle percentage indicates earlier corner exit application or longer straight sections.
                     </p>
                   </div>
 
                   <div className="flex items-start gap-2.5">
                     <ShieldAlert className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
                     <p>
-                      Braking footprint ratio: <span className="text-white font-bold">{analysis.d1Brakes}%</span> of the lap spent braking vs <span className="text-white font-bold">{analysis.d2Brakes}%</span>. A lower braking ratio implies higher corner velocity carry or later deceleration zones.
+                      Braking footprint ratio: <span className="text-white font-semibold">{analysis.d1Brakes}%</span> of the lap spent braking vs <span className="text-white font-semibold">{analysis.d2Brakes}%</span>. A lower braking ratio implies higher corner velocity carry or later deceleration zones.
                     </p>
                   </div>
                 </div>

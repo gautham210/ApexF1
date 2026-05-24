@@ -28,15 +28,15 @@ export default function Sidebar({ expanded, setExpanded }: SidebarProps) {
       
       {/* Logo */}
       <div className={`flex items-center ${expanded ? 'justify-start px-6' : 'justify-center'} py-6 h-20`}>
-        <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-gradient-to-br from-apex-red to-red-800 shadow-[0_0_20px_rgba(224,0,45,0.4)] border border-white/10">
-          <span className="font-orbitron font-bold text-white text-lg tracking-tighter">F1</span>
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-gradient-to-br from-apex-red to-red-800 shadow-[0_0_20px_rgba(224,0,45,0.2)] border border-white/10">
+          <span className="font-sans font-black text-white text-lg tracking-tighter">F1</span>
         </div>
         {expanded && (
           <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="ml-4 flex flex-col">
-            <span className="font-orbitron font-bold text-white text-sm tracking-widest whitespace-nowrap">
+            <span className="font-sans font-bold text-white text-sm tracking-wider whitespace-nowrap">
               APEX DASH
             </span>
-            <span className="text-[10px] text-white/50 font-rajdhani tracking-widest uppercase">Premium Analytics</span>
+            <span className="text-[9px] text-white/40 font-sans tracking-widest uppercase font-semibold">Premium Analytics</span>
           </motion.div>
         )}
       </div>

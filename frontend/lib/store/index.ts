@@ -281,6 +281,16 @@ interface SettingsState {
   selectedSession: string;
   selectedLap: number | "all";
 
+  // Canonical Season Context
+  currentRound: number;
+  raceStatus: string;
+  isLiveWeekend: boolean;
+  isArchive: boolean;
+  activeEvent: ScheduleEvent | null;
+  nextEvent: ScheduleEvent | null;
+  completedEvent: ScheduleEvent | null;
+  timezone: string;
+
   // Schedule cache — shared across all pages, no per-page refetch
   schedule: ScheduleEvent[];
   scheduleYear: number;        // which year the cached schedule belongs to
@@ -297,7 +307,7 @@ interface SettingsState {
   setScheduleCache: (schedule: ScheduleEvent[], year: number) => void;
 
   /** Called by AppLayout.GlobalContextInit — seeds round/race from backend response. */
-  bootstrapFromBackend: (round: number, race: ScheduleEvent | null, year: number) => void;
+  bootstrapFromBackend: (sc: any, year: number) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -310,6 +320,16 @@ export const useSettingsStore = create<SettingsState>()(
       currentRace: null,
       selectedSession: "Race",
       selectedLap: "all",
+      
+      currentRound: 1,
+      raceStatus: "GREEN",
+      isLiveWeekend: false,
+      isArchive: false,
+      activeEvent: null,
+      nextEvent: null,
+      completedEvent: null,
+      timezone: "UTC",
+
       schedule: [],
       scheduleYear: 0,
       contextBootstrapped: false,
@@ -323,6 +343,9 @@ export const useSettingsStore = create<SettingsState>()(
         scheduleYear: 0,
         schedule: [],
         currentRace: null,
+        activeEvent: null,
+        nextEvent: null,
+        completedEvent: null,
       }),
       setSelectedRound: (r) => set({ selectedRound: r }),
       setCurrentRace: (r) => set({ currentRace: r }),
@@ -357,19 +380,26 @@ export const useSettingsStore = create<SettingsState>()(
         }
       },
 
-      bootstrapFromBackend: (round, race, year) => {
-        const state = get();
-        // Only override if we haven't bootstrapped yet, or year changed
-        if (!state.contextBootstrapped || state.selectedYear !== year) {
-          set({
-            selectedRound: round,
-            currentRace: race,
-            // Stamp scheduleYear here so setScheduleCache (if it fires after us)
-            // sees the year matches and will NOT re-derive currentRace.
-            scheduleYear: year,
-            contextBootstrapped: true,
-          });
-        }
+      bootstrapFromBackend: (sc, year) => {
+        if (!sc) return;
+        const compRace = sc.latest_completed_race;
+        const nextRace = sc.next_race;
+        const activeRace = sc.is_active_weekend ? nextRace : null;
+        const round = sc.current_round || 1;
+
+        set({
+          selectedRound: round,
+          currentRace: activeRace || nextRace || compRace || null,
+          currentRound: round,
+          isLiveWeekend: sc.is_active_weekend ?? false,
+          isArchive: !sc.is_active_weekend,
+          activeEvent: activeRace,
+          nextEvent: nextRace,
+          completedEvent: compRace,
+          timezone: "UTC",
+          scheduleYear: year,
+          contextBootstrapped: true,
+        });
       },
     }),
     {

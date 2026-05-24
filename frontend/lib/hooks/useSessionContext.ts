@@ -13,23 +13,27 @@ import { useSettingsStore } from "@/lib/store";
 import type { ScheduleEvent } from "@/lib/store";
 
 export interface SessionContext {
-  // Raw store values
+  // Authoritative Canonical Season Context
+  season: number;
   selectedYear: number;
+  currentRound: number;
   selectedRound: number;
   selectedSession: string;
   selectedLap: number | "all";
+  raceStatus: string;
+  isLiveWeekend: boolean;
+  isArchive: boolean;
+  activeEvent: ScheduleEvent | null;
+  nextEvent: ScheduleEvent | null;
+  completedEvent: ScheduleEvent | null;
+  timezone: string;
+
+  // Canonical displays derived safely from the active event
   currentRace: ScheduleEvent | null;
   schedule: ScheduleEvent[];
-
-  // Derived — computed from currentRace, NEVER independently fetched
-  isArchive: boolean;      // currentRace is completed → replay/archive mode
-  isLiveWeekend: boolean;  // currentRace is NOT completed (live or upcoming)
-  isNextRace: boolean;     // currentRace is the next upcoming race
-  raceLabel: string;       // safe display label (event_name || location || country)
-  nextRace: ScheduleEvent | null;    // first upcoming race in schedule
-  prevRace: ScheduleEvent | null;    // most recent completed race
-  activeWeekendLabel: string; // Dynamic label like "CURRENT WEEKEND", "QUALIFYING LIVE", "RACE LIVE", etc.
-  isCurrentlyInActiveWeekend: boolean;
+  raceLabel: string;
+  activeWeekendLabel: string;
+  isNextRace: boolean;
 
   // Store setters (passthrough)
   setSelectedYear: (y: number) => void;
@@ -44,95 +48,55 @@ export function useSessionContext(): SessionContext {
   const store = useSettingsStore();
   const {
     selectedYear, selectedRound, selectedSession, selectedLap,
-    currentRace, schedule,
+    currentRound, raceStatus, isLiveWeekend, isArchive,
+    activeEvent, nextEvent, completedEvent, timezone,
+    schedule,
     setSelectedYear, setSelectedRound, setCurrentRace,
     setSelectedSession, setSelectedLap, setScheduleCache,
   } = store;
 
-  const now = new Date();
+  // The race being viewed maps to the selected round, or dynamically falls back to nextEvent/completedEvent
+  const currentRace = schedule.find((e) => e.round_number === selectedRound) || activeEvent || nextEvent || completedEvent || null;
 
-  // Find if there is an active race weekend right now in the schedule
-  let activeWeekendEvent: ScheduleEvent | null = null;
-  for (const event of schedule) {
-    const s1 = event.session1_date ? new Date(event.session1_date) : null;
-    const s5 = event.session5_date ? new Date(event.session5_date) : (event.event_date ? new Date(event.event_date) : null);
-    if (s5) {
-      // Canada / active weekend detection: FP1 start - 6h to Race start + 4h buffer
-      const weekendStart = s1 
-        ? new Date(s1.getTime() - 6 * 60 * 60 * 1000) 
-        : new Date(s5.getTime() - 2 * 24 * 60 * 60 * 1000);
-      const weekendEnd = new Date(s5.getTime() + 4 * 60 * 60 * 1000);
-      if (now >= weekendStart && now <= weekendEnd) {
-        activeWeekendEvent = event;
-        break;
-      }
-    }
-  }
+  // Canonical label
+  const raceLabel = currentRace?.event_name || currentRace?.location || currentRace?.country || "—";
 
-  const isCurrentlyInActiveWeekend = activeWeekendEvent !== null;
+  const isNextRace = nextEvent ? selectedRound === nextEvent.round_number : false;
 
-  // Derive from schedule cache (no network call here)
-  const completed = schedule
-    .filter((e) => e.is_completed)
-    .sort((a, b) => b.round_number - a.round_number);
-  const upcoming = schedule
-    .filter((e) => !e.is_completed)
-    .sort((a, b) => a.round_number - b.round_number);
-
-  // Archive = the currently selected race is completed
-  const isArchive = currentRace?.is_completed ?? false;
-  
-  // If we are currently in an active weekend for this race, or if it is not completed yet
-  const isLiveWeekend = currentRace && activeWeekendEvent
-    ? currentRace.round_number === activeWeekendEvent.round_number
-    : (currentRace ? !currentRace.is_completed : false);
-
-  // Avoid duplicate counting: if Canada is active right now, nextRace is the first race after Canada
-  const nextRace = isCurrentlyInActiveWeekend
-    ? (upcoming.find(e => e.round_number !== activeWeekendEvent?.round_number) || null)
-    : (upcoming[0] || null);
-    
-  const prevRace = completed[0] || null;
-  const isNextRace = nextRace ? currentRace?.round_number === nextRace.round_number : false;
-
-  // Dynamic weekend/live labeling based on active weekend
+  // Dynamic active status label
   let activeWeekendLabel = "UPCOMING";
-  if (isLiveWeekend) {
-    if (activeWeekendEvent && currentRace?.round_number === activeWeekendEvent.round_number) {
-      const s1 = currentRace.session1_date ? new Date(currentRace.session1_date) : null;
-      const s5 = currentRace.session5_date ? new Date(currentRace.session5_date) : (currentRace.event_date ? new Date(currentRace.event_date) : null);
-      if (s5) {
-        const time = now.getTime();
-        const raceStart = s5.getTime();
-        
-        // Race session window
-        if (time >= raceStart && time <= raceStart + 3.5 * 60 * 60 * 1000) {
-          activeWeekendLabel = "RACE LIVE";
-        } else if (time >= raceStart - 3 * 60 * 60 * 1000 && time < raceStart) {
-          activeWeekendLabel = "RACE WARMUP";
-        } else {
-          activeWeekendLabel = "CURRENT WEEKEND";
-        }
-      } else {
-        activeWeekendLabel = "LIVE WEEKEND";
-      }
-    } else {
-      activeWeekendLabel = "CURRENT WEEKEND";
-    }
+  if (isLiveWeekend && activeEvent) {
+    activeWeekendLabel = "CURRENT WEEKEND";
   } else if (isArchive) {
     activeWeekendLabel = "EVENT ARCHIVE";
   }
 
-  // Canonical label — event_name is preferred (contains "Grand Prix"),
-  // then location (city), then country (can be ambiguous, e.g. "United States" for Miami)
-  const raceLabel = currentRace?.event_name || currentRace?.location || currentRace?.country || "—";
-
   return {
-    selectedYear, selectedRound, selectedSession, selectedLap,
-    currentRace, schedule,
-    isArchive, isLiveWeekend, isNextRace,
-    raceLabel, nextRace, prevRace, activeWeekendLabel, isCurrentlyInActiveWeekend,
-    setSelectedYear, setSelectedRound, setCurrentRace,
-    setSelectedSession, setSelectedLap, setScheduleCache,
+    season: selectedYear,
+    selectedYear,
+    currentRound,
+    selectedRound,
+    selectedSession,
+    selectedLap,
+    raceStatus,
+    isLiveWeekend,
+    isArchive,
+    activeEvent,
+    nextEvent,
+    completedEvent,
+    timezone,
+    
+    currentRace,
+    schedule,
+    raceLabel,
+    activeWeekendLabel,
+    isNextRace,
+
+    setSelectedYear,
+    setSelectedRound,
+    setCurrentRace,
+    setSelectedSession,
+    setSelectedLap,
+    setScheduleCache,
   };
 }

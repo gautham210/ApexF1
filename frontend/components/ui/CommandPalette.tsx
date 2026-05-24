@@ -101,7 +101,7 @@ export default function CommandPalette() {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search drivers, races, seasons, or pages..."
-                className="flex-1 bg-transparent text-white placeholder-white/40 text-lg outline-none font-rajdhani tracking-wide"
+                className="flex-1 bg-transparent text-white placeholder-white/40 text-lg outline-none font-sans tracking-wide"
               />
               <button onClick={() => setCommandPalette(false)} className="p-1.5 hover:bg-white/10 rounded-lg transition-colors">
                 <X className="w-5 h-5 text-white/50" />

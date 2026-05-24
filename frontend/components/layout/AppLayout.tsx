@@ -32,24 +32,12 @@ function GlobalContextInit() {
 
         if (cancelled) return;
 
-        // ── STEP 1: Bootstrap from backend FIRST ──────────────────────────
-        // This stamps scheduleYear so setScheduleCache (step 2) won't re-derive.
         if (ctxRes.status === "fulfilled") {
           const data = (ctxRes.value as any)?.data ?? ctxRes.value;
           const sc = data?.season_context;
           if (sc?.current_round) {
-            // If next_race matches current_round, we're in a live/upcoming weekend
-            // → use next_race as currentRace (not completed → live mode)
-            // Otherwise use latest_completed_race (completed → archive mode)
-            const nextRaceRound = sc.next_race?.round_number;
-            const isLiveWeekend = nextRaceRound === sc.current_round;
-            const canonicalRace = isLiveWeekend
-              ? sc.next_race ?? sc.latest_completed_race ?? null
-              : sc.latest_completed_race ?? null;
-
             bootstrapFromBackend(
-              sc.current_round,
-              canonicalRace,
+              sc,
               selectedYear,
             );
           }
