@@ -145,7 +145,7 @@ def _timedelta_to_str(td) -> Optional[str]:
 
 
 async def get_current_session_info() -> Optional[SessionInfo]:
-    """Get the current or most recent session."""
+    """Get the current or most recent session, with timezone-safe weekend state machine."""
     cache_key = "current_session"
     if cache_key in _data_cache:
         return _data_cache[cache_key]
@@ -154,21 +154,74 @@ async def get_current_session_info() -> Optional[SessionInfo]:
         year = datetime.now().year
         schedule = fastf1.get_event_schedule(year, include_testing=False)
         now = pd.Timestamp.utcnow().tz_localize(None)
-        event_dates = pd.to_datetime(schedule["EventDate"]).dt.tz_localize(None)
-        past = schedule[event_dates <= now]
-        if past.empty:
+
+        current_event = None
+        status = "Completed"
+        is_live = False
+        active_session_name = "Race"
+
+        # Find the active or most recent event
+        for _, row in schedule.iterrows():
+            s1_date = pd.to_datetime(row.get("Session1Date")).tz_localize(None) if pd.notna(row.get("Session1Date")) else None
+            s5_date = pd.to_datetime(row.get("Session5Date")).tz_localize(None) if pd.notna(row.get("Session5Date")) else None
+            
+            if not s5_date:
+                continue
+
+            # Active weekend range: from Friday practice (or 6 hours before) to 4 hours post-race
+            weekend_start = s1_date - pd.Timedelta(hours=6) if s1_date else s5_date - pd.Timedelta(days=2)
+            weekend_end = s5_date + pd.Timedelta(hours=4)
+
+            if weekend_start <= now <= weekend_end:
+                current_event = row
+                is_live = True
+                status = "Live"
+                
+                # Detect which specific session is active or recently completed
+                sessions = [
+                    ("Session1", "Session1Date"),
+                    ("Session2", "Session2Date"),
+                    ("Session3", "Session3Date"),
+                    ("Session4", "Session4Date"),
+                    ("Session5", "Session5Date"),
+                ]
+                
+                # Default to current session or track the active one
+                for s_name_key, s_date_key in sessions:
+                    s_date = pd.to_datetime(row.get(s_date_key)).tz_localize(None) if pd.notna(row.get(s_date_key)) else None
+                    if s_date and s_date <= now <= s_date + pd.Timedelta(hours=2.5):
+                        active_session_name = str(row.get(s_name_key, "Race"))
+                        status = f"{active_session_name.upper()} LIVE"
+                        break
+                else:
+                    # Between sessions
+                    status = "WEEKEND ACTIVE"
+                break
+        else:
+            # No active weekend, find the most recently completed one
+            completed_events = []
+            for _, row in schedule.iterrows():
+                s5_date = pd.to_datetime(row.get("Session5Date")).tz_localize(None) if pd.notna(row.get("Session5Date")) else None
+                if s5_date and s5_date + pd.Timedelta(hours=4) <= now:
+                    completed_events.append(row)
+            if completed_events:
+                current_event = completed_events[-1]
+            else:
+                current_event = schedule.iloc[0]
+
+        if current_event is None:
             return None
-        latest = past.iloc[-1]
+
         info = SessionInfo(
-            year=int(latest["RoundNumber"]) and year,
-            round_number=int(latest["RoundNumber"]),
-            country=str(latest.get("Country", "")),
-            circuit=str(latest.get("Location", "")),
-            session_name=str(latest.get("EventName", "")),
-            session_type="Race",
-            date=str(latest.get("EventDate", "")),
-            status="Completed",
-            is_live=False,
+            year=year,
+            round_number=int(current_event.get("RoundNumber", 1)),
+            country=str(current_event.get("Country", "")),
+            circuit=str(current_event.get("Location", "")),
+            session_name=str(current_event.get("EventName", "")),
+            session_type=active_session_name,
+            date=str(current_event.get("EventDate", "")),
+            status=status,
+            is_live=is_live,
         )
         _data_cache[cache_key] = info
         return info
@@ -188,12 +241,9 @@ async def get_schedule(year: int) -> List[ScheduleEvent]:
         now = pd.Timestamp.utcnow().tz_localize(None)
         events = []
         for _, row in schedule.iterrows():
+            s5_date = pd.to_datetime(row.get("Session5Date")).tz_localize(None) if pd.notna(row.get("Session5Date")) else None
+            is_completed = s5_date is not None and s5_date + pd.Timedelta(hours=4) <= now
             event_date = row.get("EventDate")
-            try:
-                ed_naive = pd.Timestamp(event_date).tz_localize(None) if pd.notna(event_date) else None
-                is_completed = ed_naive is not None and ed_naive < now
-            except Exception:
-                is_completed = False
             events.append(ScheduleEvent(
                 round_number=int(row.get("RoundNumber", 0)),
                 country=str(row.get("Country", "")),
@@ -222,35 +272,38 @@ async def get_schedule(year: int) -> List[ScheduleEvent]:
 
 import asyncio
 
-def _load_session_sync(year: int, round_number: int, session_name: str = "Race", full=True):
-    """Load and cache a FastF1 session synchronously."""
-    cache_key = f"session_{year}_{round_number}_{session_name}_{full}"
+def _load_session_sync(year: int, round_number: int, session_name: str = "Race", 
+                       laps: bool = False, telemetry: bool = False, weather: bool = False, messages: bool = False):
+    """Load and cache a FastF1 session synchronously, loading only requested data channels."""
+    cache_key = f"session_{year}_{round_number}_{session_name}_{laps}_{telemetry}_{weather}_{messages}"
     if cache_key in _session_cache:
         return _session_cache[cache_key]
     try:
         session = fastf1.get_session(year, round_number, session_name)
-        if full:
-            session.load(telemetry=True, weather=True, messages=True, laps=True)
-        else:
-            session.load(telemetry=False, weather=False, messages=False, laps=False)
+        session.load(laps=laps, telemetry=telemetry, weather=weather, messages=messages)
         _session_cache[cache_key] = session
         return session
     except Exception as e:
         logger.error(f"_load_session error ({year} R{round_number} {session_name}): {e}")
         return None
 
-async def _load_session(year: int, round_number: int, session_name: str = "Race", full=True):
-    """Async wrapper with 2.5s timeout to prevent hanging endpoints."""
-    cache_key = f"session_{year}_{round_number}_{session_name}_{full}"
+async def _load_session(year: int, round_number: int, session_name: str = "Race", 
+                        laps: bool = False, telemetry: bool = False, weather: bool = False, messages: bool = False):
+    """Async wrapper with 30s timeout to prevent hanging endpoints, with granular data loading."""
+    cache_key = f"session_{year}_{round_number}_{session_name}_{laps}_{telemetry}_{weather}_{messages}"
     if cache_key in _session_cache:
         return _session_cache[cache_key]
     
     try:
-        return await asyncio.wait_for(asyncio.to_thread(_load_session_sync, year, round_number, session_name, full), timeout=30.0)
+        return await asyncio.wait_for(
+            asyncio.to_thread(_load_session_sync, year, round_number, session_name, laps, telemetry, weather, messages), 
+            timeout=30.0
+        )
     except asyncio.TimeoutError:
-        logger.warning(f"Session load timed out for {year} R{round_number}")
+        logger.warning(f"Session load timed out for {year} R{round_number} {session_name}")
         return None
     except Exception as e:
+        logger.error(f"_load_session async error ({year} R{round_number} {session_name}): {e}")
         return None
 
 
@@ -260,7 +313,7 @@ async def get_leaderboard(year: int, round_number: int, session_name: str = "Rac
         return _data_cache[cache_key]
 
     try:
-        session = await _load_session(year, round_number, session_name, full=False)
+        session = await _load_session(year, round_number, session_name, laps=False, telemetry=False, weather=False, messages=False)
         if session is None:
             # Do NOT return fake data — return empty list so frontend shows error state
             return []
@@ -296,7 +349,7 @@ async def get_laps(year: int, round_number: int, session_name: str = "Race",
         return _data_cache[cache_key]
 
     try:
-        session = await _load_session(year, round_number, session_name)
+        session = await _load_session(year, round_number, session_name, laps=True, telemetry=False, weather=False, messages=False)
         if session is None:
             return []
 
@@ -336,7 +389,7 @@ async def get_telemetry(year: int, round_number: int, session_name: str,
         return _data_cache[cache_key]
 
     try:
-        session = await _load_session(year, round_number, session_name)
+        session = await _load_session(year, round_number, session_name, laps=True, telemetry=True, weather=False, messages=False)
         if session is None:
             return []
 
@@ -390,7 +443,7 @@ async def get_weather(year: int, round_number: int, session_name: str = "Race") 
         return _data_cache[cache_key]
 
     try:
-        session = await _load_session(year, round_number, session_name, full=False)
+        session = await _load_session(year, round_number, session_name, laps=False, telemetry=False, weather=True, messages=False)
         if session is None or session.weather_data is None or session.weather_data.empty:
             return None  # Do NOT fabricate weather data
 
@@ -417,7 +470,7 @@ async def get_race_control(year: int, round_number: int, session_name: str = "Ra
         return _data_cache[cache_key]
 
     try:
-        session = await _load_session(year, round_number, session_name)
+        session = await _load_session(year, round_number, session_name, laps=False, telemetry=False, weather=False, messages=True)
         if session is None or session.race_control_messages is None:
             return []
 
@@ -444,7 +497,7 @@ async def get_drivers(year: int, round_number: int) -> List[Driver]:
         return _data_cache[cache_key]
 
     try:
-        session = await _load_session(year, round_number, "Race", full=False)
+        session = await _load_session(year, round_number, "Race", laps=False, telemetry=False, weather=False, messages=False)
         if session is None:
             return []
 
@@ -657,11 +710,14 @@ async def get_news() -> List[Dict[str, str]]:
 
 
 _ENGINE_SUPPLIER_COLORS: Dict[str, str] = {
-    "Mercedes": "#27F4D2",
-    "Ferrari":  "#E8002D",
-    "Ford RBPT":"#3671C6",
-    "Honda":    "#229971",
-    "Audi":     "#C0C0C0",
+    "Mercedes":   "#27F4D2",
+    "Ferrari":    "#E8002D",
+    "Ford RBPT":  "#3671C6",
+    "Honda":      "#229971",
+    "Audi":       "#C0C0C0",
+    "Honda RBPT": "#3671C6",
+    "Renault":    "#FF87BC",
+    "Other":      "#888888",
 }
 
 async def get_engine_standings(year: int):
@@ -669,25 +725,30 @@ async def get_engine_standings(year: int):
     if cache_key in _data_cache:
         return _data_cache[cache_key]
 
-    # 2026 Power Unit mappings — official FIA grid
-    ENGINE_MAP: Dict[str, str] = {
-        # Mercedes PU — Mercedes, McLaren, Alpine, Williams
-        "Mercedes":         "Mercedes",
-        "McLaren":          "Mercedes",
-        "Alpine":           "Mercedes",  # Alpine switched from Renault to Mercedes PU for 2026
-        "Williams":         "Mercedes",
-        # Ferrari PU — Ferrari, Haas, Cadillac
-        "Ferrari":          "Ferrari",
-        "Haas F1 Team":     "Ferrari",
-        "Cadillac":         "Ferrari",
-        # Ford RBPT PU — Red Bull Racing, Racing Bulls
-        "Red Bull Racing":  "Ford RBPT",
-        "Racing Bulls":     "Ford RBPT",  # was "RB"
-        # Honda PU — Aston Martin
-        "Aston Martin":     "Honda",
-        # Audi PU — Audi (was Kick Sauber)
-        "Audi":             "Audi",
-    }
+    # Year-aware Engine / Power Unit mappings
+    if year >= 2026:
+        ENGINE_MAP = {
+            "Mercedes": "Mercedes", "McLaren": "Mercedes", "Alpine": "Mercedes", "Williams": "Mercedes",
+            "Ferrari": "Ferrari", "Haas F1 Team": "Ferrari", "Cadillac": "Ferrari",
+            "Red Bull Racing": "Ford RBPT", "Racing Bulls": "Ford RBPT",
+            "Aston Martin": "Honda",
+            "Audi": "Audi"
+        }
+    elif year == 2025:
+        ENGINE_MAP = {
+            "Mercedes": "Mercedes", "McLaren": "Mercedes", "Williams": "Mercedes",
+            "Ferrari": "Ferrari", "Haas F1 Team": "Ferrari", "Audi": "Ferrari",
+            "Red Bull Racing": "Honda RBPT", "Racing Bulls": "Honda RBPT",
+            "Aston Martin": "Mercedes",
+            "Alpine": "Renault"
+        }
+    else: # 2024 and earlier
+        ENGINE_MAP = {
+            "Mercedes": "Mercedes", "McLaren": "Mercedes", "Williams": "Mercedes", "Aston Martin": "Mercedes",
+            "Ferrari": "Ferrari", "Haas F1 Team": "Ferrari", "Audi": "Ferrari",
+            "Red Bull Racing": "Honda RBPT", "Racing Bulls": "Honda RBPT",
+            "Alpine": "Renault"
+        }
     
     standings = await _fetch_jolpica_constructor_standings(year)
     engines: Dict[str, Any] = {}
