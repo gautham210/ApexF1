@@ -885,17 +885,46 @@ async def get_season_context(year: int) -> Dict[str, Any]:
             "current_round": 1, "latest_completed_race": None, "next_race": None,
         }
 
+    now = pd.Timestamp.utcnow().tz_localize(None)
+
+    # Filter schedule
     completed = sorted([e for e in schedule if e.is_completed], key=lambda x: x.round_number)
     upcoming = sorted([e for e in schedule if not e.is_completed], key=lambda x: x.round_number)
 
+    # Detect if we have an active weekend right now
+    active_event = None
+    try:
+        raw_schedule = fastf1.get_event_schedule(year, include_testing=False)
+        for event in schedule:
+            row = raw_schedule[raw_schedule["RoundNumber"] == event.round_number]
+            if not row.empty:
+                latest_row = row.iloc[0]
+                s1_date = pd.to_datetime(latest_row.get("Session1Date")).tz_localize(None) if pd.notna(latest_row.get("Session1Date")) else None
+                s5_date = pd.to_datetime(latest_row.get("Session5Date")).tz_localize(None) if pd.notna(latest_row.get("Session5Date")) else None
+                if s5_date:
+                    weekend_start = s1_date - pd.Timedelta(hours=6) if s1_date else s5_date - pd.Timedelta(days=2)
+                    weekend_end = s5_date + pd.Timedelta(hours=4)
+                    if weekend_start <= now <= weekend_end:
+                        active_event = event
+                        break
+    except Exception as e:
+        logger.error(f"Error checking active weekend in season context: {e}")
+
     latest_completed = completed[-1] if completed else None
-    next_race = upcoming[0] if upcoming else None
+    
+    if active_event:
+        # During an active weekend, the current round is the active round
+        current_round = active_event.round_number
+        next_race = active_event
+    else:
+        next_race = upcoming[0] if upcoming else None
+        current_round = latest_completed.round_number if latest_completed else (next_race.round_number if next_race else 1)
 
     ctx = {
         "year": year,
         "completed_rounds": len(completed),
         "total_rounds": len(schedule),
-        "current_round": latest_completed.round_number if latest_completed else (next_race.round_number if next_race else 1),
+        "current_round": current_round,
         "latest_completed_race": latest_completed.model_dump() if latest_completed else None,
         "next_race": next_race.model_dump() if next_race else None,
         # Include first 5 upcoming races for dashboard panel (avoids separate schedule fetch)

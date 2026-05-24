@@ -6,7 +6,7 @@ import {
   CartesianGrid, Tooltip, AreaChart, Area, ReferenceArea
 } from "recharts";
 import { f1Api } from "@/lib/api/client";
-import { useTelemetryStore, useSettingsStore, DRIVER_DATABASE, getDriverByYear } from "@/lib/store";
+import { useTelemetryStore, useSettingsStore, getDriversListByYear, getDriverByYear } from "@/lib/store";
 import { Activity, ChevronDown, RefreshCw } from "lucide-react";
 
 const DRIVER_COLOR_1 = "#e10600";
@@ -84,13 +84,7 @@ export default function TelemetryPage() {
   // User must explicitly press LOAD to trigger a fetch.
 
   const DriverSelect = ({ value, onChange, color }: { value: string; onChange: (v: string) => void; color: string }) => {
-    const db = Object.entries(
-      selectedYear >= 2026 ? DRIVER_DATABASE
-        : Object.fromEntries(
-            // filter to year-relevant numbers
-            Object.entries(DRIVER_DATABASE).filter(([n]) => n !== "33")
-          )
-    ).filter(([num]) => num !== "33");
+    const db = getDriversListByYear(selectedYear);
     return (
       <div className="relative flex items-center">
         <div className="w-2.5 h-2.5 rounded-full mr-[-24px] z-10" style={{ backgroundColor: color, boxShadow: `0 0 8px ${color}88` }} />
@@ -99,7 +93,7 @@ export default function TelemetryPage() {
           className="appearance-none pl-10 pr-8 py-2 rounded-xl text-xs font-rajdhani font-bold cursor-pointer outline-none transition-colors"
           style={{ background: "rgba(255,255,255,0.05)", border: `1px solid rgba(255,255,255,0.1)`, color: "#fff" }}
         >
-          {Object.entries(DRIVER_DATABASE).map(([num, d]) => (
+          {Object.entries(db).map(([num, d]) => (
             <option key={num} value={num} style={{ background: "#111" }}>{d.abbr} #{num}</option>
           ))}
         </select>

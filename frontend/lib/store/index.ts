@@ -48,6 +48,7 @@ const DRIVER_DB_2026: Record<string, DriverEntry> = {
   "5":  { abbr: "BOR", team: "Audi",             color: "#C0C0C0", name: "Gabriel Bortoleto" },
   "7":  { abbr: "DOO", team: "Alpine",            color: "#FF87BC", name: "Jack Doohan" },
   "10": { abbr: "GAS", team: "Alpine",            color: "#FF87BC", name: "Pierre Gasly" },
+  "11": { abbr: "PER", team: "Red Bull Racing",  color: "#3671C6", name: "Sergio Perez" },
   "12": { abbr: "ANT", team: "Mercedes",          color: "#27F4D2", name: "Kimi Antonelli" },
   "14": { abbr: "ALO", team: "Aston Martin",      color: "#229971", name: "Fernando Alonso" },
   "16": { abbr: "LEC", team: "Ferrari",           color: "#E8002D", name: "Charles Leclerc" },
@@ -57,11 +58,15 @@ const DRIVER_DB_2026: Record<string, DriverEntry> = {
   "27": { abbr: "HUL", team: "Haas F1 Team",     color: "#B6BABD", name: "Nico Hülkenberg" },
   "30": { abbr: "LAW", team: "Racing Bulls",      color: "#6692FF", name: "Liam Lawson" },
   "31": { abbr: "OCO", team: "Haas F1 Team",     color: "#B6BABD", name: "Esteban Ocon" },
+  "43": { abbr: "COL", team: "Alpine",            color: "#FF87BC", name: "Franco Colapinto" },
   "44": { abbr: "HAM", team: "Ferrari",           color: "#E8002D", name: "Lewis Hamilton" },
   "55": { abbr: "SAI", team: "Williams",          color: "#64C4FF", name: "Carlos Sainz" },
   "63": { abbr: "RUS", team: "Mercedes",          color: "#27F4D2", name: "George Russell" },
+  "77": { abbr: "BOT", team: "Audi",             color: "#C0C0C0", name: "Valtteri Bottas" },
   "81": { abbr: "PIA", team: "McLaren",           color: "#FF8000", name: "Oscar Piastri" },
   "87": { abbr: "BEA", team: "Haas F1 Team",     color: "#B6BABD", name: "Oliver Bearman" },
+  "98": { abbr: "HAD", team: "Red Bull Racing",  color: "#3671C6", name: "Isack Hadjar" },
+  "99": { abbr: "LIN", team: "Racing Bulls",      color: "#6692FF", name: "Arvid Lindblad" },
 };
 
 /** 2025 F1 Grid — Verstappen champion (#1) */
@@ -81,29 +86,41 @@ const DRIVER_DB_2025: Record<string, DriverEntry> = {
   "27": { abbr: "HUL", team: "Kick Sauber",      color: "#52E252", name: "Nico Hülkenberg" },
   "30": { abbr: "LAW", team: "RB",               color: "#6692FF", name: "Liam Lawson" },
   "31": { abbr: "OCO", team: "Haas F1 Team",     color: "#B6BABD", name: "Esteban Ocon" },
+  "43": { abbr: "COL", team: "Williams",          color: "#64C4FF", name: "Franco Colapinto" },
   "44": { abbr: "HAM", team: "Ferrari",           color: "#E8002D", name: "Lewis Hamilton" },
   "55": { abbr: "SAI", team: "Williams",          color: "#64C4FF", name: "Carlos Sainz" },
   "63": { abbr: "RUS", team: "Mercedes",          color: "#27F4D2", name: "George Russell" },
+  "77": { abbr: "BOT", team: "Kick Sauber",      color: "#52E252", name: "Valtteri Bottas" },
   "81": { abbr: "PIA", team: "McLaren",           color: "#FF8000", name: "Oscar Piastri" },
   "87": { abbr: "BEA", team: "Haas F1 Team",     color: "#B6BABD", name: "Oliver Bearman" },
+  "98": { abbr: "HAD", team: "Red Bull Racing",  color: "#3671C6", name: "Isack Hadjar" },
+  "99": { abbr: "LIN", team: "RB",               color: "#6692FF", name: "Arvid Lindblad" },
 };
 
 /** 2024 and earlier — Verstappen champion with #1, historical grid */
 const DRIVER_DB_HISTORICAL: Record<string, DriverEntry> = {
   "1":  { abbr: "VER", team: "Red Bull Racing",  color: "#3671C6", name: "Max Verstappen" },
+  "2":  { abbr: "SAR", team: "Williams",          color: "#64C4FF", name: "Logan Sargeant" },
+  "3":  { abbr: "RIC", team: "RB",               color: "#6692FF", name: "Daniel Ricciardo" },
   "4":  { abbr: "NOR", team: "McLaren",          color: "#FF8000", name: "Lando Norris" },
+  "10": { abbr: "GAS", team: "Alpine",            color: "#FF87BC", name: "Pierre Gasly" },
   "11": { abbr: "PER", team: "Red Bull Racing",  color: "#3671C6", name: "Sergio Perez" },
   "14": { abbr: "ALO", team: "Aston Martin",      color: "#229971", name: "Fernando Alonso" },
   "16": { abbr: "LEC", team: "Ferrari",           color: "#E8002D", name: "Charles Leclerc" },
   "18": { abbr: "STR", team: "Aston Martin",      color: "#229971", name: "Lance Stroll" },
+  "20": { abbr: "MAG", team: "Haas F1 Team",     color: "#B6BABD", name: "Kevin Magnussen" },
   "22": { abbr: "TSU", team: "RB",               color: "#6692FF", name: "Yuki Tsunoda" },
   "23": { abbr: "ALB", team: "Williams",          color: "#64C4FF", name: "Alexander Albon" },
+  "24": { abbr: "ZHO", team: "Kick Sauber",      color: "#52E252", name: "Zhou Guanyu" },
   "27": { abbr: "HUL", team: "Haas F1 Team",     color: "#B6BABD", name: "Nico Hülkenberg" },
   "31": { abbr: "OCO", team: "Alpine",            color: "#FF87BC", name: "Esteban Ocon" },
+  "43": { abbr: "COL", team: "Williams",          color: "#64C4FF", name: "Franco Colapinto" },
   "44": { abbr: "HAM", team: "Mercedes",          color: "#27F4D2", name: "Lewis Hamilton" },
   "55": { abbr: "SAI", team: "Ferrari",           color: "#E8002D", name: "Carlos Sainz" },
   "63": { abbr: "RUS", team: "Mercedes",          color: "#27F4D2", name: "George Russell" },
+  "77": { abbr: "BOT", team: "Kick Sauber",      color: "#52E252", name: "Valtteri Bottas" },
   "81": { abbr: "PIA", team: "McLaren",           color: "#FF8000", name: "Oscar Piastri" },
+  "87": { abbr: "BEA", team: "Ferrari",           color: "#E8002D", name: "Oliver Bearman" },
 };
 
 /** Canonical driver lookup — year-aware, never stale */
@@ -133,6 +150,10 @@ export function getDriverNumberByAbbr(year: number, abbr: string): string | null
     if (d.abbr === upper) return num;
   }
   return null;
+}
+
+export function getDriversListByYear(year: number): Record<string, DriverEntry> {
+  return year >= 2026 ? DRIVER_DB_2026 : year === 2025 ? DRIVER_DB_2025 : DRIVER_DB_HISTORICAL;
 }
 
 /** Default export for backward compat and dropdown rendering */
