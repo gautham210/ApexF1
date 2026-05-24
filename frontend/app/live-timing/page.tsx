@@ -428,9 +428,15 @@ export default function LiveTimingPage() {
         <div className="flex flex-col items-end gap-2">
           {/* Live indicator */}
           <div className="flex items-center gap-2.5 px-4 py-2 card">
-            <span className="status-live">Live</span>
-            {live.ws_connected && (
-              <span className="label-xs text-white/20">· WS</span>
+            {live.ws_connected ? (
+              <>
+                <span className="status-live">Live</span>
+                <span className="label-xs text-white/20">· WS Connected</span>
+              </>
+            ) : (
+              <span className="font-rajdhani text-amber-500 text-[10px] font-bold tracking-widest uppercase">
+                ⚠️ Live Data Not Available
+              </span>
             )}
           </div>
           {live.last_update && (

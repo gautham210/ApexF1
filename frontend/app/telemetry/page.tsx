@@ -10,7 +10,7 @@ import { useTelemetryStore, getDriversListByYear, getDriverByYear } from "@/lib/
 import { useSessionContext } from "@/lib/hooks/useSessionContext";
 import {
   Activity, ChevronDown, RefreshCw, Play, Pause,
-  RotateCcw, ShieldAlert, Cpu, Gauge, Zap, TrendingUp
+  RotateCcw, ShieldAlert, Cpu, Gauge, Zap, TrendingUp, Shield
 } from "lucide-react";
 
 const SESSIONS = ["FP1", "FP2", "FP3", "Qualifying", "Sprint", "Race"];
@@ -78,7 +78,7 @@ export default function TelemetryPage() {
 
   const {
     selectedYear, selectedRound, selectedSession, selectedLap,
-    setSelectedSession, setSelectedLap, raceLabel,
+    setSelectedSession, setSelectedLap, raceLabel, isArchive
   } = useSessionContext();
 
   const [loading, setLoading] = useState(false);
@@ -257,6 +257,35 @@ export default function TelemetryPage() {
       </div>
     );
   };
+
+  if (!isArchive) {
+    return (
+      <div className="p-4 lg:p-6 min-h-screen max-w-[1600px] mx-auto flex items-center justify-center animate-fade-up">
+        <div className="glass rounded-3xl p-8 max-w-md text-center border border-white/5 space-y-6">
+          <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mx-auto animate-pulse">
+            <Shield className="w-8 h-8 text-amber-500" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="font-orbitron font-bold text-white text-base tracking-widest uppercase">
+              TELEMETRY RESERVED FOR HISTORICAL REPLAYS
+            </h2>
+            <p className="font-rajdhani text-white/40 text-xs tracking-wider uppercase">
+              ACTIVE GP WEEKEND · {raceLabel.toUpperCase()}
+            </p>
+          </div>
+          <p className="font-rajdhani text-white/50 text-xs leading-relaxed">
+            Lap-by-lap physical telemetric captures are compiled and calibrated following the final checkered flag of the race.
+          </p>
+          <div className="bg-white/5 p-4 rounded-xl border border-white/5 text-left">
+            <p className="text-[9px] text-white/40 font-rajdhani font-black uppercase tracking-widest mb-1.5">Action Required</p>
+            <p className="text-[11px] text-white/60 font-rajdhani leading-relaxed">
+              Use the Year and Calendar controls in the top navigation to select any completed historical F1 session (e.g. 2025 or finished rounds of the current year) to access interactive telemetry.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 lg:p-6 min-h-screen max-w-[1600px] mx-auto space-y-6">

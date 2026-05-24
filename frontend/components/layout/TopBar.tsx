@@ -2,6 +2,7 @@
 import { Search, Radio, Archive, Clock } from "lucide-react";
 import { useSettingsStore } from "@/lib/store";
 import { useSessionContext } from "@/lib/hooks/useSessionContext";
+import { useLiveSession } from "@/lib/hooks/useLiveSession";
 import { usePathname } from "next/navigation";
 
 const PAGE_LABELS: Record<string, string> = {
@@ -15,6 +16,7 @@ const PAGE_LABELS: Record<string, string> = {
 export default function TopBar() {
   const { setCommandPalette } = useSettingsStore();
   const { selectedYear, selectedSession, currentRace, isArchive, isLiveWeekend, raceLabel } = useSessionContext();
+  const live = useLiveSession();
   const pathname = usePathname();
   const pageLabel = PAGE_LABELS[pathname] ?? pathname.replace("/", "").replace("-", " ").toUpperCase();
 
@@ -55,10 +57,21 @@ export default function TopBar() {
               <Archive className="w-3 h-3" />
               Archive
             </span>
+          ) : live.is_live ? (
+            live.ws_connected ? (
+              <span className="status-live">Live</span>
+            ) : (
+              <span className="flex items-center gap-1 px-2.5 py-1 rounded bg-amber-400/10 border border-amber-400/20 font-orbitron text-[9px] font-bold text-amber-400 uppercase tracking-widest animate-pulse">
+                ⚠️ Live Data Not Available
+              </span>
+            )
           ) : isLiveWeekend ? (
-            <span className="status-live">Live</span>
+            <span className="flex items-center gap-1.5 label-xs border border-white/10 px-2 py-0.5 rounded bg-white/[0.02] text-white/50">
+              <Clock className="w-3 h-3" />
+              ACTIVE WEEKEND
+            </span>
           ) : (
-            <span className="flex items-center gap-1.5 label-xs">
+            <span className="flex items-center gap-1.5 label-xs text-white/30">
               <Clock className="w-3 h-3" />
               Upcoming
             </span>

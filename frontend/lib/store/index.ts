@@ -32,9 +32,23 @@ export interface TelemetryPoint {
   gear?: number; drs?: number; distance?: number; x?: number; y?: number; z?: number;
 }
 export interface ScheduleEvent {
-  round_number: number; country: string; location: string; event_name: string;
-  event_date?: string; session1_date?: string; session5?: string; session5_date?: string;
-  is_completed: boolean; is_upcoming: boolean;
+  round_number: number;
+  country: string;
+  location: string;
+  event_name: string;
+  event_date?: string;
+  session1?: string;
+  session1_date?: string;
+  session2?: string;
+  session2_date?: string;
+  session3?: string;
+  session3_date?: string;
+  session4?: string;
+  session4_date?: string;
+  session5?: string;
+  session5_date?: string;
+  is_completed: boolean;
+  is_upcoming: boolean;
 }
 
 // ─── Driver Database (Year-Aware) ────────────────────────────────────────────
@@ -120,30 +134,128 @@ const DRIVER_DB_HISTORICAL: Record<string, DriverEntry> = {
   "87": { abbr: "BEA", team: "Ferrari",           color: "#E8002D", name: "Oliver Bearman" },
 };
 
+export interface CanonicalDriver {
+  number: string;
+  name: string;
+  abbr: string;
+  team: string;
+  color: string;
+  nationality: string;
+  aliases: string[];
+}
+
+export const CANONICAL_DRIVERS: CanonicalDriver[] = [
+  { number: "1", name: "Max Verstappen", abbr: "VER", team: "Red Bull Racing", color: "#3671C6", nationality: "Dutch", aliases: ["verstappen", "mverstappen", "maxverstappen"] },
+  { number: "3", name: "Max Verstappen", abbr: "VER", team: "Red Bull Racing", color: "#3671C6", nationality: "Dutch", aliases: ["verstappen", "mverstappen", "maxverstappen"] },
+  { number: "4", name: "Lando Norris", abbr: "NOR", team: "McLaren", color: "#FF8000", nationality: "British", aliases: ["norris", "lnorris", "landonorris"] },
+  { number: "11", name: "Sergio Perez", abbr: "PER", team: "Red Bull Racing", color: "#3671C6", nationality: "Mexican", aliases: ["perez", "sperez", "sergioperez", "pere", "perezs", "perezmendoza", "sergioperezmendoza"] },
+  { number: "16", name: "Charles Leclerc", abbr: "LEC", team: "Ferrari", color: "#E8002D", nationality: "Monegasque", aliases: ["leclerc", "cleclerc", "charlesleclerc"] },
+  { number: "55", name: "Carlos Sainz", abbr: "SAI", team: "Williams", color: "#64C4FF", nationality: "Spanish", aliases: ["sainz", "csainz", "carlossainz"] },
+  { number: "44", name: "Lewis Hamilton", abbr: "HAM", team: "Ferrari", color: "#E8002D", nationality: "British", aliases: ["hamilton", "lhamilton", "lewishamilton"] },
+  { number: "63", name: "George Russell", abbr: "RUS", team: "Mercedes", color: "#27F4D2", nationality: "British", aliases: ["russell", "grussell", "georgerussell"] },
+  { number: "81", name: "Oscar Piastri", abbr: "PIA", team: "McLaren", color: "#FF8000", nationality: "Australian", aliases: ["piastri", "opiastri", "oscarpiastri"] },
+  { number: "14", name: "Fernando Alonso", abbr: "ALO", team: "Aston Martin", color: "#229971", nationality: "Spanish", aliases: ["alonso", "falonso", "fernandoalonso"] },
+  { number: "18", name: "Lance Stroll", abbr: "STR", team: "Aston Martin", color: "#229971", nationality: "Canadian", aliases: ["stroll", "lstroll", "lancestroll"] },
+  { number: "10", name: "Pierre Gasly", abbr: "GAS", team: "Alpine", color: "#FF87BC", nationality: "French", aliases: ["gasly", "pgasly", "pierregasly"] },
+  { number: "31", name: "Esteban Ocon", abbr: "OCO", team: "Haas F1 Team", color: "#B6BABD", nationality: "French", aliases: ["ocon", "eocon", "estebanocon"] },
+  { number: "22", name: "Yuki Tsunoda", abbr: "TSU", team: "Racing Bulls", color: "#6692FF", nationality: "Japanese", aliases: ["tsunoda", "ytsunoda", "yukitsunoda"] },
+  { number: "23", name: "Alexander Albon", abbr: "ALB", team: "Williams", color: "#64C4FF", nationality: "Thai", aliases: ["albon", "aalbon", "alexanderalbon"] },
+  { number: "77", name: "Valtteri Bottas", abbr: "BOT", team: "Audi", color: "#C0C0C0", nationality: "Finnish", aliases: ["bottas", "vbottas", "valtteribottas"] },
+  { number: "27", name: "Nico Hulkenberg", abbr: "HUL", team: "Haas F1 Team", color: "#B6BABD", nationality: "German", aliases: ["hulkenberg", "nhulkenberg", "nicohulkenberg", "huelkenberg"] },
+  { number: "43", name: "Franco Colapinto", abbr: "COL", team: "Alpine", color: "#FF87BC", nationality: "Argentinian", aliases: ["colapinto", "fcolapinto", "francocolapinto"] },
+  { number: "87", name: "Oliver Bearman", abbr: "BEA", team: "Haas F1 Team", color: "#B6BABD", nationality: "British", aliases: ["bearman", "obearman", "oliverbearman"] },
+  { number: "12", name: "Kimi Antonelli", abbr: "ANT", team: "Mercedes", color: "#27F4D2", nationality: "Italian", aliases: ["antonelli", "kantonelli", "kimiantonelli", "andreakimiantonelli"] },
+  { number: "5", name: "Gabriel Bortoleto", abbr: "BOR", team: "Audi", color: "#C0C0C0", nationality: "Brazilian", aliases: ["bortoleto", "gbortoleto", "gabrielbortoleto"] },
+  { number: "7", name: "Jack Doohan", abbr: "DOO", team: "Alpine", color: "#FF87BC", nationality: "Australian", aliases: ["doohan", "jdoohan", "jackdoohan"] },
+  { number: "30", name: "Liam Lawson", abbr: "LAW", team: "Racing Bulls", color: "#6692FF", nationality: "New Zealander", aliases: ["lawson", "llawson", "liamlawson"] },
+  { number: "20", name: "Kevin Magnussen", abbr: "MAG", team: "Haas F1 Team", color: "#B6BABD", nationality: "Danish", aliases: ["magnussen", "kmagnussen", "kevinmagnussen"] },
+  { number: "24", name: "Zhou Guanyu", abbr: "ZHO", team: "Kick Sauber", color: "#52E252", nationality: "Chinese", aliases: ["zhou", "guanyuzhou", "zhouguanyu"] },
+  { number: "2", name: "Logan Sargeant", abbr: "SAR", team: "Williams", color: "#64C4FF", nationality: "American", aliases: ["sargeant", "lsargeant", "logansargeant"] },
+  { number: "3", name: "Daniel Ricciardo", abbr: "RIC", team: "RB", color: "#6692FF", nationality: "Australian", aliases: ["ricciardo", "dricciardo", "danielricciardo"] }
+];
+
+function cleanString(str: string): string {
+  if (!str) return "";
+  return str
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // strip diacritic accents (e.g. Pérez -> Perez)
+    .replace(/[^a-z0-9]/g, "") // strip spaces and punctuation
+    .trim();
+}
+
 export function getDriverByYear(year: number, driverNumber: string): DriverEntry {
+  const match = CANONICAL_DRIVERS.find(d => d.number === driverNumber);
+  if (match) {
+    return {
+      abbr: match.abbr,
+      team: match.team,
+      color: match.color,
+      name: match.name
+    };
+  }
+
   const db = year >= 2026 ? DRIVER_DB_2026 : year === 2025 ? DRIVER_DB_2025 : DRIVER_DB_HISTORICAL;
   return db[driverNumber] || { abbr: `#${driverNumber}`, team: "Unknown", color: "#888888", name: `Driver #${driverNumber}` };
 }
+
 export function getDriverNumberByName(year: number, fullName: string): string | null {
-  const db = year >= 2026 ? DRIVER_DB_2026 : year === 2025 ? DRIVER_DB_2025 : DRIVER_DB_HISTORICAL;
-  const normalised = fullName.toLowerCase().trim();
-  for (const [num, d] of Object.entries(db)) {
-    if (d.name.toLowerCase() === normalised) return num;
-    const lastName = d.name.split(" ").pop()?.toLowerCase();
-    if (lastName && normalised.endsWith(lastName)) return num;
+  if (!fullName) return null;
+  const target = cleanString(fullName);
+
+  // 1. Try canonical drivers aliases/name matches
+  for (const d of CANONICAL_DRIVERS) {
+    if (cleanString(d.name) === target) return d.number;
+    if (d.aliases.some(alias => cleanString(alias) === target)) return d.number;
   }
+
+  // 2. Try partial last-name match
+  for (const d of CANONICAL_DRIVERS) {
+    const lastName = cleanString(d.name.split(" ").pop() || "");
+    if (lastName && (target.endsWith(lastName) || target === lastName)) {
+      return d.number;
+    }
+  }
+
+  // 3. Fall back to year-specific DB match
+  const db = year >= 2026 ? DRIVER_DB_2026 : year === 2025 ? DRIVER_DB_2025 : DRIVER_DB_HISTORICAL;
+  for (const [num, d] of Object.entries(db)) {
+    const canonicalName = cleanString(d.name);
+    if (canonicalName === target) return num;
+    
+    const lastName = cleanString(d.name.split(" ").pop() || "");
+    if (lastName && (target.endsWith(lastName) || target === lastName)) {
+      return num;
+    }
+  }
+
   return null;
 }
+
 export function getDriverNumberByAbbr(year: number, abbr: string): string | null {
+  if (!abbr) return null;
+  const upper = cleanString(abbr).toUpperCase();
+
+  // 1. Try canonical registry
+  const match = CANONICAL_DRIVERS.find(d => d.abbr.toUpperCase() === upper);
+  if (match) return match.number;
+
+  // 2. Try year-aware DB
   const db = year >= 2026 ? DRIVER_DB_2026 : year === 2025 ? DRIVER_DB_2025 : DRIVER_DB_HISTORICAL;
-  const upper = abbr.toUpperCase();
   for (const [num, d] of Object.entries(db)) {
-    if (d.abbr === upper) return num;
+    if (cleanString(d.abbr).toUpperCase() === upper) return num;
   }
+
   return null;
 }
+
 export function getDriversListByYear(year: number): Record<string, DriverEntry> {
-  return year >= 2026 ? DRIVER_DB_2026 : year === 2025 ? DRIVER_DB_2025 : DRIVER_DB_HISTORICAL;
+  const db = year >= 2026 ? DRIVER_DB_2026 : year === 2025 ? DRIVER_DB_2025 : DRIVER_DB_HISTORICAL;
+  // Make sure Perez is present in the list returned
+  if (year >= 2025 && !db["11"]) {
+    db["11"] = { abbr: "PER", team: "Red Bull Racing", color: "#3671C6", name: "Sergio Perez" };
+  }
+  return db;
 }
 export const DRIVER_DATABASE = DRIVER_DB_2026;
 

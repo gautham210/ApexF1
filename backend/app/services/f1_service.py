@@ -925,6 +925,7 @@ async def get_season_context(year: int) -> Dict[str, Any]:
         "completed_rounds": len(completed),
         "total_rounds": len(schedule),
         "current_round": current_round,
+        "is_active_weekend": active_event is not None,
         "latest_completed_race": latest_completed.model_dump() if latest_completed else None,
         "next_race": next_race.model_dump() if next_race else None,
         # Include first 5 upcoming races for dashboard panel (avoids separate schedule fetch)
