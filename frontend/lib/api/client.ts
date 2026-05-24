@@ -1,6 +1,6 @@
 import axios from "axios";
 
-let BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+let BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://apexf1-api.onrender.com";
 
 export const api = axios.create({
   baseURL: BASE_URL,
@@ -8,14 +8,14 @@ export const api = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
-// Automatic fallback and retry for port 8000/8001
+// Automatic fallback and retry for port 8000/8001 (only in local development)
 api.interceptors.response.use(
   (res) => res.data,
   async (err) => {
     const config = err.config;
     if (!config) return Promise.reject(err);
     
-    // If connection refused on 8000, fallback to 8001
+    // If connection refused on local development, fallback to 8001
     if (err.message === "Network Error" && BASE_URL === "http://localhost:8000" && !config._retried) {
       config._retried = true;
       BASE_URL = "http://localhost:8001";
