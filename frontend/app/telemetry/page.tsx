@@ -1,12 +1,13 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { motion } from "framer-motion";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis,
-  CartesianGrid, Tooltip, AreaChart, Area, ReferenceArea
+  CartesianGrid, Tooltip, AreaChart, Area,
 } from "recharts";
 import { f1Api } from "@/lib/api/client";
-import { useTelemetryStore, useSettingsStore, getDriversListByYear, getDriverByYear } from "@/lib/store";
+import { useTelemetryStore, getDriversListByYear } from "@/lib/store";
+import { useSessionContext } from "@/lib/hooks/useSessionContext";
 import { Activity, ChevronDown, RefreshCw } from "lucide-react";
 
 const DRIVER_COLOR_1 = "#e10600";
@@ -62,7 +63,10 @@ function ChartSection({ title, d1, d2, dataKey, color1 = DRIVER_COLOR_1, color2 
 
 export default function TelemetryPage() {
   const { driver1, driver2, driver1Data, driver2Data, setDriver1, setDriver2, setDriver1Data, setDriver2Data } = useTelemetryStore();
-  const { selectedYear, selectedRound, selectedSession, selectedLap, setSelectedSession, setSelectedLap, currentRace } = useSettingsStore();
+  const {
+    selectedYear, selectedRound, selectedSession, selectedLap,
+    setSelectedSession, setSelectedLap, raceLabel,
+  } = useSessionContext();
   const [loading, setLoading] = useState(false);
   const [loadedAt, setLoadedAt] = useState<string | null>(null);
 
@@ -117,7 +121,7 @@ export default function TelemetryPage() {
             <span className="w-1 h-1 rounded-full bg-white/20" />
             <span>Round {selectedRound}</span>
             <span className="w-1 h-1 rounded-full bg-white/20" />
-            <span className="text-white/80">{currentRace?.event_name || currentRace?.location || "—"}</span>
+            <span className="text-white/80">{raceLabel}</span>
             {loadedAt && (
               <><span className="w-1 h-1 rounded-full bg-white/20" />
               <span className="text-green-400/70">Loaded {loadedAt}</span></>

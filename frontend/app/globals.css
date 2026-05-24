@@ -1,75 +1,80 @@
 @import "tailwindcss";
 
 @theme {
-  /* Colors */
-  --color-apex-red: #e10600;
-  --color-apex-red-dark: #cc0500;
-  --color-apex-bg: #09090b; /* zinc-950 */
-  --color-apex-surface: #18181b; /* zinc-900 */
-  --color-apex-surface-2: #27272a; /* zinc-800 */
-  --color-apex-surface-3: #3f3f46; /* zinc-700 */
-  --color-apex-text: #f4f4f5; /* zinc-50 */
-  --color-apex-muted: #a1a1aa; /* zinc-400 */
-  --color-apex-border: #27272a; /* zinc-800 */
+  /* ── Brand Colors ──────────────────────────────────────────── */
+  --color-apex-red:       #e10600;
+  --color-apex-red-dark:  #b00400;
+  --color-apex-bg:        #080810;
+  --color-apex-surface:   #0f0f1a;
+  --color-apex-surface-2: #16162a;
+  --color-apex-surface-3: #1e1e35;
+  --color-apex-text:      #f0f0f8;
+  --color-apex-muted:     #8888aa;
+  --color-apex-border:    #1e1e35;
 
-  /* Team colors */
-  --color-team-redbull: #3671C6;
-  --color-team-ferrari: #E8002D;
-  --color-team-mercedes: #27F4D2;
-  --color-team-mclaren: #FF8000;
-  --color-team-astonmartin: #229971;
-  --color-team-alpine: #FF87BC;
-  --color-team-williams: #64C4FF;
-  --color-team-rb: #6692FF;
-  --color-team-sauber: #52E252;
-  --color-team-haas: #B6BABD;
+  /* ── Team Colors ───────────────────────────────────────────── */
+  --color-team-redbull:    #3671C6;
+  --color-team-ferrari:    #E8002D;
+  --color-team-mercedes:   #27F4D2;
+  --color-team-mclaren:    #FF8000;
+  --color-team-astonmartin:#229971;
+  --color-team-alpine:     #FF87BC;
+  --color-team-williams:   #64C4FF;
+  --color-team-rb:         #6692FF;
+  --color-team-sauber:     #52E252;
+  --color-team-haas:       #B6BABD;
 
-  /* Fonts */
-  --font-family-sans: 'Inter', system-ui, sans-serif;
-  --font-family-orbitron: 'Inter', system-ui, sans-serif; /* Fallback to clean sans */
-  --font-family-rajdhani: 'Inter', system-ui, sans-serif;
+  /* ── Fonts ─────────────────────────────────────────────────── */
+  --font-family-sans:     'Inter', system-ui, sans-serif;
+  --font-family-orbitron: 'Orbitron', 'Inter', system-ui, sans-serif;
+  --font-family-rajdhani: 'Rajdhani', 'Inter', system-ui, sans-serif;
+  --font-family-mono:     'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
 
-  /* Box shadows */
-  --shadow-card: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-
-  /* Animations */
-  --animate-shimmer: shimmer 1.5s infinite;
+  /* ── Animations ────────────────────────────────────────────── */
+  --animate-shimmer: shimmer 1.6s ease-in-out infinite;
+  --animate-pulse-dot: pulse-dot 1.4s ease-in-out infinite;
+  --animate-scan: scan 2s linear infinite;
 
   @keyframes shimmer {
     from { background-position: -200% 0; }
-    to { background-position: 200% 0; }
+    to   { background-position:  200% 0; }
+  }
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%       { opacity: 0.4; transform: scale(0.8); }
+  }
+  @keyframes scan {
+    from { transform: translateX(-100%); }
+    to   { transform: translateX(400%); }
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateX(-12px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0; }
   }
 }
 
-:root {
-  --apex-red: #e10600;
-  --apex-red-dark: #cc0500;
-  --apex-bg: #09090b;
-  --apex-surface: #18181b;
-  --apex-surface-2: #27272a;
-  --apex-border: #27272a;
-  --apex-text: #f4f4f5;
-  --apex-text-muted: #a1a1aa;
-}
-
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+/* ── Reset ────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html {
   scroll-behavior: smooth;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   height: 100%;
+  font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
 }
 
 body {
-  background-color: var(--apex-bg);
-  color: var(--apex-text);
+  background-color: #080810;
+  color: #f0f0f8;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   min-height: 100vh;
   height: 100%;
@@ -77,66 +82,193 @@ body {
   line-height: 1.5;
 }
 
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: var(--apex-bg); }
-::-webkit-scrollbar-thumb { background: var(--apex-surface-3); border-radius: 3px; }
+/* ── Scrollbar ────────────────────────────────────────────────── */
+::-webkit-scrollbar       { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); }
 
-::selection { background: var(--apex-red); color: white; }
+::selection { background: #e10600; color: white; }
+*:focus-visible { outline: 1px solid #e10600; outline-offset: 2px; }
 
-*:focus-visible {
-  outline: 2px solid var(--apex-red);
-  outline-offset: 2px;
+/* ── Typography — Real Fonts ──────────────────────────────────── */
+.font-orbitron {
+  font-family: 'Orbitron', system-ui, sans-serif !important;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+.font-rajdhani {
+  font-family: 'Rajdhani', system-ui, sans-serif !important;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+.font-mono-timing {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace !important;
+  font-variant-numeric: tabular-nums;
 }
 
-/* Minimal card */
+/* ── Broadcast-grade timing display ──────────────────────────── */
+.timing-mono {
+  font-family: 'Orbitron', monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+}
+
+/* ── Glass surfaces ───────────────────────────────────────────── */
 .glass {
-  background: rgba(20, 20, 23, 0.6);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 0.75rem;
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.03), 0 4px 24px -4px rgba(0, 0, 0, 0.6);
+  background: rgba(12, 12, 22, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 8px 32px rgba(0, 0, 0, 0.5);
 }
-
 .glass-strong {
-  background: rgba(20, 20, 23, 0.85);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 0.75rem;
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.04), 0 4px 24px -4px rgba(0, 0, 0, 0.8);
+  background: rgba(8, 8, 20, 0.9);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 16px 48px rgba(0, 0, 0, 0.7);
 }
 
-.ambient-bg {
-  background-color: var(--apex-bg);
+/* ── Surface cards ────────────────────────────────────────────── */
+.card {
+  background: rgba(15, 15, 26, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.card:hover {
+  border-color: rgba(255, 255, 255, 0.10);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 }
 
+/* ── Status Indicators ────────────────────────────────────────── */
+.status-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'Rajdhani', sans-serif;
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #4ade80;
+}
+.status-live::before {
+  content: "";
+  display: block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 8px rgba(74, 222, 128, 0.8);
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}
+.status-archive {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'Rajdhani', sans-serif;
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #60a5fa;
+}
+
+/* ── Skeleton ─────────────────────────────────────────────────── */
 .skeleton {
   background: linear-gradient(
     90deg,
-    var(--apex-surface-2) 25%,
-    var(--apex-surface-3) 50%,
-    var(--apex-surface-2) 75%
+    rgba(255,255,255,0.03) 25%,
+    rgba(255,255,255,0.07) 50%,
+    rgba(255,255,255,0.03) 75%
   );
   background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
-  border-radius: 0.375rem;
+  animation: shimmer 1.6s ease-in-out infinite;
+  border-radius: 6px;
 }
 
-/* Typography utilities mapped to clean sans-serif */
-.font-orbitron { font-family: 'Inter', sans-serif !important; font-weight: 600; font-variant-numeric: tabular-nums; }
-.font-rajdhani { font-family: 'Inter', sans-serif !important; font-weight: 500; font-variant-numeric: tabular-nums; }
+/* ── Scan line effect (broadcast) ──────────────────────────────── */
+.scan-line::after {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(225,6,0,0.4), transparent);
+  animation: scan 2s linear infinite;
+  pointer-events: none;
+}
 
-.bg-apex-bg { background-color: var(--apex-bg) !important; }
-.bg-apex-surface { background-color: var(--apex-surface) !important; }
-.bg-apex-surface-2 { background-color: var(--apex-surface-2) !important; }
-.bg-apex-surface-3 { background-color: var(--apex-surface-3) !important; }
-.bg-apex-red { background-color: var(--apex-red) !important; }
+/* ── Ambient background ────────────────────────────────────────── */
+.ambient-bg {
+  background: #080810;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 20% 0%, rgba(225,6,0,0.04) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 40% at 80% 100%, rgba(54,113,198,0.04) 0%, transparent 60%);
+}
 
-.text-apex-text { color: var(--apex-text) !important; }
-.text-apex-muted { color: var(--apex-text-muted) !important; }
-.text-apex-red { color: var(--apex-red) !important; }
+/* ── Data table rows ───────────────────────────────────────────── */
+.timing-row {
+  display: grid;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  transition: background 0.15s;
+}
+.timing-row:hover { background: rgba(255, 255, 255, 0.025); }
+.timing-row:last-child { border-bottom: none; }
 
-.border-apex-border { border-color: var(--apex-border) !important; }
-.border-apex-red { border-color: var(--apex-red) !important; }
+/* ── Team bar accent ───────────────────────────────────────────── */
+.team-bar {
+  width: 3px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
 
+/* ── Section labels ───────────────────────────────────────────── */
+.label-xs {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.35);
+}
+.label-sm {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.5);
+}
+
+/* ── Utility aliases ───────────────────────────────────────────── */
+.bg-apex-bg      { background-color: #080810 !important; }
+.bg-apex-surface { background-color: #0f0f1a !important; }
+.bg-apex-red     { background-color: #e10600 !important; }
+.text-apex-text  { color: #f0f0f8 !important; }
+.text-apex-muted { color: #8888aa !important; }
+.text-apex-red   { color: #e10600 !important; }
+.border-apex-red { border-color: #e10600 !important; }
+.border-apex-border { border-color: #1e1e35 !important; }
+
+/* ── Hide scrollbar (inline) ───────────────────────────────────── */
+.hide-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+
+/* ── Fade-up animation ─────────────────────────────────────────── */
+.animate-fade-up {
+  animation: fadeUp 0.4s ease forwards;
+}
+.animate-slide-in {
+  animation: slideIn 0.3s ease forwards;
+}
+.animate-blink {
+  animation: blink 1s step-end infinite;
+}

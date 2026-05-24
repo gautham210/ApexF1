@@ -1,39 +1,92 @@
 "use client";
-import { Search } from "lucide-react";
+import { Search, Radio, Archive, Clock } from "lucide-react";
 import { useSettingsStore } from "@/lib/store";
+import { useSessionContext } from "@/lib/hooks/useSessionContext";
 import { usePathname } from "next/navigation";
 
-export default function TopBar() {
-  const { selectedYear, currentRace, selectedSession, setCommandPalette } = useSettingsStore();
-  const pathname = usePathname();
-  const pageName = pathname === "/" ? "Dashboard"
-    : pathname.replace("/", "").charAt(0).toUpperCase() + pathname.slice(2).replace("-", " ");
+const PAGE_LABELS: Record<string, string> = {
+  "/":            "Dashboard",
+  "/sessions":    "Sessions",
+  "/live-timing": "Live Timing",
+  "/telemetry":   "Telemetry",
+  "/standings":   "Standings",
+};
 
-  // Canonical race label — use event_name or location, NEVER country (country="United States" for Miami)
-  const raceLabel = currentRace?.event_name || currentRace?.location || currentRace?.country || "—";
+export default function TopBar() {
+  const { setCommandPalette } = useSettingsStore();
+  const { selectedYear, selectedSession, currentRace, isArchive, isLiveWeekend, raceLabel } = useSessionContext();
+  const pathname = usePathname();
+  const pageLabel = PAGE_LABELS[pathname] ?? pathname.replace("/", "").replace("-", " ").toUpperCase();
 
   return (
-    <header className="h-14 flex items-center justify-between px-6 border-b border-white/10 bg-black/40 backdrop-blur-md flex-shrink-0 z-40 sticky top-0">
-      <div className="flex items-center text-sm text-apex-muted gap-2">
-        <span className="font-semibold text-white/90">{selectedYear}</span>
-        <span className="text-white/20">•</span>
-        <span className="text-white/70">{raceLabel}</span>
-        <span className="text-white/20">•</span>
-        <span className="text-apex-red font-medium">{selectedSession}</span>
-        <span className="text-white/20">•</span>
-        <span className="text-white/50">{pageName}</span>
+    <header className="h-12 flex items-center justify-between border-b border-white/[0.06] bg-[#080810]/80 backdrop-blur-xl flex-shrink-0 z-40 sticky top-0" style={{ paddingInline: "20px" }}>
+
+      {/* ── Left: Breadcrumb context ribbon ── */}
+      <div className="flex items-center gap-0 min-w-0 overflow-hidden">
+
+        {/* Year badge */}
+        <span className="font-orbitron text-[11px] font-bold text-white/30 tracking-widest mr-3 flex-shrink-0">
+          {selectedYear}
+        </span>
+
+        {/* Separator */}
+        <span className="text-white/10 mr-3 text-xs">·</span>
+
+        {/* Race label */}
+        <span className="font-rajdhani font-bold text-[13px] text-white/80 tracking-wide truncate max-w-[220px] mr-3">
+          {raceLabel}
+        </span>
+
+        {/* Separator */}
+        <span className="text-white/10 mr-3 text-xs hidden sm:block">·</span>
+
+        {/* Session */}
+        <span className="font-rajdhani font-bold text-[12px] text-apex-red tracking-widest uppercase mr-3 flex-shrink-0 hidden sm:block">
+          {selectedSession}
+        </span>
+
+        {/* Separator */}
+        <span className="text-white/10 mr-3 text-xs hidden md:block">·</span>
+
+        {/* Mode indicator */}
+        <span className="hidden md:flex items-center gap-1.5 flex-shrink-0">
+          {isArchive ? (
+            <span className="status-archive">
+              <Archive className="w-3 h-3" />
+              Archive
+            </span>
+          ) : isLiveWeekend ? (
+            <span className="status-live">Live</span>
+          ) : (
+            <span className="flex items-center gap-1.5 label-xs">
+              <Clock className="w-3 h-3" />
+              Upcoming
+            </span>
+          )}
+        </span>
       </div>
 
-      <div className="flex items-center gap-4">
+      {/* ── Right: Page label + search ── */}
+      <div className="flex items-center gap-3 flex-shrink-0">
+
+        {/* Page label pill */}
+        <span className="hidden lg:block label-xs border border-white/10 px-2.5 py-1 rounded-md bg-white/[0.03]">
+          {pageLabel}
+        </span>
+
+        {/* Search */}
         <button
+          id="topbar-search"
           onClick={() => setCommandPalette(true)}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white/50 hover:bg-white/10 hover:text-white transition-all duration-300"
+          className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.07] text-white/40 hover:bg-white/[0.08] hover:text-white/80 transition-all duration-200"
         >
-          <Search className="w-4 h-4" />
-          <span className="text-sm hidden md:block w-32 text-left">Search...</span>
-          <span className="text-[10px] border border-white/10 px-1.5 py-0.5 rounded text-white/30 hidden md:block">⌘K</span>
+          <Search className="w-3.5 h-3.5" />
+          <span className="text-[12px] font-rajdhani hidden md:block w-28 text-left">Search...</span>
+          <kbd className="text-[9px] border border-white/10 px-1.5 py-0.5 rounded text-white/25 hidden md:block font-mono">⌘K</kbd>
         </button>
-        <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold bg-gradient-to-br from-apex-red to-red-800 text-white shadow-[0_0_15px_rgba(224,0,45,0.4)] border border-white/10">
+
+        {/* Avatar */}
+        <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold bg-gradient-to-br from-apex-red to-red-900 text-white border border-white/10 shadow-[0_0_12px_rgba(225,6,0,0.3)] font-orbitron flex-shrink-0">
           F1
         </div>
       </div>

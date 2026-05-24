@@ -2,345 +2,338 @@
 import { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { f1Api } from "@/lib/api/client";
-import { useLiveStore, useSettingsStore } from "@/lib/store";
+import { useLiveStore } from "@/lib/store";
+import { useSessionContext } from "@/lib/hooks/useSessionContext";
 import {
   Radio, WifiOff, Thermometer, Wind, Droplets, CloudRain,
-  Play, Pause, SkipForward, SkipBack, Clock, Archive, Info
+  Archive, Clock, ChevronDown,
 } from "lucide-react";
 
-const COMPOUND_COLORS: Record<string, string> = {
+// ── Tyre compound ─────────────────────────────────────────────────
+const COMPOUND_COLOR: Record<string, string> = {
   SOFT: "#ff3333", MEDIUM: "#ffd700", HARD: "#ffffff",
-  INTERMEDIATE: "#39b54a", WET: "#0067ff", UNKNOWN: "#888",
+  INTERMEDIATE: "#39b54a", WET: "#0067ff", UNKNOWN: "#666",
 };
-const COMPOUND_SHORT: Record<string, string> = {
+const COMPOUND_ABBR: Record<string, string> = {
   SOFT: "S", MEDIUM: "M", HARD: "H", INTERMEDIATE: "I", WET: "W", UNKNOWN: "?",
 };
 
-function TyreIcon({ compound }: { compound?: string }) {
+function TyreChip({ compound }: { compound?: string }) {
   const c = compound?.toUpperCase() || "UNKNOWN";
+  const col = COMPOUND_COLOR[c] || "#666";
   return (
     <div
-      className="w-5 h-5 rounded-full border-[2.5px] flex items-center justify-center text-[10px] font-bold bg-[#1a1a1a]"
-      style={{ borderColor: COMPOUND_COLORS[c] || "#888", color: COMPOUND_COLORS[c] || "#888" }}
+      className="w-6 h-6 rounded-full border-2 flex items-center justify-center font-orbitron text-[9px] font-bold"
+      style={{ borderColor: col, color: col, background: `${col}10` }}
     >
-      {COMPOUND_SHORT[c] || "?"}
+      {COMPOUND_ABBR[c] || "?"}
     </div>
   );
 }
 
-function WeatherBar({ weather }: { weather: any }) {
+function WeatherStrip({ weather }: { weather: any }) {
   if (!weather) return null;
   return (
-    <div className="flex flex-wrap items-center gap-4 px-4 py-2 bg-black/30 backdrop-blur rounded-xl text-xs text-white/50 border border-white/5">
-      <div className="flex items-center gap-1.5">
+    <div className="flex flex-wrap items-center gap-4 px-4 py-2 rounded-lg bg-white/[0.03] border border-white/[0.05] text-white/50">
+      <span className="flex items-center gap-1.5 text-[11px] font-rajdhani">
         <Thermometer className="w-3 h-3 text-apex-red" />
-        <span>Air {weather.air_temp?.toFixed(1)}°C</span>
-      </div>
-      <div className="flex items-center gap-1.5">
+        Air {weather.air_temp?.toFixed(1)}°C
+      </span>
+      <span className="flex items-center gap-1.5 text-[11px] font-rajdhani">
         <Thermometer className="w-3 h-3 text-orange-400" />
-        <span>Track {weather.track_temp?.toFixed(1)}°C</span>
-      </div>
-      <div className="flex items-center gap-1.5">
+        Track {weather.track_temp?.toFixed(1)}°C
+      </span>
+      <span className="flex items-center gap-1.5 text-[11px] font-rajdhani">
         <Wind className="w-3 h-3" />
-        <span>{weather.wind_speed?.toFixed(1)} m/s</span>
-      </div>
-      <div className="flex items-center gap-1.5">
+        {weather.wind_speed?.toFixed(1)} m/s
+      </span>
+      <span className="flex items-center gap-1.5 text-[11px] font-rajdhani">
         <Droplets className="w-3 h-3 text-blue-400" />
-        <span>{weather.humidity?.toFixed(0)}%</span>
-      </div>
+        {weather.humidity?.toFixed(0)}%
+      </span>
       {weather.rainfall && (
-        <div className="flex items-center gap-1 text-blue-400">
-          <CloudRain className="w-3 h-3" /> <span>Rain</span>
-        </div>
+        <span className="flex items-center gap-1 text-[11px] text-blue-400 font-rajdhani">
+          <CloudRain className="w-3 h-3" /> Rain
+        </span>
       )}
     </div>
   );
 }
 
-function ArchiveBanner({ year, round, session }: { year: number; round: number; session: string }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: -10 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="mb-6 bg-blue-500/5 backdrop-blur-xl rounded-2xl p-5 flex items-start gap-4 border border-blue-500/20 shadow-[0_8px_32px_rgba(59,130,246,0.05)]"
-    >
-      <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-        <Archive className="w-5 h-5 text-blue-400" />
-      </div>
-      <div>
-        <p className="text-blue-400 font-orbitron font-bold text-sm tracking-widest uppercase mb-1">
-          Archive Mode
-        </p>
-        <p className="text-white/50 text-sm font-rajdhani leading-relaxed">
-          You are viewing a <strong className="text-white/80">completed session</strong> — {year} Round {round} · {session}.
-          Live timing is not available for historical sessions. Browse telemetry and lap data from the{" "}
-          <a href="/telemetry" className="text-blue-400 underline underline-offset-2 hover:text-blue-300 transition-colors">Telemetry</a> page.
-        </p>
-      </div>
-    </motion.div>
-  );
-}
-
 export default function LiveTimingPage() {
-  const { leaderboard, weather, isConnected, applyLiveUpdate, setConnected, replayMode, setReplayMode } = useLiveStore();
-  const { selectedYear, selectedRound, selectedSession } = useSettingsStore();
+  const { leaderboard, weather, isConnected, applyLiveUpdate, setConnected } = useLiveStore();
+
+  // ── THE FIX: use canonical context — no independent schedule fetch ──
+  // isArchive = currentRace.is_completed (derived by useSessionContext from store)
+  // This is the single reason live timing was always showing archive mode:
+  // the old code fetched schedule independently and checked is_completed on
+  // whatever selectedRound pointed to — which defaulted to the last completed race.
+  const {
+    selectedYear, selectedRound, selectedSession,
+    currentRace, isArchive, raceLabel,
+  } = useSessionContext();
+
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [replayPlaying, setReplayPlaying] = useState(false);
-  const [isArchiveSession, setIsArchiveSession] = useState(false);
-  const [schedule, setSchedule] = useState<any[]>([]);
 
-  // Determine if selected round/session is completed (archive) or live/upcoming
-  useEffect(() => {
-    async function checkMode() {
-      try {
-        const res = await f1Api.getSchedule(selectedYear);
-        const data = (res as any).data || res;
-        const events = Array.isArray(data) ? data : [];
-        setSchedule(events);
-        const event = events.find((e: any) => e.round_number === selectedRound);
-        setIsArchiveSession(!!(event?.is_completed));
-      } catch {
-        setIsArchiveSession(false);
+  const fetchLiveData = useCallback(async () => {
+    try {
+      const [lbRes, wRes] = await Promise.allSettled([
+        f1Api.getLeaderboard(selectedYear, selectedRound, selectedSession),
+        f1Api.getWeather(selectedYear, selectedRound, selectedSession),
+      ]);
+      if (lbRes.status === "fulfilled") {
+        const d = (lbRes.value as any)?.data ?? [];
+        applyLiveUpdate({ leaderboard: Array.isArray(d) ? d : [] });
       }
+      if (wRes.status === "fulfilled") {
+        const d = (wRes.value as any)?.data;
+        applyLiveUpdate({ weather: d });
+      }
+      setConnected(true);
+    } catch {
+      setConnected(false);
+    } finally {
+      setLoading(false);
     }
-    checkMode();
-  }, [selectedYear, selectedRound]);
+  }, [selectedYear, selectedRound, selectedSession, applyLiveUpdate, setConnected]);
 
-  // Only poll leaderboard for NON-archive (live/upcoming) sessions
+  // Poll ONLY when not archive — archive sessions have no live data
   useEffect(() => {
-    if (isArchiveSession) {
+    if (isArchive) {
       setLoading(false);
       return;
     }
+    setLoading(true);
+    fetchLiveData();
+    const iv = setInterval(fetchLiveData, 10_000);
+    return () => clearInterval(iv);
+  }, [isArchive, fetchLiveData]);
 
-    async function load() {
-      try {
-        const [lbRes, wRes] = await Promise.allSettled([
-          f1Api.getLeaderboard(selectedYear, selectedRound, selectedSession),
-          f1Api.getWeather(selectedYear, selectedRound, selectedSession),
-        ]);
-        if (lbRes.status === "fulfilled") {
-          const d = (lbRes.value as any).data || [];
-          applyLiveUpdate({ leaderboard: Array.isArray(d) ? d : [] });
-        }
-        if (wRes.status === "fulfilled") {
-          const d = (wRes.value as any).data;
-          applyLiveUpdate({ weather: d });
-        }
-        setConnected(true);
-      } catch {
-        setConnected(false);
-      } finally {
-        setLoading(false);
-      }
-    }
+  // ── Archive state (completed sessions) ───────────────────────────
+  if (isArchive) {
+    return (
+      <div className="p-4 lg:p-6 min-h-screen max-w-[1600px] mx-auto animate-fade-up">
+        {/* Header */}
+        <div className="mb-8">
+          <p className="label-xs mb-2">{selectedYear} · Round {selectedRound}</p>
+          <h1 className="font-orbitron font-bold text-white text-3xl tracking-tight flex items-center gap-3">
+            <Archive className="w-7 h-7 text-blue-400" />
+            SESSION REPLAY
+          </h1>
+          <p className="font-rajdhani text-white/40 text-sm tracking-widest uppercase mt-1">
+            {raceLabel} · {selectedSession}
+          </p>
+        </div>
 
-    load();
-    const interval = setInterval(load, 10000);
-    return () => clearInterval(interval);
-  }, [selectedYear, selectedRound, selectedSession, isArchiveSession]);
-
-  const currentEvent = schedule.find((e: any) => e.round_number === selectedRound);
-
-  return (
-    <div className="p-4 lg:p-8 min-h-screen max-w-[1600px] mx-auto">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
-        <div>
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-apex-red/20 to-transparent flex items-center justify-center border border-apex-red/20">
-              <Radio className="w-5 h-5 text-apex-red" />
-            </div>
-            <h1 className="font-orbitron font-bold text-white text-3xl tracking-tight">
-              {isArchiveSession ? "SESSION REPLAY" : "LIVE TIMING"}
-            </h1>
+        {/* Archive notice */}
+        <div className="card p-6 border-blue-500/20 bg-blue-500/[0.03] mb-6 flex items-start gap-4">
+          <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center flex-shrink-0">
+            <Archive className="w-5 h-5 text-blue-400" />
           </div>
-          <div className="text-white/60 text-sm font-rajdhani tracking-widest uppercase mt-2 flex items-center gap-2">
-            <span>{selectedYear}</span>
-            <span className="w-1 h-1 rounded-full bg-white/20" />
-            <span>{currentEvent?.event_name || `Round ${selectedRound}`}</span>
-            <span className="w-1 h-1 rounded-full bg-white/20" />
-            <span className="text-white/80">{selectedSession}</span>
+          <div>
+            <p className="font-orbitron font-bold text-blue-400 text-sm tracking-widest uppercase mb-1">
+              Archive Mode
+            </p>
+            <p className="font-rajdhani text-white/50 text-sm leading-relaxed">
+              This session is complete — live timing is not available.
+              Browse driver telemetry, lap analysis, and sector data from the{" "}
+              <a href="/telemetry" className="text-blue-400 underline underline-offset-2 hover:text-blue-300">
+                Telemetry
+              </a>{" "}
+              page.
+            </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
-          <WeatherBar weather={weather} />
+        {/* Call to action */}
+        <div className="flex gap-3">
+          <a
+            href="/telemetry"
+            className="px-6 py-3 rounded-xl font-rajdhani font-bold text-sm uppercase tracking-widest transition-all hover:scale-105 active:scale-95 border border-blue-500/30 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20"
+          >
+            Open Telemetry →
+          </a>
+          <a
+            href="/sessions"
+            className="px-6 py-3 rounded-xl font-rajdhani font-bold text-sm uppercase tracking-widest transition-all hover:scale-105 active:scale-95 border border-white/10 bg-white/[0.04] text-white/60 hover:bg-white/[0.08]"
+          >
+            Browse Sessions
+          </a>
+        </div>
+      </div>
+    );
+  }
 
-          <div className="flex items-center gap-3 px-4 py-2 bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl shadow-lg">
-            {isArchiveSession ? (
-              <>
-                <Archive className="w-4 h-4 text-blue-400" />
-                <span className="text-xs font-bold text-blue-400 uppercase tracking-widest">Archive</span>
-              </>
-            ) : isConnected ? (
-              <>
-                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_10px_rgba(34,197,94,0.6)]" />
-                <span className="text-xs font-bold text-white/90 uppercase tracking-widest">Live</span>
-              </>
+  // ── Live timing view ─────────────────────────────────────────────
+  return (
+    <div className="p-4 lg:p-6 min-h-screen max-w-[1600px] mx-auto animate-fade-up">
+
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+        <div>
+          <p className="label-xs mb-2">{selectedYear} · Round {selectedRound}</p>
+          <h1 className="font-orbitron font-bold text-white text-3xl tracking-tight flex items-center gap-3">
+            <Radio className="w-6 h-6 text-apex-red" />
+            LIVE TIMING
+          </h1>
+          <p className="font-rajdhani text-white/40 text-sm tracking-widest uppercase mt-1">
+            {raceLabel} · {selectedSession}
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <WeatherStrip weather={weather} />
+
+          <div className="flex items-center gap-2 px-4 py-2 card">
+            {isConnected ? (
+              <span className="status-live">Live</span>
             ) : (
-              <>
-                <WifiOff className="w-4 h-4 text-white/40" />
-                <span className="text-xs font-bold text-white/40 uppercase tracking-widest">Offline</span>
-              </>
+              <span className="flex items-center gap-1.5 label-xs text-white/30">
+                <WifiOff className="w-3.5 h-3.5" /> Offline
+              </span>
             )}
           </div>
         </div>
       </div>
 
-      {/* Archive banner — only for completed sessions */}
-      {isArchiveSession && (
-        <ArchiveBanner year={selectedYear} round={selectedRound} session={selectedSession} />
-      )}
+      {/* Leaderboard table */}
+      <div className="card overflow-hidden">
 
-      {/* Replay controls — only in replayMode for live sessions */}
-      {replayMode && !isArchiveSession && (
-        <div className="mb-6 bg-black/40 backdrop-blur-xl rounded-2xl p-4 flex items-center justify-between border border-blue-500/20">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <button className="p-2 text-white/60 hover:text-white transition-colors rounded-lg hover:bg-white/10">
-                <SkipBack className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => setReplayPlaying(!replayPlaying)}
-                className="p-3 bg-white text-black rounded-full hover:scale-105 transition-all"
-              >
-                {replayPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
-              </button>
-              <button className="p-2 text-white/60 hover:text-white transition-colors rounded-lg hover:bg-white/10">
-                <SkipForward className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="h-10 w-px bg-white/10" />
-            <div className="flex flex-col">
-              <span className="text-[10px] text-blue-400 font-rajdhani uppercase tracking-widest font-bold">Session Progression</span>
-              <span className="text-sm font-orbitron text-white">Lap — / —</span>
-            </div>
-          </div>
+        {/* Column headers */}
+        <div
+          className="grid items-center px-4 py-3 border-b border-white/[0.05] bg-white/[0.02]"
+          style={{ gridTemplateColumns: "40px 1fr 120px 80px 110px 90px 40px" }}
+        >
+          <span className="label-xs">POS</span>
+          <span className="label-xs">DRIVER</span>
+          <span className="label-xs">TEAM</span>
+          <span className="label-xs text-center">TYRE</span>
+          <span className="label-xs text-right">GAP</span>
+          <span className="label-xs text-right">LAST LAP</span>
+          <span className="label-xs text-center">PIT</span>
         </div>
-      )}
 
-      {/* Main content */}
-      {isArchiveSession ? (
-        /* Archive empty state — data is available via Telemetry page */
-        <div className="bg-black/20 backdrop-blur-xl border border-white/10 rounded-3xl py-40 flex flex-col items-center justify-center text-center shadow-[0_8px_32px_rgba(0,0,0,0.3)]">
-          <div className="w-20 h-20 rounded-2xl bg-blue-500/5 border border-blue-500/20 flex items-center justify-center mb-8">
-            <Archive className="w-10 h-10 text-blue-400/40" />
+        {loading ? (
+          <div className="space-y-px p-2">
+            {Array(20).fill(0).map((_, i) => (
+              <div key={i} className="h-11 skeleton rounded-lg" />
+            ))}
           </div>
-          <h2 className="text-white font-orbitron font-bold text-2xl mb-3 tracking-wide">
-            SESSION COMPLETED
-          </h2>
-          <p className="text-white/40 text-sm max-w-md font-rajdhani tracking-wide leading-relaxed mb-8">
-            This session has concluded. Live timing data is no longer broadcasting.
-            Use the Telemetry page to explore driver performance, lap times, and sector analysis for this session.
-          </p>
-          <a
-            href="/telemetry"
-            className="px-8 py-3 rounded-xl font-rajdhani font-bold text-sm uppercase tracking-widest transition-all hover:scale-105 active:scale-95 border border-blue-500/30 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 hover:border-blue-500/50"
-          >
-            Open Telemetry →
-          </a>
-        </div>
-      ) : (
-        /* Live leaderboard table */
-        <div className="bg-black/20 backdrop-blur-xl border border-white/10 rounded-3xl overflow-hidden shadow-[0_8px_32px_rgba(0,0,0,0.3)]">
-          <div className="sticky top-0 z-10 bg-black/60 backdrop-blur-2xl grid grid-cols-12 gap-2 px-6 py-4 border-b border-white/10 text-[10px] font-rajdhani font-bold tracking-widest text-white/50 uppercase">
-            <span className="col-span-1">POS</span>
-            <span className="col-span-3">DRIVER</span>
-            <span className="col-span-2">TEAM</span>
-            <span className="col-span-1 text-center">TYRE</span>
-            <span className="col-span-2 text-right">GAP / INTERVAL</span>
-            <span className="col-span-2 text-right">LAST LAP</span>
-            <span className="col-span-1 text-center">PITS</span>
+        ) : leaderboard.length === 0 ? (
+          <div className="py-28 flex flex-col items-center justify-center text-center">
+            <div className="w-14 h-14 rounded-full bg-white/[0.04] border border-white/[0.07] flex items-center justify-center mb-5">
+              <Radio className="w-7 h-7 text-white/15" />
+            </div>
+            <p className="font-rajdhani font-bold text-white/40 text-sm uppercase tracking-widest mb-1">
+              Session Offline
+            </p>
+            <p className="font-rajdhani text-white/25 text-xs max-w-xs">
+              No live data broadcasting. Select an active session from the{" "}
+              <a href="/sessions" className="text-white/50 underline underline-offset-2">
+                Session Browser
+              </a>.
+            </p>
           </div>
-
-          {loading ? (
-            <div className="space-y-px">
-              {Array(20).fill(0).map((_, i) => (
-                <div key={i} className="skeleton mx-6 my-2 h-12 rounded-xl bg-white/5 animate-pulse" />
-              ))}
-            </div>
-          ) : leaderboard.length === 0 ? (
-            <div className="py-32 flex flex-col items-center justify-center min-h-[400px] text-center">
-              <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-6">
-                <Radio className="w-8 h-8 text-white/20" />
-              </div>
-              <p className="text-white/40 text-sm font-rajdhani uppercase tracking-widest mb-2 font-bold">
-                Session Offline
-              </p>
-              <p className="text-white/30 text-xs max-w-sm">
-                No live timing data is currently broadcasting. Select an active session from the{" "}
-                <a href="/sessions" className="text-white/50 underline underline-offset-2 hover:text-white/80">Session Browser</a>.
-              </p>
-            </div>
-          ) : (
-            <AnimatePresence>
-              {leaderboard.map((entry, i) => {
-                const isExp = expanded === entry.driver_number;
-                return (
-                  <motion.div
-                    key={entry.driver_number}
-                    layout
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.03 }}
-                    className="border-b border-white/[0.04] last:border-0 cursor-pointer"
-                    onClick={() => setExpanded(isExp ? null : entry.driver_number)}
+        ) : (
+          <AnimatePresence>
+            {leaderboard.map((entry, i) => {
+              const isExp = expanded === entry.driver_number;
+              return (
+                <motion.div
+                  key={entry.driver_number}
+                  layout
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: i * 0.02 }}
+                  className="border-b border-white/[0.03] last:border-0 cursor-pointer"
+                  onClick={() => setExpanded(isExp ? null : entry.driver_number)}
+                >
+                  {/* Main row */}
+                  <div
+                    className="grid items-center px-4 py-2.5 hover:bg-white/[0.03] transition-colors"
+                    style={{
+                      gridTemplateColumns: "40px 1fr 120px 80px 110px 90px 40px",
+                      borderLeft: `3px solid ${i < 3 ? (entry.team_color || "#e10600") : "transparent"}`,
+                    }}
                   >
-                    <div
-                      className="grid grid-cols-12 gap-2 px-3 py-3 items-center hover:bg-white/[0.04] transition-colors"
-                      style={{ borderLeft: i < 3 ? `3px solid ${entry.team_color || "#e10600"}` : "3px solid transparent" }}
+                    {/* Pos */}
+                    <span
+                      className="font-orbitron font-bold text-sm"
+                      style={{ color: i === 0 ? "#e10600" : "rgba(255,255,255,0.5)" }}
                     >
-                      <div className="col-span-1">
-                        <span className="font-orbitron font-bold text-sm" style={{ color: i === 0 ? "#e10600" : "#fff" }}>
-                          {entry.position}
-                        </span>
-                      </div>
-                      <div className="col-span-3 flex items-center gap-2">
-                        <span className="font-rajdhani font-bold text-sm text-white tracking-wider">{entry.abbreviation}</span>
-                        <span className="text-white/30 text-xs hidden lg:block truncate">{entry.driver_name}</span>
-                      </div>
-                      <div className="col-span-2 flex items-center gap-1.5">
-                        <div className="w-1.5 h-4 rounded-full flex-shrink-0" style={{ backgroundColor: entry.team_color || "#888" }} />
-                        <span className="text-white/40 text-xs truncate hidden md:block">{entry.team}</span>
-                      </div>
-                      <div className="col-span-1 flex justify-center">
-                        <TyreIcon compound={entry.current_tyre} />
-                      </div>
-                      <div className="col-span-2 text-right">
-                        <span className="font-orbitron text-xs text-white/60">{i === 0 ? "LEADER" : entry.gap_to_leader || "—"}</span>
-                      </div>
-                      <div className="col-span-2 text-right">
-                        <span className="font-orbitron text-xs text-white/80">{entry.last_lap || "—"}</span>
-                      </div>
-                      <div className="col-span-1 text-center">
-                        <span className="text-xs text-white/30">{entry.pits ?? 0}</span>
-                      </div>
+                      {entry.position}
+                    </span>
+
+                    {/* Driver */}
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-orbitron font-bold text-white text-sm tracking-wider">
+                        {entry.abbreviation}
+                      </span>
+                      <span className="font-rajdhani text-white/30 text-xs truncate hidden lg:block">
+                        {entry.driver_name}
+                      </span>
                     </div>
-                    <AnimatePresence>
-                      {isExp && (
-                        <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: "auto", opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          className="overflow-hidden bg-white/[0.015] px-6 py-3"
-                        >
-                          <div className="flex flex-wrap gap-6 text-xs">
-                            <div><span className="text-white/30">Best Lap: </span><span className="font-orbitron text-white">{entry.best_lap || "—"}</span></div>
-                            <div><span className="text-white/30">Tyre Age: </span><span className="text-white">{entry.tyre_age ?? "—"} laps</span></div>
-                            <div><span className="text-white/30">Speed: </span><span className="text-white">{entry.speed ? `${entry.speed} km/h` : "—"}</span></div>
-                            <div><span className="text-white/30">Status: </span><span className="text-green-400">{entry.status || "ON TRACK"}</span></div>
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </motion.div>
-                );
-              })}
-            </AnimatePresence>
-          )}
-        </div>
+
+                    {/* Team */}
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="team-bar h-4" style={{ backgroundColor: entry.team_color || "#888" }} />
+                      <span className="font-rajdhani text-white/40 text-xs truncate">{entry.team}</span>
+                    </div>
+
+                    {/* Tyre */}
+                    <div className="flex justify-center">
+                      <TyreChip compound={entry.current_tyre} />
+                    </div>
+
+                    {/* Gap */}
+                    <div className="text-right">
+                      <span className="font-orbitron text-xs text-white/60">
+                        {i === 0 ? "LEADER" : (entry.gap_to_leader || "—")}
+                      </span>
+                    </div>
+
+                    {/* Last lap */}
+                    <div className="text-right">
+                      <span className="font-orbitron text-xs text-white/80">{entry.last_lap || "—"}</span>
+                    </div>
+
+                    {/* Pits */}
+                    <div className="text-center">
+                      <span className="font-rajdhani text-white/30 text-xs">{entry.pits ?? 0}</span>
+                    </div>
+                  </div>
+
+                  {/* Expanded row */}
+                  <AnimatePresence>
+                    {isExp && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="overflow-hidden bg-white/[0.02] border-t border-white/[0.04]"
+                      >
+                        <div className="px-14 py-3 flex flex-wrap gap-6 text-xs">
+                          <div><span className="label-xs mr-2">Best Lap</span><span className="font-orbitron text-white">{entry.best_lap || "—"}</span></div>
+                          <div><span className="label-xs mr-2">Tyre Age</span><span className="font-rajdhani text-white">{entry.tyre_age ?? "—"} laps</span></div>
+                          <div><span className="label-xs mr-2">Speed</span><span className="font-rajdhani text-white">{entry.speed ? `${entry.speed} km/h` : "—"}</span></div>
+                          <div><span className="label-xs mr-2">Status</span><span className="text-[#4ade80] font-rajdhani font-bold">{entry.status || "ON TRACK"}</span></div>
+                          <div><span className="label-xs mr-2">Interval</span><span className="font-orbitron text-white/60">{entry.interval || "—"}</span></div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+        )}
+      </div>
+
+      {leaderboard.length > 0 && (
+        <p className="mt-3 label-xs text-right">
+          {isConnected ? "Polling every 10s" : "Reconnecting..."} · {selectedYear} R{selectedRound} {selectedSession}
+        </p>
       )}
     </div>
   );

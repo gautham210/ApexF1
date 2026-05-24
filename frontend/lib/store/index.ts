@@ -41,7 +41,6 @@ export interface ScheduleEvent {
 
 type DriverEntry = { abbr: string; team: string; color: string; name: string };
 
-/** 2026 F1 Grid — Norris champion (#1), Verstappen permanent (#3) */
 const DRIVER_DB_2026: Record<string, DriverEntry> = {
   "1":  { abbr: "NOR", team: "McLaren",          color: "#FF8000", name: "Lando Norris" },
   "3":  { abbr: "VER", team: "Red Bull Racing",  color: "#3671C6", name: "Max Verstappen" },
@@ -69,7 +68,6 @@ const DRIVER_DB_2026: Record<string, DriverEntry> = {
   "99": { abbr: "LIN", team: "Racing Bulls",      color: "#6692FF", name: "Arvid Lindblad" },
 };
 
-/** 2025 F1 Grid — Verstappen champion (#1) */
 const DRIVER_DB_2025: Record<string, DriverEntry> = {
   "1":  { abbr: "VER", team: "Red Bull Racing",  color: "#3671C6", name: "Max Verstappen" },
   "4":  { abbr: "NOR", team: "McLaren",          color: "#FF8000", name: "Lando Norris" },
@@ -97,7 +95,6 @@ const DRIVER_DB_2025: Record<string, DriverEntry> = {
   "99": { abbr: "LIN", team: "RB",               color: "#6692FF", name: "Arvid Lindblad" },
 };
 
-/** 2024 and earlier — Verstappen champion with #1, historical grid */
 const DRIVER_DB_HISTORICAL: Record<string, DriverEntry> = {
   "1":  { abbr: "VER", team: "Red Bull Racing",  color: "#3671C6", name: "Max Verstappen" },
   "2":  { abbr: "SAR", team: "Williams",          color: "#64C4FF", name: "Logan Sargeant" },
@@ -123,26 +120,20 @@ const DRIVER_DB_HISTORICAL: Record<string, DriverEntry> = {
   "87": { abbr: "BEA", team: "Ferrari",           color: "#E8002D", name: "Oliver Bearman" },
 };
 
-/** Canonical driver lookup — year-aware, never stale */
 export function getDriverByYear(year: number, driverNumber: string): DriverEntry {
   const db = year >= 2026 ? DRIVER_DB_2026 : year === 2025 ? DRIVER_DB_2025 : DRIVER_DB_HISTORICAL;
   return db[driverNumber] || { abbr: `#${driverNumber}`, team: "Unknown", color: "#888888", name: `Driver #${driverNumber}` };
 }
-
-/** Reverse lookup: full name → driver number for a given year */
 export function getDriverNumberByName(year: number, fullName: string): string | null {
   const db = year >= 2026 ? DRIVER_DB_2026 : year === 2025 ? DRIVER_DB_2025 : DRIVER_DB_HISTORICAL;
   const normalised = fullName.toLowerCase().trim();
   for (const [num, d] of Object.entries(db)) {
     if (d.name.toLowerCase() === normalised) return num;
-    // Partial match — last name only (Jolpica sometimes returns just surname)
     const lastName = d.name.split(" ").pop()?.toLowerCase();
     if (lastName && normalised.endsWith(lastName)) return num;
   }
   return null;
 }
-
-/** Reverse lookup: three-letter abbreviation → driver number */
 export function getDriverNumberByAbbr(year: number, abbr: string): string | null {
   const db = year >= 2026 ? DRIVER_DB_2026 : year === 2025 ? DRIVER_DB_2025 : DRIVER_DB_HISTORICAL;
   const upper = abbr.toUpperCase();
@@ -151,37 +142,55 @@ export function getDriverNumberByAbbr(year: number, abbr: string): string | null
   }
   return null;
 }
-
 export function getDriversListByYear(year: number): Record<string, DriverEntry> {
   return year >= 2026 ? DRIVER_DB_2026 : year === 2025 ? DRIVER_DB_2025 : DRIVER_DB_HISTORICAL;
 }
-
-/** Default export for backward compat and dropdown rendering */
 export const DRIVER_DATABASE = DRIVER_DB_2026;
 
 
-// ─── Settings Store ──────────────────────────────────────────────────────────
+// ─── Settings Store (SINGLE SOURCE OF TRUTH) ─────────────────────────────────
+//
+// Architecture:
+//   selectedYear + selectedRound + selectedSession = user's BROWSING context
+//   currentRace                                   = the race being browsed
+//   schedule + scheduleYear                       = cached schedule (no re-fetch)
+//   contextBootstrapped                           = true once backend has seeded initial state
+//
+// CANONICAL RULE: currentRace.is_completed → archive mode
+//                 !currentRace.is_completed → live/upcoming mode
+// ─────────────────────────────────────────────────────────────────────────────
 
 interface SettingsState {
   commandPaletteOpen: boolean;
   notificationsEnabled: boolean;
   selectedYear: number;
   selectedRound: number;
-  currentRace: ScheduleEvent | null;       // canonical race — replaces activeRace+selectedRace
+  currentRace: ScheduleEvent | null;
   selectedSession: string;
   selectedLap: number | "all";
+
+  // Schedule cache — shared across all pages, no per-page refetch
+  schedule: ScheduleEvent[];
+  scheduleYear: number;        // which year the cached schedule belongs to
+  contextBootstrapped: boolean; // true once AppLayout has seeded from backend
+
   setCommandPalette: (open: boolean) => void;
   setSelectedYear: (y: number) => void;
   setSelectedRound: (r: number) => void;
   setCurrentRace: (r: ScheduleEvent | null) => void;
   setSelectedSession: (s: string) => void;
   setSelectedLap: (l: number | "all") => void;
-  syncGlobalContext: (schedule: ScheduleEvent[]) => void;
+
+  /** Cache the full season schedule. Also derives currentRace if not already set for this year. */
+  setScheduleCache: (schedule: ScheduleEvent[], year: number) => void;
+
+  /** Called by AppLayout.GlobalContextInit — seeds round/race from backend response. */
+  bootstrapFromBackend: (round: number, race: ScheduleEvent | null, year: number) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       commandPaletteOpen: false,
       notificationsEnabled: true,
       selectedYear: new Date().getFullYear(),
@@ -189,32 +198,77 @@ export const useSettingsStore = create<SettingsState>()(
       currentRace: null,
       selectedSession: "Race",
       selectedLap: "all",
+      schedule: [],
+      scheduleYear: 0,
+      contextBootstrapped: false,
+
       setCommandPalette: (open) => set({ commandPaletteOpen: open }),
-      setSelectedYear: (y) => set({ selectedYear: y }),
+      setSelectedYear: (y) => set({
+        selectedYear: y,
+        // Reset bootstrap + cache flags when year changes so GlobalContextInit
+        // re-seeds currentRace and schedule from the backend for the new year.
+        contextBootstrapped: false,
+        scheduleYear: 0,
+        schedule: [],
+        currentRace: null,
+      }),
       setSelectedRound: (r) => set({ selectedRound: r }),
       setCurrentRace: (r) => set({ currentRace: r }),
       setSelectedSession: (s) => set({ selectedSession: s }),
       setSelectedLap: (l) => set({ selectedLap: l }),
-      syncGlobalContext: (schedule: ScheduleEvent[]) => {
-        if (schedule.length === 0) return;
-        // CANONICAL RULE: default context = latest COMPLETED race.
-        const completed = schedule
-          .filter((e) => e.is_completed)
-          .sort((a, b) => b.round_number - a.round_number);
-        const upcoming = schedule
-          .filter((e) => !e.is_completed)
-          .sort((a, b) => a.round_number - b.round_number);
-        const currentRace = completed[0] || upcoming[0] || schedule[0];
-        set({ currentRace, selectedRound: currentRace.round_number });
+
+      setScheduleCache: (schedule, year) => {
+        const state = get();
+        // Skip currentRace derivation if already bootstrapped from backend for this year.
+        // Derivation only runs on first load when we have no currentRace at all.
+        const alreadyBootstrapped = state.contextBootstrapped && state.scheduleYear === year;
+        const hasRaceForYear = !!state.currentRace && state.scheduleYear === year;
+        const shouldDerive = !alreadyBootstrapped && !hasRaceForYear && schedule.length > 0;
+
+        if (shouldDerive) {
+          const completed = schedule
+            .filter((e) => e.is_completed)
+            .sort((a, b) => b.round_number - a.round_number);
+          const upcoming = schedule
+            .filter((e) => !e.is_completed)
+            .sort((a, b) => a.round_number - b.round_number);
+          const derived = completed[0] || upcoming[0] || schedule[0];
+          set({
+            schedule,
+            scheduleYear: year,
+            currentRace: derived,
+            selectedRound: derived.round_number,
+          });
+        } else {
+          // Always update the schedule list — never update currentRace
+          set({ schedule, scheduleYear: year });
+        }
+      },
+
+      bootstrapFromBackend: (round, race, year) => {
+        const state = get();
+        // Only override if we haven't bootstrapped yet, or year changed
+        if (!state.contextBootstrapped || state.selectedYear !== year) {
+          set({
+            selectedRound: round,
+            currentRace: race,
+            // Stamp scheduleYear here so setScheduleCache (if it fires after us)
+            // sees the year matches and will NOT re-derive currentRace.
+            scheduleYear: year,
+            contextBootstrapped: true,
+          });
+        }
       },
     }),
     {
-      name: "apex-settings-v2",   // bumped version — clears stale v1 localStorage
+      name: "apex-settings-v4",   // v4 — clears stale v1/v2/v3 localStorage
       partialize: (state) => ({
         selectedYear: state.selectedYear,
         selectedRound: state.selectedRound,
-        currentRace: state.currentRace,
         selectedSession: state.selectedSession,
+        // Do NOT persist currentRace, schedule, or contextBootstrapped.
+        // currentRace is always authoritatively re-derived from backend on boot.
+        // Persisting it causes stale races to bleed across page reloads.
       }),
     }
   )
@@ -228,23 +282,20 @@ interface LiveStore {
   weather: WeatherData | null;
   isConnected: boolean;
   lastUpdate: string | null;
-  replayMode: boolean;
   setLeaderboard: (l: LeaderboardEntry[]) => void;
   setSession: (s: SessionInfo | null) => void;
   setWeather: (w: WeatherData | null) => void;
   setConnected: (c: boolean) => void;
-  setReplayMode: (r: boolean) => void;
   applyLiveUpdate: (payload: { leaderboard?: LeaderboardEntry[]; session?: SessionInfo; weather?: WeatherData; timestamp?: string }) => void;
 }
 
 export const useLiveStore = create<LiveStore>((set) => ({
   leaderboard: [], session: null, weather: null,
-  isConnected: false, lastUpdate: null, replayMode: false,
+  isConnected: false, lastUpdate: null,
   setLeaderboard: (l) => set({ leaderboard: l }),
   setSession: (s) => set({ session: s }),
   setWeather: (w) => set({ weather: w }),
   setConnected: (c) => set({ isConnected: c }),
-  setReplayMode: (r) => set({ replayMode: r }),
   applyLiveUpdate: (payload) => set({
     ...(payload.leaderboard !== undefined && { leaderboard: payload.leaderboard }),
     ...(payload.session     !== undefined && { session: payload.session }),
