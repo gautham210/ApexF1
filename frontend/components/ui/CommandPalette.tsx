@@ -7,8 +7,7 @@ import { useRouter } from "next/navigation";
 
 const PAGES = [
   { id: "p1", label: "Dashboard", href: "/", icon: Home, type: "Page" },
-  { id: "p2", label: "Live Timing", href: "/live-timing", icon: Radio, type: "Page" },
-  { id: "p3", label: "Telemetry Viewer", href: "/telemetry", icon: Activity, type: "Page" },
+  { id: "p2", label: "Race Center", href: "/live-timing", icon: Activity, type: "Page" },
   { id: "p4", label: "Standings", href: "/standings", icon: Trophy, type: "Page" },
   { id: "p5", label: "Sessions", href: "/sessions", icon: CalendarDays, type: "Page" },
 ];
@@ -71,7 +70,7 @@ export default function CommandPalette() {
       setSelectedYear(item.year);
     } else if (item.type === "Driver") {
       setDriver1(item.num);
-      router.push("/telemetry");
+      router.push("/live-timing");
     } else if (item.type === "Race") {
       setSelectedRound(item.round);
       router.push("/sessions");

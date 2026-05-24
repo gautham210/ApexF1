@@ -7,8 +7,7 @@ import { motion } from "framer-motion";
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: Home },
   { href: "/sessions", label: "Sessions", icon: CalendarDays },
-  { href: "/live-timing", label: "Live Timing", icon: Radio },
-  { href: "/telemetry", label: "Telemetry", icon: Activity },
+  { href: "/live-timing", label: "Race Center", icon: Activity },
   { href: "/standings", label: "Standings", icon: Trophy },
 ];
 

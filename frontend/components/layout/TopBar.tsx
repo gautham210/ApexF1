@@ -8,8 +8,7 @@ import { usePathname } from "next/navigation";
 const PAGE_LABELS: Record<string, string> = {
   "/":            "Dashboard",
   "/sessions":    "Sessions",
-  "/live-timing": "Live Timing",
-  "/telemetry":   "Telemetry",
+  "/live-timing": "Race Center",
   "/standings":   "Standings",
 };
 

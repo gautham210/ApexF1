@@ -5,7 +5,7 @@ import { useSessionContext } from "@/lib/hooks/useSessionContext";
 import { useLiveSession } from "@/lib/hooks/useLiveSession";
 import {
   CalendarDays, ChevronRight, Trophy, Zap, Thermometer,
-  Droplets, Radio, PlayCircle, Clock, Info, Compass
+  Droplets, Radio, PlayCircle, Clock, Info, Compass, Activity
 } from "lucide-react";
 import Link from "next/link";
 import { motion } from "framer-motion";
@@ -332,15 +332,13 @@ export default function HomePage() {
             )}
 
             {!live.is_live && currentRace?.is_completed && (
-              <div className="bg-white/5 border border-white/10 rounded-2xl px-6 py-4 flex items-center gap-4">
-                <Info className="w-4 h-4 text-white/60" />
-                <div>
-                  <p className="text-[9px] text-white/40 font-bold uppercase tracking-widest leading-none">Session Concluded</p>
-                  <p className="font-sans text-white/70 text-xs mt-1">
-                    Telemetry logs and lap overlays available below.
-                  </p>
-                </div>
-              </div>
+              <Link
+                href="/live-timing"
+                className="px-6 py-3.5 rounded-xl font-sans font-bold text-xs tracking-widest uppercase flex items-center gap-2.5 text-white bg-white/5 hover:bg-white/10 border border-white/10 transition-all cursor-pointer shadow-lg"
+              >
+                <Activity className="w-4 h-4 text-apex-red" />
+                Analyze Telemetry Logs
+              </Link>
             )}
           </div>
         </div>

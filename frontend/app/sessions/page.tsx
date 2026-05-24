@@ -90,7 +90,7 @@ export default function SessionsPage() {
     setSelectedRound(event.round_number);
     setSelectedSession(sessionCode);
     setCurrentRace(event);
-    router.push(event.is_completed ? "/telemetry" : "/live-timing");
+    router.push("/live-timing");
   };
 
   const activeEvent = schedule[selectedEventIndex] || null;

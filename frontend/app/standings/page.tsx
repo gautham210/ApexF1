@@ -62,10 +62,15 @@ export default function StandingsPage() {
           driverList = d.drivers || []; constructorList = d.constructors || [];
         }
         if (engRes.status === "fulfilled") engineList = (engRes.value as any).data || engRes.value;
-        if (driverList.length === 0 && constructorList.length === 0)
-          setError("Unable to retrieve championship standings at this moment.");
+        if (driverList.length === 0 && constructorList.length === 0) {
+          if (selectedYear > 2025) {
+            setError(`Championship standings for the ${selectedYear} season are not yet active. Real standings data will sync dynamically once the season commences.`);
+          } else {
+            setError("Championship standings are currently unavailable for this historical season.");
+          }
+        }
         setDrivers(driverList); setConstructors(constructorList); setEngines(engineList);
-      } catch { setError("Failed to synchronize standings. Please verify connection."); }
+      } catch { setError("Championship standings are currently offline. Please try again later."); }
       setLoading(false);
     }
     load();
@@ -112,12 +117,12 @@ export default function StandingsPage() {
       {/* ── Cinematic Header ── */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-white/5">
         <div>
-          <p className="text-xs font-bold text-white/35 tracking-widest uppercase mb-2">{selectedYear} Season Context</p>
-          <h1 className="font-sans font-bold text-white text-3xl lg:text-4xl tracking-tight uppercase">
-            Championship Standings
+          <p className="text-xs font-bold text-white/30 tracking-wider uppercase mb-2">{selectedYear} Season Context</p>
+          <h1 className="font-sans font-bold text-white text-3xl lg:text-4xl tracking-tight">
+            Standings
           </h1>
-          <p className="font-sans text-white/40 text-xs mt-1">
-            Authoritative standings index compiled from official F1 databases
+          <p className="font-sans text-white/40 text-xs mt-1.5">
+            Championship standings aggregation compiled from official timing databases
           </p>
         </div>
 
@@ -149,8 +154,8 @@ export default function StandingsPage() {
         ) : error ? (
           <div className="glass border border-white/5 rounded-3xl py-20 text-center max-w-lg mx-auto p-8">
             <Trophy className="w-12 h-12 text-white/10 mx-auto mb-4" />
-            <h3 className="text-white font-sans font-bold text-base tracking-widest uppercase">Database Connection Standby</h3>
-            <p className="text-white/40 text-xs font-sans mt-2 leading-relaxed">
+            <h3 className="text-white font-sans font-bold text-base tracking-wide">Standings Standby</h3>
+            <p className="text-white/40 text-xs font-sans mt-3 leading-relaxed max-w-sm mx-auto">
               {error}
             </p>
           </div>
