@@ -115,7 +115,7 @@ function SessionsPage() {
     <div className="min-h-screen px-6 pb-32 pt-12 lg:px-12">
       <div className="mx-auto max-w-[1500px]">
         <header className="mb-10">
-          <div className="text-[10px] font-mono tracking-[0.2em] text-muted-foreground">{season} SEASON</div>
+          <div className="text-[10px] font-mono tracking-[0.2em] text-muted-foreground uppercase">WEEKEND PROGRAMME</div>
           <h1 className="mt-2 font-display text-5xl md:text-6xl">Sessions</h1>
           <p className="mt-3 max-w-xl text-muted-foreground">
             Explore the absolute Formula 1 calendar weekend by weekend — practices, shootouts, and races.
@@ -256,7 +256,7 @@ function SessionsPage() {
                 <GlassPanel className="p-6">
                   <div className="text-[10px] font-mono tracking-[0.2em] text-muted-foreground">CIRCUIT OVERVIEW</div>
                   <p className="mt-3 max-w-2xl leading-relaxed text-foreground/85 text-sm">
-                    {activeCircuit.name} hosts Round {selected.round_number} of the Formula 1 season.
+                    {activeCircuit.name} hosts Round {selected.round_number} of the championship.
                     Teams carry tailored aero packages, adjusting downforce values to resolve straights velocity
                     versus mid-corner chassis balance parameters.
                   </p>

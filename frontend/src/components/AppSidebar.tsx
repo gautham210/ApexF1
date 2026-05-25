@@ -1,7 +1,7 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   LayoutGrid, CalendarRange, Radio, Trophy,
-  User, Users, Bell, CalendarPlus, Film,
+  User, Bell, CalendarPlus, Film,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -10,8 +10,6 @@ const primary = [
   { to: "/sessions", label: "Sessions", icon: CalendarRange },
   { to: "/race-center", label: "Race Center", icon: Radio },
   { to: "/replay", label: "Replays", icon: Film },
-  { to: "/drivers", label: "Drivers", icon: User },
-  { to: "/teams", label: "Teams", icon: Users },
   { to: "/standings", label: "Standings", icon: Trophy },
 ] as const;
 
@@ -70,6 +68,7 @@ function DockLink({
 
 export function MobileNav() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  // Show Today, Sessions, Race Center, Standings, Profile
   const items = [primary[0], primary[1], primary[2], primary[4], secondary[2]];
   return (
     <nav className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 gap-1 rounded-full glass-strong p-1.5 lg:hidden">
@@ -93,3 +92,4 @@ export function MobileNav() {
     </nav>
   );
 }
+

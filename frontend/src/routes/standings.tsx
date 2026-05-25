@@ -145,7 +145,7 @@ function StandingsPage() {
       <div className="mx-auto max-w-[1300px]">
         <header className="mb-10 flex flex-wrap items-end justify-between gap-6 pb-6 border-b border-border/40">
           <div>
-            <div className="text-[10px] font-mono tracking-[0.2em] text-muted-foreground">{season} SEASON</div>
+            <div className="text-[10px] font-mono tracking-[0.2em] text-muted-foreground uppercase">CHAMPIONSHIP STANDINGS</div>
             <h1 className="mt-2 font-display text-5xl md:text-6xl">Standings</h1>
             <p className="mt-3 max-w-xl text-muted-foreground">
               Official championship standing results compiled from direct timing feeds.

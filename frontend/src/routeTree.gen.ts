@@ -9,22 +9,15 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as TeamsRouteImport } from './routes/teams'
 import { Route as StandingsRouteImport } from './routes/standings'
 import { Route as SessionsRouteImport } from './routes/sessions'
 import { Route as ReplayRouteImport } from './routes/replay'
 import { Route as RaceCenterRouteImport } from './routes/race-center'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as NotificationsRouteImport } from './routes/notifications'
-import { Route as DriversRouteImport } from './routes/drivers'
 import { Route as CalendarRouteImport } from './routes/calendar'
 import { Route as IndexRouteImport } from './routes/index'
 
-const TeamsRoute = TeamsRouteImport.update({
-  id: '/teams',
-  path: '/teams',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const StandingsRoute = StandingsRouteImport.update({
   id: '/standings',
   path: '/standings',
@@ -55,11 +48,6 @@ const NotificationsRoute = NotificationsRouteImport.update({
   path: '/notifications',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DriversRoute = DriversRouteImport.update({
-  id: '/drivers',
-  path: '/drivers',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const CalendarRoute = CalendarRouteImport.update({
   id: '/calendar',
   path: '/calendar',
@@ -74,101 +62,80 @@ const IndexRoute = IndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/calendar': typeof CalendarRoute
-  '/drivers': typeof DriversRoute
   '/notifications': typeof NotificationsRoute
   '/profile': typeof ProfileRoute
   '/race-center': typeof RaceCenterRoute
   '/replay': typeof ReplayRoute
   '/sessions': typeof SessionsRoute
   '/standings': typeof StandingsRoute
-  '/teams': typeof TeamsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/calendar': typeof CalendarRoute
-  '/drivers': typeof DriversRoute
   '/notifications': typeof NotificationsRoute
   '/profile': typeof ProfileRoute
   '/race-center': typeof RaceCenterRoute
   '/replay': typeof ReplayRoute
   '/sessions': typeof SessionsRoute
   '/standings': typeof StandingsRoute
-  '/teams': typeof TeamsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/calendar': typeof CalendarRoute
-  '/drivers': typeof DriversRoute
   '/notifications': typeof NotificationsRoute
   '/profile': typeof ProfileRoute
   '/race-center': typeof RaceCenterRoute
   '/replay': typeof ReplayRoute
   '/sessions': typeof SessionsRoute
   '/standings': typeof StandingsRoute
-  '/teams': typeof TeamsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/calendar'
-    | '/drivers'
     | '/notifications'
     | '/profile'
     | '/race-center'
     | '/replay'
     | '/sessions'
     | '/standings'
-    | '/teams'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/calendar'
-    | '/drivers'
     | '/notifications'
     | '/profile'
     | '/race-center'
     | '/replay'
     | '/sessions'
     | '/standings'
-    | '/teams'
   id:
     | '__root__'
     | '/'
     | '/calendar'
-    | '/drivers'
     | '/notifications'
     | '/profile'
     | '/race-center'
     | '/replay'
     | '/sessions'
     | '/standings'
-    | '/teams'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CalendarRoute: typeof CalendarRoute
-  DriversRoute: typeof DriversRoute
   NotificationsRoute: typeof NotificationsRoute
   ProfileRoute: typeof ProfileRoute
   RaceCenterRoute: typeof RaceCenterRoute
   ReplayRoute: typeof ReplayRoute
   SessionsRoute: typeof SessionsRoute
   StandingsRoute: typeof StandingsRoute
-  TeamsRoute: typeof TeamsRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/teams': {
-      id: '/teams'
-      path: '/teams'
-      fullPath: '/teams'
-      preLoaderRoute: typeof TeamsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/standings': {
       id: '/standings'
       path: '/standings'
@@ -211,13 +178,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof NotificationsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/drivers': {
-      id: '/drivers'
-      path: '/drivers'
-      fullPath: '/drivers'
-      preLoaderRoute: typeof DriversRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/calendar': {
       id: '/calendar'
       path: '/calendar'
@@ -238,14 +198,12 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CalendarRoute: CalendarRoute,
-  DriversRoute: DriversRoute,
   NotificationsRoute: NotificationsRoute,
   ProfileRoute: ProfileRoute,
   RaceCenterRoute: RaceCenterRoute,
   ReplayRoute: ReplayRoute,
   SessionsRoute: SessionsRoute,
   StandingsRoute: StandingsRoute,
-  TeamsRoute: TeamsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

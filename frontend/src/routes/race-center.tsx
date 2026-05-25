@@ -20,8 +20,8 @@ import { cn } from "@/lib/utils";
 export const Route = createFileRoute("/race-center")({
   head: () => ({
     meta: [
-      { title: "ApexF1 — Race Center Command Room" },
-      { name: "description", content: "Immersive real-time timing tower, weather logs, and visual telemetry charts." },
+      { title: "ApexF1 — Race Center" },
+      { name: "description", content: "Immersive real-time timing tower, weather logs, and visual race replays." },
     ],
   }),
   component: RaceCenter,
@@ -413,7 +413,7 @@ function ArchiveLeaderboard({ year, round, session, expanded, setExpanded }: { y
 
 export function RaceCenter() {
   const live = useLiveSession();
-  const { season, selectedRound, selectedSession, isArchive, raceLabel, setSelectedSession, selectedLap } = useSessionContext();
+  const { season, selectedRound, selectedSession, isArchive, raceLabel, setSelectedSession, selectedLap, setSelectedRound } = useSessionContext();
   const {
     driver1, driver2, driver1Data, driver2Data,
     scrubberPosition, isPlaying,
@@ -426,6 +426,7 @@ export function RaceCenter() {
   
   const [telemetryLoading, setTelemetryLoading] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
+  const [showDetailedTelemetry, setShowDetailedTelemetry] = useState(false);
 
   const db = getDriversListByYear(season);
   const d1Meta = getDriverByYear(season, driver1);
@@ -522,6 +523,26 @@ export function RaceCenter() {
   }
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const mode = params.get("mode");
+    const roundStr = params.get("round");
+    const session = params.get("session");
+    
+    if (mode === "replay") {
+      if (roundStr) {
+        setSelectedRound(Number(roundStr));
+      }
+      if (session) {
+        setSelectedSession(session);
+      }
+      setRightPanelTab("telemetry");
+      setTimeout(() => {
+        loadTelemetry();
+      }, 350);
+    }
+  }, []);
+
+  useEffect(() => {
     if (!isPlaying || driver1Data.length === 0) return;
 
     const interval = setInterval(() => {
@@ -600,8 +621,8 @@ export function RaceCenter() {
       <div className="min-h-screen px-6 pb-32 pt-12 lg:px-12 flex items-center justify-center">
         <div className="text-center space-y-4">
           <RefreshCw className="w-10 h-10 text-muted-foreground/30 animate-spin mx-auto" />
-          <div className="font-display text-2xl">Initializing Command Feed</div>
-          <p className="text-xs text-muted-foreground uppercase font-mono tracking-widest">Compiling OpenF1 Telemetry Loops</p>
+          <div className="font-display text-2xl">Initializing Race Feed</div>
+          <p className="text-xs text-muted-foreground uppercase font-mono tracking-widest">Compiling timing loops</p>
         </div>
       </div>
     );
@@ -625,7 +646,7 @@ export function RaceCenter() {
             <h1 className="font-display text-4xl leading-none">Race Center</h1>
           </div>
           <p className="font-mono text-[9px] text-muted-foreground uppercase tracking-widest mt-3 flex items-center gap-3 font-bold">
-            <span>{season} season</span>
+            <span>Grand Prix Weekend</span>
             <span className="w-1 h-1 rounded-full bg-border" />
             <span>Round {selectedRound}</span>
             <span className="w-1 h-1 rounded-full bg-border" />
@@ -770,18 +791,18 @@ export function RaceCenter() {
                 </div>
 
                 {driver1Data.length > 0 ? (
-                  <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
+                  <div className={cn("grid gap-6", showDetailedTelemetry ? "lg:grid-cols-[1.2fr_1fr]" : "grid-cols-1")}>
                     {/* Visual Spline coordinate maps */}
                     <div>
-                      <div className="text-[9px] font-mono tracking-widest text-muted-foreground uppercase font-bold mb-4">Track traces</div>
-                      <div className="relative aspect-[4/3] rounded-xl bg-gradient-to-br from-surface to-background/50 border border-border/40 p-4 flex items-center justify-center">
-                        <svg className="w-full h-full max-w-[280px]" viewBox="0 0 100 100">
-                          <path d={telemetryTrackPathD} fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth="3" strokeLinecap="round" />
-                          <path d={telemetryTrackPathD} fill="none" stroke="oklch(0.82 0.13 75 / 0.1)" strokeWidth="1.2" strokeLinecap="round" />
+                      <div className="text-[9px] font-mono tracking-widest text-muted-foreground uppercase font-bold mb-4">Live Track Position</div>
+                      <div className="relative aspect-[16/10] w-full rounded-2xl bg-gradient-to-br from-surface to-background/50 border border-border/40 p-4 flex items-center justify-center">
+                        <svg className="w-full h-full max-h-[260px] max-w-[340px]" viewBox="0 0 100 100">
+                          <path d={telemetryTrackPathD} fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth="4" strokeLinecap="round" />
+                          <path d={telemetryTrackPathD} fill="none" stroke="var(--primary) opacity-20" strokeWidth="1.5" strokeLinecap="round" />
                           
                           {/* Active car coordinates indicator */}
-                          {car1Coord && <circle cx={car1Coord.x} cy={car1Coord.y} r="2.5" fill={DRIVER_COLOR_1} />}
-                          {car2Coord && <circle cx={car2Coord.x} cy={car2Coord.y} r="2.5" fill={DRIVER_COLOR_2} />}
+                          {car1Coord && <circle cx={car1Coord.x} cy={car1Coord.y} r="3.5" fill={DRIVER_COLOR_1} />}
+                          {car2Coord && <circle cx={car2Coord.x} cy={car2Coord.y} r="3.5" fill={DRIVER_COLOR_2} />}
                         </svg>
                       </div>
 
@@ -826,33 +847,53 @@ export function RaceCenter() {
                           ))}
                         </div>
                       </div>
+
+                      {/* Toggle button to expand telemetry traces */}
+                      <button
+                        onClick={() => setShowDetailedTelemetry(!showDetailedTelemetry)}
+                        className={cn(
+                          "mt-4 w-full rounded-xl py-3 text-xs font-mono font-bold uppercase tracking-wider transition border duration-300 flex items-center justify-center gap-2",
+                          showDetailedTelemetry
+                            ? "bg-primary/10 text-primary border-primary/20"
+                            : "glass text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        <Activity className="w-4 h-4 text-primary" />
+                        {showDetailedTelemetry ? "Hide Detailed Telemetry Traces" : "Enable Enthusiast Telemetry Mode"}
+                      </button>
                     </div>
 
-                    {/* Speeds & Pedals trace compare dashboards */}
-                    <div className="space-y-4">
-                      {telemetryAnalysis && (
-                        <div className="grid grid-cols-2 gap-3">
-                          <GlassPanel className="p-4 border border-border/40 text-center">
-                            <div className="text-[8px] font-mono text-muted-foreground uppercase tracking-widest font-bold">Top Speed</div>
-                            <div className="font-display text-2xl mt-1.5">
-                              {activePt1?.speed || 0}<span className="text-xs text-muted-foreground"> km/h</span>
-                            </div>
-                            <div className="text-[8px] font-mono text-primary font-bold uppercase tracking-wider mt-1">{d1Meta.abbr}</div>
-                          </GlassPanel>
-                          <GlassPanel className="p-4 border border-border/40 text-center">
-                            <div className="text-[8px] font-mono text-muted-foreground uppercase tracking-widest font-bold">Top Speed</div>
-                            <div className="font-display text-2xl mt-1.5">
-                              {activePt2?.speed || 0}<span className="text-xs text-muted-foreground"> km/h</span>
-                            </div>
-                            <div className="text-[8px] font-mono text-primary font-bold uppercase tracking-wider mt-1" style={{ color: DRIVER_COLOR_2 }}>{d2Meta.abbr}</div>
-                          </GlassPanel>
-                        </div>
-                      )}
+                    {/* Speeds & Pedals trace compare dashboards (Visible in Enthusiast mode only) */}
+                    {showDetailedTelemetry && (
+                      <motion.div
+                        initial={{ opacity: 0, x: 20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        className="space-y-4"
+                      >
+                        {telemetryAnalysis && (
+                          <div className="grid grid-cols-2 gap-3">
+                            <GlassPanel className="p-4 border border-border/40 text-center">
+                              <div className="text-[8px] font-mono text-muted-foreground uppercase tracking-widest font-bold">Top Speed</div>
+                              <div className="font-display text-2xl mt-1.5">
+                                {activePt1?.speed || 0}<span className="text-xs text-muted-foreground"> km/h</span>
+                              </div>
+                              <div className="text-[8px] font-mono text-primary font-bold uppercase tracking-wider mt-1">{d1Meta.abbr}</div>
+                            </GlassPanel>
+                            <GlassPanel className="p-4 border border-border/40 text-center">
+                              <div className="text-[8px] font-mono text-muted-foreground uppercase tracking-widest font-bold">Top Speed</div>
+                              <div className="font-display text-2xl mt-1.5">
+                                {activePt2?.speed || 0}<span className="text-xs text-muted-foreground"> km/h</span>
+                              </div>
+                              <div className="text-[8px] font-mono text-primary font-bold uppercase tracking-wider mt-1" style={{ color: DRIVER_COLOR_2 }}>{d2Meta.abbr}</div>
+                            </GlassPanel>
+                          </div>
+                        )}
 
-                      <ChartSection title="Speed trace (km/h)" d1={driver1Data} d2={driver2Data} dataKey="speed" color1={DRIVER_COLOR_1} color2={DRIVER_COLOR_2} domain={[50, 350]} activeDist={activeDist} />
-                      <ChartSection title="Throttle logs (%)" d1={driver1Data} d2={driver2Data} dataKey="throttle" color1={DRIVER_COLOR_1} color2={DRIVER_COLOR_2} domain={[0, 100]} activeDist={activeDist} />
-                      <ChartSection title="Brake traces (0-1)" d1={driver1Data} d2={driver2Data} dataKey="brake" color1={DRIVER_COLOR_1} color2={DRIVER_COLOR_2} domain={[0, 1]} activeDist={activeDist} />
-                    </div>
+                        <ChartSection title="Speed trace (km/h)" d1={driver1Data} d2={driver2Data} dataKey="speed" color1={DRIVER_COLOR_1} color2={DRIVER_COLOR_2} domain={[50, 350]} activeDist={activeDist} />
+                        <ChartSection title="Throttle logs (%)" d1={driver1Data} d2={driver2Data} dataKey="throttle" color1={DRIVER_COLOR_1} color2={DRIVER_COLOR_2} domain={[0, 100]} activeDist={activeDist} />
+                        <ChartSection title="Brake traces (0-1)" d1={driver1Data} d2={driver2Data} dataKey="brake" color1={DRIVER_COLOR_1} color2={DRIVER_COLOR_2} domain={[0, 1]} activeDist={activeDist} />
+                      </motion.div>
+                    )}
                   </div>
                 ) : (
                   <GlassPanel className="p-8 py-20 text-center border border-border/40 flex flex-col items-center justify-center gap-4">
