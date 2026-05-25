@@ -171,16 +171,68 @@ function ProfilePage() {
             <motion.div
               key="done"
               initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}
-              className="space-y-8"
+              className="space-y-6"
             >
               <GlassPanel variant="strong" className="grid gap-8 p-8 lg:grid-cols-3">
                 <ProfileFact label="Driver" value={prefs.driver ?? "—"} />
                 <ProfileFact label="Team" value={prefs.team ? TEAMS[prefs.team].name : "—"} accent={prefs.team ? TEAMS[prefs.team].accent : undefined} />
-                <ProfileFact label="Circuit" value={prefs.circuit ?? "—"} />
+                <ProfileFact label="Circuit" value={prefs.circuit ? (prefs.circuit.toUpperCase()) : "—"} />
               </GlassPanel>
+
+              {/* Premium Notification Settings */}
+              <GlassPanel variant="strong" className="p-8 space-y-6">
+                <div>
+                  <div className="text-[10px] font-mono tracking-[0.2em] text-muted-foreground">ALERT CHANNELS</div>
+                  <h3 className="mt-2 font-display text-3xl">Paddock Notifications</h3>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Get automated high-priority alerts sent directly to your device browser.
+                  </p>
+                </div>
+                <div className="space-y-4 pt-2">
+                  {[
+                    { key: "qualifying", label: "Qualifying Alerts", desc: "Instantly notifies you when Q1 goes green." },
+                    { key: "formationLap", label: "Race Reminders", desc: "Pushes formation lap warnings 10 minutes prior." },
+                    { key: "weather", label: "Weather Warnings", desc: "Notifies you when rain sensors trigger on track." },
+                    { key: "replay", label: "Constructor Updates", desc: "Constructors and standings shift notifications." }
+                  ].map((notif) => {
+                    const active = (prefs.notifications as any)?.[notif.key] ?? false;
+                    return (
+                      <div key={notif.key} className="flex items-center justify-between gap-4 p-4 bg-white/[0.01] border border-border/40 rounded-xl hover:bg-white/[0.02] transition">
+                        <div>
+                          <div className="text-sm font-bold text-foreground">{notif.label}</div>
+                          <div className="text-[10px] text-muted-foreground mt-0.5">{notif.desc}</div>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            if (typeof window !== "undefined" && "Notification" in window) {
+                              await Notification.requestPermission();
+                            }
+                            update({
+                              notifications: {
+                                ...prefs.notifications,
+                                [notif.key]: !active
+                              }
+                            });
+                          }}
+                          className={cn(
+                            "h-5 w-10 rounded-full transition-colors relative flex items-center p-0.5 cursor-pointer",
+                            active ? "bg-primary" : "bg-white/10"
+                          )}
+                        >
+                          <span className={cn(
+                            "h-4 w-4 rounded-full bg-background shadow-md transition-transform",
+                            active ? "translate-x-5" : "translate-x-0"
+                          )} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </GlassPanel>
+
               <div className="flex flex-wrap items-center gap-3">
-                <button onClick={() => setStep("driver")} className="rounded-full glass px-5 py-2.5 text-sm transition hover:bg-foreground/10">Edit preferences</button>
-                <button onClick={() => { localStorage.removeItem("apexf1.prefs.v1"); window.location.reload(); }} className="rounded-full px-5 py-2.5 text-sm text-muted-foreground transition hover:text-foreground">Reset</button>
+                <button onClick={() => setStep("driver")} className="rounded-full glass px-5 py-2.5 text-sm transition hover:bg-foreground/10 cursor-pointer">Edit preferences</button>
+                <button onClick={() => { localStorage.removeItem("apexf1.prefs.v1"); window.location.reload(); }} className="rounded-full px-5 py-2.5 text-sm text-muted-foreground transition hover:text-foreground cursor-pointer">Reset</button>
               </div>
             </motion.div>
           )}

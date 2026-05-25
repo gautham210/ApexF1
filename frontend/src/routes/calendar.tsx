@@ -34,13 +34,20 @@ export function CalendarPage() {
     return next;
   });
 
-  const getGoogleCalendarUrl = (event: any) => {
-    const start = event.session5_date ? new Date(event.session5_date) : (event.event_date ? new Date(event.event_date) : new Date());
+  const getGoogleCalendarUrl = (event: any, sessionKey: string = "session5") => {
+    const dateKey = `${sessionKey}_date`;
+    const nameKey = `${sessionKey}_name`;
+    const sessionName = event[nameKey] || (sessionKey === "session5" ? "Race" : "Session");
+    const startStr = event[dateKey] || event.event_date;
+    if (!startStr) return "";
+
+    const start = new Date(startStr);
     const end = new Date(start.getTime() + 2 * 60 * 60 * 1000); // 2 hours duration
     const formatTime = (d: Date) => d.toISOString().replace(/-|:|\.\d\d\d/g, "");
-    const text = encodeURIComponent(event.event_name);
+    
+    const text = encodeURIComponent(`${event.event_name} — ${sessionName}`);
     const dates = `${formatTime(start)}/${formatTime(end)}`;
-    const details = encodeURIComponent(`ApexF1 Companion Race Session: ${event.event_name} at ${event.location}, ${event.country}`);
+    const details = encodeURIComponent(`ApexF1 Companion Session: ${sessionName} for ${event.event_name} at ${event.location}, ${event.country}.`);
     const location = encodeURIComponent(`${event.location}, ${event.country}`);
     return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${text}&dates=${dates}&details=${details}&location=${location}`;
   };
@@ -110,16 +117,28 @@ export function CalendarPage() {
                     <div className="flex-1 min-w-0">
                       <div className="font-display text-2xl truncate">{w.event_name}</div>
                       <div className="text-xs text-muted-foreground font-mono mt-0.5">{eventDateStr} · {w.location}, {w.country}</div>
+                      
+                      {/* Granular session calendar links */}
+                      <div className="flex flex-wrap gap-1.5 mt-3">
+                        {["session1", "session2", "session3", "session4", "session5"].map((sk) => {
+                          const sName = w[`${sk}_name`] || (sk === "session5" ? "Race" : null);
+                          const sDate = w[`${sk}_date`];
+                          if (!sName || !sDate) return null;
+                          return (
+                            <a
+                              key={sk}
+                              href={getGoogleCalendarUrl(w, sk)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[9px] font-mono tracking-wider font-bold bg-white/5 border border-border/20 px-2 py-0.5 rounded-md hover:bg-white/10 transition uppercase text-muted-foreground hover:text-foreground"
+                            >
+                              +{sName}
+                            </a>
+                          );
+                        })}
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <a
-                        href={getGoogleCalendarUrl(w)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center justify-center rounded-full glass px-4 py-2 text-xs transition font-mono tracking-wider font-bold"
-                      >
-                        Add to GCal
-                      </a>
                       <button
                         onClick={() => toggle(w.round_number)}
                         className={cn(

@@ -5,6 +5,7 @@ import { Cloud, Wind, Thermometer, MapPin, ChevronRight, Play, Clock, Trophy, Za
 import { f1Api } from "@/lib/api/client";
 import { useSessionContext } from "@/hooks/useSessionContext";
 import { useLiveSession } from "@/hooks/useLiveSession";
+import { usePreferences, TEAMS } from "@/lib/preferences";
 
 import heroRace from "@/assets/hero-race.jpg";
 import heroPit from "@/assets/hero-pit.jpg";
@@ -99,6 +100,9 @@ function getCircuitData(countryName?: string) {
 export function Dashboard() {
   const { season, currentRace, nextEvent, isLiveWeekend } = useSessionContext();
   const live = useLiveSession();
+  const [prefs] = usePreferences();
+  const favoriteTeam = prefs.team ? TEAMS[prefs.team] : null;
+  const favoriteDriver = prefs.driver;
 
   const [ctx, setCtx] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -141,7 +145,7 @@ export function Dashboard() {
   }, [activeCountry]);
 
   return (
-    <div className="pb-32 relative">
+    <div className="pb-32 relative" style={{ "--primary": favoriteTeam ? favoriteTeam.accent : "oklch(0.82 0.13 75)" } as any}>
       {/* 1. CINEMATIC HERO */}
       <section className="relative h-[88vh] min-h-[640px] w-full overflow-hidden">
         <motion.img
@@ -311,6 +315,45 @@ export function Dashboard() {
           </div>
         </GlassPanel>
       </section>
+
+      {/* PERSONALIZED DRIVER FOCUS */}
+      {favoriteDriver && (
+        <section className="mx-auto mt-24 max-w-[1400px] px-6 lg:px-12">
+          <div className="mb-6">
+            <div className="text-[10px] font-mono tracking-[0.2em] text-muted-foreground">PERSONALIZED PROFILE</div>
+            <h2 className="mt-1 font-display text-4xl">Driver Spotlight</h2>
+          </div>
+          <GlassPanel
+            variant="strong"
+            className="relative overflow-hidden p-8 flex flex-col md:flex-row items-center justify-between gap-8 border border-border/40"
+            style={{ borderLeft: `4px solid ${favoriteTeam?.accent || "var(--primary)"}` }}
+          >
+            <div className="max-w-xl space-y-4">
+              <div className="flex items-center gap-2 text-[10px] font-mono tracking-[0.18em] text-primary font-bold uppercase">
+                <Zap className="w-3.5 h-3.5" /> Spotlight Focus · {favoriteTeam?.name || "Grid Competitor"}
+              </div>
+              <h3 className="font-display text-4xl leading-tight">
+                {favoriteDriver} is preparing for the grid
+              </h3>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                As a registered {favoriteTeam?.name || "paddock"} supporter, your home room is synchronized to spotlight their session countdowns, telemetry logs, and standings updates.
+              </p>
+              <div className="text-[11px] font-mono text-foreground/80 flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-lg max-w-max border border-border/20">
+                <Clock className="w-3.5 h-3.5 text-primary" />
+                <span>Your driver goes green in 14 minutes</span>
+              </div>
+            </div>
+            <div className="w-full md:w-[280px] aspect-[4/3] rounded-xl overflow-hidden relative border border-border/20">
+              <img src={heroDriver} alt="" className="absolute inset-0 h-full w-full object-cover opacity-60" />
+              <div className="absolute inset-0 bg-gradient-to-t from-background via-background/20 to-transparent" />
+              <div className="absolute inset-0 flex flex-col justify-end p-4">
+                <span className="text-[9px] font-mono tracking-widest text-primary/80 font-bold uppercase">MOMENTUM</span>
+                <span className="font-display text-2xl mt-1 leading-none">{favoriteDriver}</span>
+              </div>
+            </div>
+          </GlassPanel>
+        </section>
+      )}
 
       {/* 3. STORIES FROM THE PADDOCK */}
       <section className="mx-auto mt-24 max-w-[1400px] px-6 lg:px-12">

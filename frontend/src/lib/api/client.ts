@@ -1,16 +1,31 @@
 import axios from "axios";
 
-const BASE_URL =
-  (typeof window !== "undefined"
-    ? (window as any).VITE_API_URL ||
-      (window as any).NEXT_PUBLIC_API_URL ||
-      (import.meta as any).env?.VITE_API_URL ||
-      (import.meta as any).env?.NEXT_PUBLIC_API_URL
-    : null) ||
-  (typeof process !== "undefined"
-    ? process.env?.VITE_API_URL || process.env?.NEXT_PUBLIC_API_URL
-    : null) ||
-  "http://localhost:8000";
+const getBaseUrl = () => {
+  if (typeof window === "undefined") {
+    return (typeof process !== "undefined"
+      ? process.env?.VITE_API_URL || process.env?.NEXT_PUBLIC_API_URL
+      : null) || "http://localhost:8000";
+  }
+
+  // Client-side resolution
+  const envUrl =
+    (window as any).VITE_API_URL ||
+    (window as any).NEXT_PUBLIC_API_URL ||
+    (import.meta as any).env?.VITE_API_URL ||
+    (import.meta as any).env?.NEXT_PUBLIC_API_URL;
+
+  if (envUrl) return envUrl;
+
+  // No env variable: check if we are on localhost
+  if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+    return "http://localhost:8000";
+  }
+
+  // Deployed in production on Vercel — use the current origin
+  return window.location.origin;
+};
+
+const BASE_URL = getBaseUrl();
 
 export const WS_URL = BASE_URL.replace(/^http/, "ws");
 
