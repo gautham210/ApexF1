@@ -1,28 +1,28 @@
 import axios from "axios";
 
 const getBaseUrl = () => {
+  // 1. Resolve compiled environment variables
+  const viteEnv = (import.meta as any).env?.VITE_API_URL || (import.meta as any).env?.NEXT_PUBLIC_API_URL;
+  if (viteEnv) return viteEnv;
+
+  // 2. Check global window variables
+  const windowEnv = (window as any).VITE_API_URL || (window as any).NEXT_PUBLIC_API_URL;
+  if (windowEnv) return windowEnv;
+
+  // 3. Server-side environment checks
   if (typeof window === "undefined") {
     return (typeof process !== "undefined"
       ? process.env?.VITE_API_URL || process.env?.NEXT_PUBLIC_API_URL
       : null) || "http://localhost:8000";
   }
 
-  // Client-side resolution
-  const envUrl =
-    (window as any).VITE_API_URL ||
-    (window as any).NEXT_PUBLIC_API_URL ||
-    (import.meta as any).env?.VITE_API_URL ||
-    (import.meta as any).env?.NEXT_PUBLIC_API_URL;
-
-  if (envUrl) return envUrl;
-
-  // No env variable: check if we are on localhost
+  // 4. Localhost fallback only during development
   if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
     return "http://localhost:8000";
   }
 
-  // Deployed in production on Vercel — use the current origin
-  return window.location.origin;
+  // 5. Default production backend Render fallback
+  return "https://files.apexf1.onrender.com";
 };
 
 const BASE_URL = getBaseUrl();
