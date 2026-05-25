@@ -4,14 +4,12 @@ import {
   Link,
   createRootRouteWithContext,
   useRouter,
-  HeadContent,
-  Scripts,
 } from "@tanstack/react-router";
 import { AppSidebar, MobileNav } from "@/components/AppSidebar";
 import { AmbientBackdrop } from "@/components/AmbientBackdrop";
 import { GlobalContextInit } from "@/components/GlobalContextInit";
 
-import appCss from "../styles.css?url";
+import "../styles.css";
 
 function NotFoundComponent() {
   return (
@@ -50,36 +48,10 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
 }
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
-  head: () => ({
-    meta: [
-      { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "ApexF1 — A cinematic Formula 1 companion" },
-      { name: "description", content: "ApexF1 is a premium, cinematic companion for the Formula 1 season — schedules, sessions, standings and race weekends." },
-      { name: "theme-color", content: "#1a1a1c" },
-      { property: "og:title", content: "ApexF1" },
-      { property: "og:description", content: "A cinematic companion for the Formula 1 season." },
-      { property: "og:type", content: "website" },
-    ],
-    links: [{ rel: "stylesheet", href: appCss }],
-  }),
-  shellComponent: RootShell,
   component: RootComponent,
   notFoundComponent: NotFoundComponent,
   errorComponent: ErrorComponent,
 });
-
-function RootShell({ children }: { children: React.ReactNode }) {
-  return (
-    <html lang="en">
-      <head><HeadContent /></head>
-      <body>
-        {children}
-        <Scripts />
-      </body>
-    </html>
-  );
-}
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
