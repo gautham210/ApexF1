@@ -1,11 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useState, useMemo } from "react";
-import { Cloud, Wind, Thermometer, MapPin, ChevronRight, Play, Clock, Trophy, Zap, Compass, Radio, Flag, AlertTriangle, ArrowRight } from "lucide-react";
+import { Cloud, Wind, Thermometer, MapPin, ChevronRight, Play, Clock, Trophy, Zap, Compass, Radio, Flag, AlertTriangle } from "lucide-react";
 import { f1Api } from "@/lib/api/client";
 import { useSessionContext } from "@/hooks/useSessionContext";
 import { useLiveSession } from "@/hooks/useLiveSession";
 import { usePreferences, TEAMS } from "@/lib/preferences";
+import { useCanonicalStore } from "@/lib/store";
 
 import heroRace from "@/assets/hero-race.jpg";
 import heroPit from "@/assets/hero-pit.jpg";
@@ -103,6 +104,9 @@ export function Dashboard() {
   const [prefs] = usePreferences();
   const favoriteTeam = prefs.team ? TEAMS[prefs.team] : null;
   const favoriteDriver = prefs.driver;
+
+  // Canonical store — single source of truth for race results
+  const { sessionResults } = useCanonicalStore();
 
   const [ctx, setCtx] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -425,27 +429,26 @@ export function Dashboard() {
 
                 <GlassPanel variant="strong" className="p-6 border border-border/40 flex-1 flex flex-col justify-between">
                   <div>
-                    <div className="text-[10px] font-mono tracking-[0.2em] text-muted-foreground uppercase font-bold">LIVE TYRES</div>
-                    <h3 className="mt-1 font-display text-3xl">Degradation metrics</h3>
+                    <div className="text-[10px] font-mono tracking-[0.2em] text-muted-foreground uppercase font-bold">FULL TIMING</div>
+                    <h3 className="mt-1 font-display text-3xl">Race command feed</h3>
                     <p className="mt-3 text-sm text-muted-foreground leading-relaxed">
-                      Aggregated tyre compounds stint durations show high-speed asphalt decay profiles. Soft variants degrade in 14-16 laps.
+                      Live tyre selections, pit strategies, gap intervals, and sector splits are available in the full Race Center timing feed.
                     </p>
                   </div>
-                  <div className="mt-6 space-y-2 bg-white/[0.01] p-4 rounded-xl border border-border/20">
-                    <div className="flex justify-between text-[9px] font-mono text-muted-foreground font-bold uppercase">
-                      <span>Soft variant compound</span>
-                      <span>12 laps remaining</span>
-                    </div>
-                    <div className="w-full h-1.5 rounded-full bg-white/5 overflow-hidden">
-                      <div className="h-full bg-primary" style={{ width: "65%" }} />
-                    </div>
+                  <div className="mt-6">
+                    <Link
+                      to="/race-center"
+                      className="inline-flex items-center justify-center w-full gap-2 rounded-xl bg-foreground text-background py-2.5 text-xs font-bold transition hover:bg-foreground/90"
+                    >
+                      Open Race Center →
+                    </Link>
                   </div>
                 </GlassPanel>
               </div>
             </motion.div>
           )}
 
-          {/* AFTER STATE: Winner showcase, podium, standings split */}
+          {/* AFTER STATE: Winner showcase, podium, standings split — sourced from canonical store only */}
           {weekendState === "AFTER" && (
             <motion.div
               key="after"
@@ -465,38 +468,69 @@ export function Dashboard() {
                     <Trophy className="w-3.5 h-3.5" /> Race results summary
                   </div>
                   <h2 className="mt-2 font-display text-4xl">Weekend champions</h2>
-                  <p className="mt-2 text-sm text-muted-foreground max-w-md">
-                    Grand Prix session complete. Explore the final top-three drivers classification on the podium.
-                  </p>
                 </div>
 
-                <div className="grid grid-cols-3 gap-4 mt-8 border-t border-border/20 pt-6 items-end">
-                  <div className="text-center p-3 rounded-2xl bg-white/[0.01] border border-border/10">
-                    <div className="text-[9px] font-mono text-muted-foreground uppercase font-bold">2nd Place</div>
-                    <div className="font-display text-xl mt-1 leading-none">Norris</div>
-                    <div className="text-[8px] font-mono text-primary font-bold uppercase mt-1">MCL</div>
-                  </div>
-                  <div className="text-center p-4 rounded-2xl bg-primary/5 border border-primary/20 shadow-2xl relative -top-2">
-                    <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-primary text-[8px] font-mono font-black text-background uppercase">Winner</span>
-                    <div className="text-[9px] font-mono text-primary font-bold uppercase">1st Place</div>
-                    <div className="font-display text-2xl mt-1.5 leading-none">Verstappen</div>
-                    <div className="text-[8px] font-mono text-primary/80 font-bold uppercase mt-1">RBR</div>
-                  </div>
-                  <div className="text-center p-3 rounded-2xl bg-white/[0.01] border border-border/10">
-                    <div className="text-[9px] font-mono text-muted-foreground uppercase font-bold">3rd Place</div>
-                    <div className="font-display text-xl mt-1 leading-none">Leclerc</div>
-                    <div className="text-[8px] font-mono text-primary font-bold uppercase mt-1">FER</div>
-                  </div>
-                </div>
+                {/* Render top-3 only from canonical verified data */}
+                {(() => {
+                  const raceKey = `${currentRace?.round_number}-Race`;
+                  const results = sessionResults[raceKey];
+                  const top3 = results?.slice(0, 3) ?? [];
+
+                  if (top3.length === 0) {
+                    return (
+                      <div className="mt-8 py-8 text-center border-t border-border/20">
+                        <p className="text-xs text-muted-foreground font-mono uppercase tracking-wider">
+                          Race results publish after official FIA classification.
+                        </p>
+                        <p className="text-[10px] text-muted-foreground/60 mt-1">
+                          Check back once the session concludes.
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  const [p1, p2, p3] = [
+                    top3.find(d => d.position === 1) ?? top3[0],
+                    top3.find(d => d.position === 2) ?? top3[1],
+                    top3.find(d => d.position === 3) ?? top3[2],
+                  ];
+
+                  return (
+                    <div className="grid grid-cols-3 gap-4 mt-8 border-t border-border/20 pt-6 items-end">
+                      {p2 && (
+                        <div className="text-center p-3 rounded-2xl bg-white/[0.01] border border-border/10">
+                          <div className="text-[9px] font-mono text-muted-foreground uppercase font-bold">2nd Place</div>
+                          <div className="font-display text-xl mt-1 leading-none">{p2.abbreviation || p2.driver_name}</div>
+                          <div className="text-[8px] font-mono text-primary font-bold uppercase mt-1">{p2.team?.slice(0, 3).toUpperCase()}</div>
+                        </div>
+                      )}
+                      {p1 && (
+                        <div className="text-center p-4 rounded-2xl bg-primary/5 border border-primary/20 shadow-2xl relative -top-2">
+                          <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-primary text-[8px] font-mono font-black text-background uppercase">Winner</span>
+                          <div className="text-[9px] font-mono text-primary font-bold uppercase">1st Place</div>
+                          <div className="font-display text-2xl mt-1.5 leading-none">{p1.abbreviation || p1.driver_name}</div>
+                          <div className="text-[8px] font-mono text-primary/80 font-bold uppercase mt-1">{p1.team?.slice(0, 3).toUpperCase()}</div>
+                        </div>
+                      )}
+                      {p3 && (
+                        <div className="text-center p-3 rounded-2xl bg-white/[0.01] border border-border/10">
+                          <div className="text-[9px] font-mono text-muted-foreground uppercase font-bold">3rd Place</div>
+                          <div className="font-display text-xl mt-1 leading-none">{p3.abbreviation || p3.driver_name}</div>
+                          <div className="text-[8px] font-mono text-primary font-bold uppercase mt-1">{p3.team?.slice(0, 3).toUpperCase()}</div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </GlassPanel>
 
-              {/* Standings Impact Summary */}
+              {/* Post-race navigation */}
               <GlassPanel variant="strong" className="p-6 border border-border/40 flex flex-col justify-between">
                 <div>
-                  <div className="text-[10px] font-mono tracking-[0.2em] text-muted-foreground uppercase font-bold">STANDINGS IMPACT</div>
-                  <h3 className="mt-1 font-display text-3xl">Championship splits</h3>
+                  <div className="text-[10px] font-mono tracking-[0.2em] text-muted-foreground uppercase font-bold">NEXT STEPS</div>
+                  <h3 className="mt-1 font-display text-3xl">Explore the weekend</h3>
                   <p className="mt-3 text-sm text-muted-foreground leading-relaxed">
-                    Following their podium finishes, Verstappen expands his championship gap, while McLaren solidifies their constructor lead.
+                    Championship standings have been updated. View the full classification or revisit the race through the archive.
                   </p>
                 </div>
                 <div className="mt-6 flex flex-col gap-2">

@@ -517,3 +517,109 @@ export const useStandingsStore = create<StandingsStore>((set) => ({
   setConstructors: (c) => set({ constructors: c }),
   setEngines: (e) => set({ engines: e }),
 }));
+
+// ─── Unified Single Source of Truth Canonical Data Store ──────────────────────
+
+export interface CanonicalStore {
+  schedule: ScheduleEvent[];
+  standings: StandingsEntry[];
+  constructors: StandingsEntry[];
+  engines: any[];
+  sessionResults: Record<string, LeaderboardEntry[]>;
+  telemetryAvailability: Record<string, boolean>;
+  loading: boolean;
+  error: string | null;
+  
+  setSchedule: (s: ScheduleEvent[]) => void;
+  setStandings: (s: StandingsEntry[]) => void;
+  setConstructors: (c: StandingsEntry[]) => void;
+  setEngines: (e: any[]) => void;
+  setSessionResults: (key: string, results: LeaderboardEntry[]) => void;
+  setTelemetryAvailability: (key: string, available: boolean) => void;
+  syncCanonicalData: (year: number) => Promise<void>;
+}
+
+export const useCanonicalStore = create<CanonicalStore>((set, get) => ({
+  schedule: [],
+  standings: [],
+  constructors: [],
+  engines: [],
+  sessionResults: {},
+  telemetryAvailability: {},
+  loading: false,
+  error: null,
+
+  setSchedule: (schedule) => set({ schedule }),
+  setStandings: (standings) => set({ standings }),
+  setConstructors: (constructors) => set({ constructors }),
+  setEngines: (engines) => set({ engines }),
+  setSessionResults: (key, results) => set((state) => ({
+    sessionResults: { ...state.sessionResults, [key]: results }
+  })),
+  setTelemetryAvailability: (key, available) => set((state) => ({
+    telemetryAvailability: { ...state.telemetryAvailability, [key]: available }
+  })),
+
+  syncCanonicalData: async (year) => {
+    set({ loading: true, error: null });
+    try {
+      // 1. Fetch schedule
+      const schedRes = await f1Api.getSchedule(year);
+      const schedule = Array.isArray(schedRes) ? schedRes : (schedRes as any)?.data ?? [];
+      set({ schedule });
+
+      // 2. Fetch Standings & Engine Standings in parallel
+      const [standingsRes, enginesRes] = await Promise.allSettled([
+        f1Api.getStandings(year),
+        f1Api.getEngineStandings(year),
+      ]);
+
+      let driversList: StandingsEntry[] = [];
+      let constructorsList: StandingsEntry[] = [];
+      if (standingsRes.status === "fulfilled") {
+        const val = standingsRes.value as any;
+        const d = val.data || val;
+        driversList = d.drivers || [];
+        constructorsList = d.constructors || [];
+        set({
+          standings: driversList,
+          constructors: constructorsList,
+        });
+      }
+
+      if (enginesRes.status === "fulfilled") {
+        const val = enginesRes.value as any;
+        set({ engines: val.data || val || [] });
+      }
+
+      // 3. Gracefully fetch results for completed GP rounds to seed podiums
+      const completedEvents = schedule.filter((w) => w.is_completed);
+      const resultsPromises = completedEvents.map(async (w) => {
+        const key = `${w.round_number}-Race`;
+        try {
+          const res = await f1Api.getLeaderboard(year, w.round_number, "Race");
+          const list = Array.isArray(res) ? res : (res as any)?.data ?? [];
+          return { key, list };
+        } catch {
+          return { key, list: [] };
+        }
+      });
+
+      const results = await Promise.all(resultsPromises);
+      const resultsMap: Record<string, LeaderboardEntry[]> = {};
+      results.forEach((r) => {
+        resultsMap[r.key] = r.list;
+      });
+
+      set((state) => ({
+        sessionResults: { ...state.sessionResults, ...resultsMap }
+      }));
+
+    } catch (e: any) {
+      set({ error: e.message || "Failed to load canonical data." });
+    } finally {
+      set({ loading: false });
+    }
+  }
+}));
+
