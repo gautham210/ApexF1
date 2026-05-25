@@ -663,97 +663,19 @@ _NEWS_FEEDS = [
 
 async def get_news(year: int = 2026, country: str = None) -> List[Dict[str, str]]:
     """
-    Returns season-aware and event-aware news headlines to prevent cross-season contamination.
-    Generates high-fidelity, context-relevant headlines for completed/historical years.
+    Returns authentic news headlines from official RSS feeds.
+    Never hallucinates or generates fictional paddock journalism.
     """
     cache_key = f"news_feed_{year}_{country or 'all'}"
     if cache_key in _news_cache:
         return _news_cache[cache_key]
-        
-    # Historical seasons or specific non-current events -> dynamic context-aware headlines
-    if year < 2026 or country:
-        norm_country = country.lower().strip() if country else ""
-        if "abu dhabi" in norm_country or "yas marina" in norm_country:
-            news_items = [
-                {
-                    "title": f"Abu Dhabi Finale: Verstappen reflects on intense battle as {year} season draws to a close",
-                    "source": "Autosport",
-                    "tag": "SEASON FINALE",
-                    "link": "#",
-                    "published": f"Dec {year}",
-                },
-                {
-                    "title": f"Hamilton bids emotional farewell to team ahead of final race before new chapter",
-                    "source": "Motorsport.com",
-                    "tag": "PADDOCK EXCLUSIVE",
-                    "link": "#",
-                    "published": f"Dec {year}",
-                },
-                {
-                    "title": f"Constructors Showdown: Millions on the line as midfield battle goes down to the wire in Abu Dhabi",
-                    "source": "RaceFans",
-                    "tag": "CONSTRUCTORS ANALYSIS",
-                    "link": "#",
-                    "published": f"Dec {year}",
-                }
-            ]
-        elif "canada" in norm_country or "montreal" in norm_country:
-            news_items = [
-                {
-                    "title": f"Canada GP: Variable weather forecasts set to disrupt strategy at Montreal",
-                    "source": "Motorsport.com",
-                    "tag": "STRATEGY REPORT",
-                    "link": "#",
-                    "published": f"June {year}",
-                },
-                {
-                    "title": f"Aston Martin upgrades face high-speed stability test at Montreal's chicanes",
-                    "source": "Autosport",
-                    "tag": "TECHNICAL ANALYSIS",
-                    "link": "#",
-                    "published": f"June {year}",
-                },
-                {
-                    "title": f"Telemetry insights: How braking layout defines Montreal lap times",
-                    "source": "RaceFans",
-                    "tag": "TRACK DEPTH",
-                    "link": "#",
-                    "published": f"June {year}",
-                }
-            ]
-        else:
-            c_name = country if country else "Grand Prix"
-            news_items = [
-                {
-                    "title": f"{c_name} Technical Brief: How high-downforce aerodynamic setups will dictate lap times",
-                    "source": "Autosport",
-                    "tag": "TECHNICAL ANALYSIS",
-                    "link": "#",
-                    "published": f"{year} Session",
-                },
-                {
-                    "title": f"Team Principals focus on tire degradation threshold forecast for {c_name} track temperatures",
-                    "source": "Motorsport.com",
-                    "tag": "TIRE STRATEGY",
-                    "link": "#",
-                    "published": f"{year} Session",
-                },
-                {
-                    "title": f"Championship Momentum: Top teams analyze simulator data ahead of intense race weekend in {c_name}",
-                    "source": "RaceFans",
-                    "tag": "CHAMPIONSHIP READS",
-                    "link": "#",
-                    "published": f"{year} Session",
-                }
-            ]
-        _news_cache[cache_key] = news_items
-        return news_items
 
-    # Current year live feeds
+    # ONLY fetch real live articles from actual RSS feeds.
+    # No fabricated news items for historical/upcoming coordinates.
     news_items = []
     for feed_url, source_name in _NEWS_FEEDS:
         try:
-            async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+            async with httpx.AsyncClient(timeout=6.0, follow_redirects=True) as client:
                 resp = await client.get(feed_url)
                 resp.raise_for_status()
                 root = ET.fromstring(resp.text)
@@ -769,28 +691,28 @@ async def get_news(year: int = 2026, country: str = None) -> List[Dict[str, str]
                         news_items.append({
                             "title": title,
                             "source": source_name,
-                            "tag": "F1 News",
+                            "tag": "Paddock Story",
                             "link": link,
                             "published": pub_date,
                         })
-            if news_items:
-                # Deduplicate by first 60 chars of title (case-insensitive)
-                seen: set = set()
-                unique = []
-                for item in news_items:
-                    key = item["title"][:60].lower()
-                    if key not in seen:
-                        seen.add(key)
-                        unique.append(item)
-                news_items = unique[:8]
-                _news_cache[cache_key] = news_items
-                return news_items
         except Exception as e:
             logger.warning(f"get_news feed {feed_url} failed: {e}")
             continue
+
+    if news_items:
+        # Deduplicate by first 60 chars of title (case-insensitive)
+        seen = set()
+        unique = []
+        for item in news_items:
+            key = item["title"][:60].lower()
+            if key not in seen:
+                seen.add(key)
+                unique.append(item)
+        news_items = unique[:8]
+        _news_cache[cache_key] = news_items
+        return news_items
         
-    logger.error("All news feeds failed")
-    return news_items
+    return []
 
 
 _ENGINE_SUPPLIER_COLORS: Dict[str, str] = {

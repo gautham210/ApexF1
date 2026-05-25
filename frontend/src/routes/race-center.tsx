@@ -1,0 +1,875 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { motion, AnimatePresence } from "framer-motion";
+import { useState, useEffect, useMemo, useRef } from "react";
+import {
+  ResponsiveContainer, AreaChart, Area, XAxis, YAxis,
+  CartesianGrid, Tooltip, ReferenceLine
+} from "recharts";
+import { f1Api } from "@/lib/api/client";
+import { useLiveSession, type SessionState } from "@/hooks/useLiveSession";
+import { useSessionContext } from "@/hooks/useSessionContext";
+import { useTelemetryStore, getDriversListByYear, getDriverByYear } from "@/lib/store";
+import {
+  Radio, Archive, Clock, Thermometer, Wind, Droplets,
+  CloudRain, AlertTriangle, Flag, RefreshCw, Play, Pause,
+  RotateCcw, Zap, ChevronDown, ChevronRight, Activity, CalendarDays, Compass
+} from "lucide-react";
+import { GlassPanel } from "@/components/GlassPanel";
+import { cn } from "@/lib/utils";
+
+export const Route = createFileRoute("/race-center")({
+  head: () => ({
+    meta: [
+      { title: "ApexF1 — Race Center Command Room" },
+      { name: "description", content: "Immersive real-time timing tower, weather logs, and visual telemetry charts." },
+    ],
+  }),
+  component: RaceCenter,
+});
+
+// ── Compound colors ──────────────────────────────────────────────────────────
+const COMPOUND: Record<string, { color: string; label: string }> = {
+  SOFT:         { color: "#ff3333", label: "S" },
+  MEDIUM:       { color: "#ffd700", label: "M" },
+  HARD:         { color: "#ffffff", label: "H" },
+  INTERMEDIATE: { color: "#39b54a", label: "I" },
+  WET:          { color: "#0067ff", label: "W" },
+  UNKNOWN:      { color: "#555",    label: "?" },
+};
+
+// ── Track status → banner config ──────────────────────────────────────────────
+const TRACK_STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; pulse: boolean }> = {
+  GREEN:  { label: "TRACK CLEAR",     color: "#4ade80", bg: "rgba(74,222,128,0.04)",  pulse: false },
+  YELLOW: { label: "YELLOW FLAG",     color: "#facc15", bg: "rgba(250,204,21,0.06)",  pulse: true  },
+  SC:     { label: "SAFETY CAR",      color: "#fb923c", bg: "rgba(251,146,60,0.06)",  pulse: true  },
+  VSC:    { label: "VIRTUAL SC",      color: "#fb923c", bg: "rgba(251,146,60,0.04)",  pulse: false },
+  RED:    { label: "RED FLAG",        color: "#ef4444", bg: "rgba(239,68,68,0.08)",   pulse: true  },
+};
+
+// ── State display config ──────────────────────────────────────────────────────
+const STATE_CONFIG: Record<SessionState, { label: string; color: string; live: boolean }> = {
+  UPCOMING:   { label: "UPCOMING",        color: "#60a5fa", live: false },
+  WEEKEND:    { label: "WEEKEND",         color: "#a78bfa", live: false },
+  FP1:        { label: "PRACTICE 1",      color: "#4ade80", live: true  },
+  FP2:        { label: "PRACTICE 2",      color: "#4ade80", live: true  },
+  FP3:        { label: "PRACTICE 3",      color: "#4ade80", live: true  },
+  QUALIFYING: { label: "QUALIFYING",      color: "#facc15", live: true  },
+  SPRINT_Q:   { label: "SPRINT QUAL",     color: "#facc15", live: true  },
+  SPRINT:     { label: "SPRINT",          color: "#fb923c", live: true  },
+  RACE:       { label: "GRAND PRIX",      color: "#e10600", live: true  },
+  RED_FLAG:   { label: "RED FLAG",        color: "#ef4444", live: true  },
+  SC:         { label: "SAFETY CAR",      color: "#fb923c", live: true  },
+  VSC:        { label: "VIRTUAL SC",      color: "#fb923c", live: true  },
+  CHECKERED:  { label: "FINISHED",        color: "#9ca3af", live: false },
+  ARCHIVE:    { label: "ARCHIVE",         color: "#60a5fa", live: false },
+  WAKING:     { label: "CONNECTING",      color: "#9ca3af", live: false },
+  UNKNOWN:    { label: "LOADING",         color: "#9ca3af", live: false },
+};
+
+// ── Official Track Splines Database ──────────────────────────────────────────
+const TRACKS_DB: Record<string, { path: string; length: string; laps: number; drs: number; name: string }> = {
+  canada: {
+    path: "M 10 50 C 12 32, 28 20, 36 28 L 44 38 C 48 44, 52 44, 56 38 L 70 18 C 74 12, 82 12, 86 18 L 110 46 C 114 50, 114 58, 108 62 L 94 70 C 88 74, 80 70, 76 62 L 70 50 C 66 44, 58 44, 54 50 L 46 68 C 42 76, 32 78, 26 70 L 12 56 Z",
+    length: "4.361 km",
+    laps: 70,
+    drs: 3,
+    name: "Circuit Gilles Villeneuve"
+  },
+  monaco: {
+    path: "M 10 35 C 12 30, 18 10, 26 12 C 32 14, 38 28, 48 30 C 58 32, 62 10, 72 8 C 82 6, 92 12, 94 22 C 96 32, 88 40, 84 46 C 80 52, 88 56, 86 64 C 84 72, 72 78, 62 76 C 52 74, 46 64, 42 66 C 38 68, 36 78, 30 80 C 24 82, 14 74, 12 64 C 10 54, 8 40, 10 35 Z",
+    length: "3.337 km",
+    laps: 78,
+    drs: 1,
+    name: "Circuit de Monaco"
+  },
+  miami: {
+    path: "M 10 40 L 40 18 C 45 15, 55 15, 60 18 L 90 40 C 95 44, 95 56, 90 60 L 80 72 C 75 77, 65 77, 60 72 L 50 62 C 45 57, 35 57, 30 62 L 20 72 C 15 77, 5 72, 8 62 L 10 40 Z",
+    length: "5.412 km",
+    laps: 57,
+    drs: 3,
+    name: "Miami International Autodrome"
+  },
+  "abu dhabi": {
+    path: "M 10 20 L 48 20 C 52 20, 56 24, 58 28 L 74 62 C 76 66, 80 70, 84 70 L 108 70 C 112 70, 115 75, 112 80 L 98 94 C 94 98, 86 98, 82 94 L 54 66 C 50 62, 40 62, 36 66 L 24 78 C 20 82, 12 80, 10 74 L 6 34 C 5 26, 7 20, 10 20 Z",
+    length: "5.281 km",
+    laps: 58,
+    drs: 2,
+    name: "Yas Marina Circuit"
+  },
+  bahrain: {
+    path: "M 15 25 L 50 18 L 85 25 C 90 28, 90 38, 85 42 L 55 58 C 50 62, 45 68, 48 74 L 62 82 C 65 85, 60 90, 52 88 L 22 74 C 18 70, 16 64, 18 58 Z",
+    length: "5.412 km",
+    laps: 57,
+    drs: 3,
+    name: "Bahrain International Circuit"
+  }
+};
+
+const DEFAULT_TRACK = {
+  path: "M 25 50 C 35 30, 58 28, 70 45 C 82 62, 102 62, 110 45 C 115 34, 105 18, 88 18 C 70 18, 60 35, 48 40 Z",
+  length: "5.891 km",
+  laps: 52,
+  drs: 2,
+  name: "Grand Prix Circuit Layout"
+};
+
+// ── Shared Tyre Chip Widget ──
+function TyreChip({ compound }: { compound?: string | null }) {
+  const key = (compound || "UNKNOWN").toUpperCase();
+  const cfg = COMPOUND[key] || COMPOUND.UNKNOWN;
+  return (
+    <div
+      className="w-5 h-5 rounded-full border flex items-center justify-center font-sans text-[8px] font-black flex-shrink-0"
+      style={{ borderColor: cfg.color, color: cfg.color, background: `${cfg.color}05` }}
+    >
+      {cfg.label}
+    </div>
+  );
+}
+
+// ── Weather Bar component ──
+function WeatherBar({ weather }: { weather: any }) {
+  if (!weather) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-muted-foreground text-[10px] font-mono tracking-wider font-bold">
+      <span className="flex items-center gap-1.5">
+        <Thermometer className="w-3.5 h-3.5" />
+        {weather.air_temp?.toFixed(0)}° air / {weather.track_temp?.toFixed(0)}° track
+      </span>
+      <span className="flex items-center gap-1.5">
+        <Wind className="w-3.5 h-3.5" />
+        {weather.wind_speed?.toFixed(0)} m/s
+      </span>
+      <span className="flex items-center gap-1.5">
+        <Droplets className="w-3.5 h-3.5" />
+        {weather.humidity?.toFixed(0)}% hum
+      </span>
+      {weather.rainfall && (
+        <span className="flex items-center gap-1.5 text-primary animate-pulse font-bold">
+          <CloudRain className="w-3.5 h-3.5 animate-bounce" /> WET TRACK
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ── Track Status Warning Banner ──
+function TrackStatusBanner({ status }: { status: string }) {
+  const cfg = TRACK_STATUS_CONFIG[status] || TRACK_STATUS_CONFIG.GREEN;
+  if (status === "GREEN" || !status) return null;
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="flex items-center gap-3 px-5 py-2.5 rounded-xl border text-[10px] font-mono tracking-widest uppercase mb-4"
+      style={{ borderColor: `${cfg.color}20`, background: cfg.bg, color: cfg.color }}
+    >
+      <AlertTriangle className="w-4 h-4" />
+      {cfg.label}
+      {cfg.pulse && (
+        <span className="ml-auto w-2 h-2 rounded-full animate-pulse" style={{ background: cfg.color }} />
+      )}
+    </motion.div>
+  );
+}
+
+// ── Race Control messages ticker ──
+function RaceControlTicker({ messages }: { messages: any[] }) {
+  if (!messages || messages.length === 0) return null;
+  const latest = messages[0];
+  return (
+    <div className="flex items-center gap-3 px-4 py-2.5 bg-white/[0.01] border border-border/40 rounded-xl text-[11px] font-sans text-muted-foreground leading-none">
+      <span className="text-primary font-bold tracking-wider flex-shrink-0 uppercase text-[9px] border border-primary/20 px-1.5 py-0.5 rounded bg-primary/5">
+        {latest.flag || latest.category || "CONTROL"}
+      </span>
+      <span className="truncate text-foreground/80">{latest.message}</span>
+      {latest.lap && (
+        <span className="text-muted-foreground ml-auto flex-shrink-0 font-mono text-[9px]">Lap {latest.lap}</span>
+      )}
+    </div>
+  );
+}
+
+// ── Telemetry comparison AreaChart Section ──
+function ChartSection({ title, d1, d2, dataKey, color1, color2, domain, activeDist }: {
+  title: string; d1: any[]; d2: any[]; dataKey: string; color1: string; color2: string; domain?: [number, number]; activeDist: number;
+}) {
+  const merged = useMemo(() => {
+    return d1.map((p, i) => ({
+      dist: p.distance ? Math.round(p.distance) : p.time ? Math.round(p.time * 10) : i,
+      driver1: p[dataKey],
+      driver2: d2[i]?.[dataKey],
+    }));
+  }, [d1, d2, dataKey]);
+
+  return (
+    <div className="bg-white/[0.01] border border-border/40 rounded-2xl p-4 shadow-xl">
+      <h3 className="font-mono font-bold text-muted-foreground text-[9px] tracking-widest mb-3 uppercase flex items-center gap-1.5">
+        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color1 }} />
+        {title}
+      </h3>
+      <ResponsiveContainer width="100%" height={90}>
+        <AreaChart data={merged} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+          <defs>
+            <linearGradient id={`g1-${dataKey}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={color1} stopOpacity={0.2} />
+              <stop offset="95%" stopColor={color1} stopOpacity={0} />
+            </linearGradient>
+            <linearGradient id={`g2-${dataKey}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={color2} stopOpacity={0.2} />
+              <stop offset="95%" stopColor={color2} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.01)" vertical={false} />
+          <XAxis dataKey="dist" tick={false} tickLine={false} axisLine={false} />
+          <YAxis domain={domain} tick={{ fill: "rgba(255,255,255,0.25)", fontSize: 8, fontFamily: "monospace" }} tickLine={false} axisLine={false} width={36} />
+          <Tooltip
+            cursor={{ stroke: "rgba(255,255,255,0.08)", strokeWidth: 1 }}
+            contentStyle={{ background: "rgba(10,10,18,0.95)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, fontSize: 9, fontFamily: "sans-serif", color: "#fff", padding: "4px 8px" }}
+            labelStyle={{ display: "none" }}
+          />
+          <Area type="monotone" dataKey="driver1" stroke={color1} fill={`url(#g1-${dataKey})`} strokeWidth={1} dot={false} activeDot={false} />
+          <Area type="monotone" dataKey="driver2" stroke={color2} fill={`url(#g2-${dataKey})`} strokeWidth={1} dot={false} activeDot={false} />
+          {activeDist > 0 && (
+            <ReferenceLine x={activeDist} stroke="rgba(255,255,255,0.3)" strokeWidth={1} strokeDasharray="3 3" />
+          )}
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+// ── Shared Leaderboard Table ──
+function LeaderboardTable({
+  rows, loading, expanded, setExpanded,
+}: {
+  rows: any[]; loading: boolean;
+  expanded: string | null; setExpanded: (v: string | null) => void;
+}) {
+  if (loading) {
+    return (
+      <div className="p-4 space-y-2">
+        {Array(8).fill(0).map((_, i) => (
+          <div key={i} className="h-12 skeleton rounded-xl bg-white/5" style={{ opacity: 1 - i * 0.08 }} />
+        ))}
+      </div>
+    );
+  }
+
+  if (rows.length === 0) {
+    return (
+      <div className="py-20 flex flex-col items-center gap-4 text-center">
+        <Radio className="w-10 h-10 text-muted-foreground/10" />
+        <p className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">No timing data active</p>
+      </div>
+    );
+  }
+
+  const COLS = "32px 1fr 100px 38px 70px 70px 32px";
+
+  return (
+    <div className="overflow-x-auto scrollbar-none">
+      <div
+        className="grid items-center px-5 py-3 border-b border-border/40 bg-white/[0.005] min-w-[550px] text-[8px] font-mono text-muted-foreground tracking-widest uppercase font-bold"
+        style={{ gridTemplateColumns: COLS }}
+      >
+        <span>Pos</span>
+        <span>Driver</span>
+        <span>Constructor</span>
+        <span className="text-center">Tyre</span>
+        <span className="text-right">Gap</span>
+        <span className="text-right">Last Lap</span>
+        <span className="text-center">Pits</span>
+      </div>
+
+      <AnimatePresence initial={false}>
+        {rows.map((entry, i) => {
+          const isExp = expanded === entry.driver_number;
+          const teamCol = entry.team_color || "#888";
+          const isTop3 = i < 3;
+          
+          return (
+            <motion.div
+              key={entry.driver_number}
+              layout="position"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: Math.min(i * 0.012, 0.3) }}
+              className="border-b border-border/20 last:border-0 min-w-[550px]"
+            >
+              <div
+                className="grid items-center px-5 py-3.5 cursor-pointer hover:bg-foreground/[0.015] transition-colors"
+                style={{
+                  gridTemplateColumns: COLS,
+                  borderLeft: `3px solid ${isTop3 ? teamCol : "transparent"}`,
+                }}
+                onClick={() => setExpanded(isExp ? null : entry.driver_number)}
+              >
+                {/* Pos */}
+                <span
+                  className="font-mono text-xs font-bold"
+                  style={{ color: i === 0 ? "var(--primary)" : "var(--muted-foreground)" }}
+                >
+                  {entry.position ?? i + 1}
+                </span>
+
+                {/* Driver */}
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="font-display text-base font-bold text-foreground">
+                    {entry.abbreviation}
+                  </span>
+                  <span className="font-mono text-[9px] text-muted-foreground font-bold hidden lg:block truncate">
+                    {entry.driver_name || entry.full_name}
+                  </span>
+                </div>
+
+                {/* Team */}
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="h-3 w-1 rounded" style={{ backgroundColor: teamCol }} />
+                  <span className="font-mono text-[10px] text-muted-foreground truncate">{entry.team || entry.team_name}</span>
+                </div>
+
+                {/* Tyre */}
+                <div className="flex justify-center">
+                  <TyreChip compound={entry.current_tyre} />
+                </div>
+
+                {/* Gap */}
+                <div className="text-right">
+                  <span className="font-mono text-[10px] font-semibold text-muted-foreground">
+                    {i === 0 ? "LEADER" : (entry.gap_to_leader || "—")}
+                  </span>
+                </div>
+
+                {/* Last lap */}
+                <div className="text-right">
+                  <span className="font-mono text-[10px] font-semibold text-foreground/80">
+                    {entry.last_lap || "—"}
+                  </span>
+                </div>
+
+                {/* Pits */}
+                <div className="text-center">
+                  <span className="font-mono text-muted-foreground text-[10px]">{entry.pits ?? 0}</span>
+                </div>
+              </div>
+
+              {/* Expanded detail */}
+              <AnimatePresence>
+                {isExp && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="overflow-hidden bg-white/[0.005] border-t border-border/20"
+                  >
+                    <div className="px-14 py-3 flex flex-wrap gap-6 text-[9px] font-mono text-muted-foreground font-semibold">
+                      <div><span className="text-[8px] text-muted-foreground/50 mr-2 uppercase">Best Lap</span><span className="text-foreground">{entry.best_lap || "—"}</span></div>
+                      <div><span className="text-[8px] text-muted-foreground/50 mr-2 uppercase">Tyre Age</span><span className="text-foreground">{entry.tyre_age ?? "—"} laps</span></div>
+                      <div><span className="text-[8px] text-muted-foreground/50 mr-2 uppercase">Interval</span><span className="text-foreground">{entry.interval || "—"}</span></div>
+                      {entry.speed && <div><span className="text-[8px] text-muted-foreground/50 mr-2 uppercase">Speed</span><span className="text-foreground">{entry.speed} km/h</span></div>}
+                      <div><span className="text-[8px] text-muted-foreground/50 mr-2 uppercase">Status</span><span className="text-primary font-bold">{entry.status || "ON TRACK"}</span></div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
+          );
+        })}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ── Archive Leaderboard Wrapper ──
+function ArchiveLeaderboard({ year, round, session, expanded, setExpanded }: { year: number; round: number; session: string; expanded: string | null; setExpanded: (v: string | null) => void }) {
+  const [data, setData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    f1Api.getLeaderboard(year, round, session)
+      .then((res: any) => {
+        if (cancelled) return;
+        const d = Array.isArray(res) ? res : (res?.data ?? []);
+        setData(d);
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [year, round, session]);
+
+  return (
+    <div className="bg-[#0b0b14]/10 rounded-3xl border border-border/40 overflow-hidden">
+      <div className="px-5 py-4 border-b border-border/40 flex items-center justify-between">
+        <span className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase">Leaderboard Results</span>
+        {loading && <RefreshCw className="w-3.5 h-3.5 text-muted-foreground animate-spin" />}
+      </div>
+      <LeaderboardTable rows={data} loading={loading} expanded={expanded} setExpanded={setExpanded} />
+    </div>
+  );
+}
+
+export function RaceCenter() {
+  const live = useLiveSession();
+  const { season, selectedRound, selectedSession, isArchive, raceLabel, setSelectedSession, selectedLap } = useSessionContext();
+  const {
+    driver1, driver2, driver1Data, driver2Data,
+    scrubberPosition, isPlaying,
+    setDriver1, setDriver2, setDriver1Data, setDriver2Data,
+    setScrubberPosition, setIsPlaying
+  } = useTelemetryStore();
+
+  const [expandedRow, setExpandedRow] = useState<string | null>(null);
+  const [rightPanelTab, setRightPanelTab] = useState<"circuit" | "telemetry" | "logs">("circuit");
+  
+  const [telemetryLoading, setTelemetryLoading] = useState(false);
+  const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
+
+  const db = getDriversListByYear(season);
+  const d1Meta = getDriverByYear(season, driver1);
+  const d2Meta = getDriverByYear(season, driver2);
+
+  const DRIVER_COLOR_1 = d1Meta.color || "#e10600";
+  const DRIVER_COLOR_2 = d2Meta.color || "#27F4D2";
+
+  const normalizedCountry = (raceLabel || "").toLowerCase();
+  const trackKey = Object.keys(TRACKS_DB).find(k => normalizedCountry.includes(k)) || "";
+  const activeTrack = TRACKS_DB[trackKey] || DEFAULT_TRACK;
+
+  const telemetryAnalysis = useMemo(() => {
+    if (driver1Data.length === 0) return null;
+    const d1Speeds = driver1Data.map(p => p.speed || 0);
+    const d2Speeds = driver2Data.map(p => p.speed || 0);
+
+    const d1MaxSpeed = Math.max(...d1Speeds);
+    const d2MaxSpeed = driver2Data.length > 0 ? Math.max(...d2Speeds) : 0;
+
+    const d1AvgThrottle = driver1Data.reduce((acc, p) => acc + (p.throttle || 0), 0) / driver1Data.length;
+    const d2AvgThrottle = driver2Data.length > 0 ? driver2Data.reduce((acc, p) => acc + (p.throttle || 0), 0) / driver2Data.length : 0;
+
+    const d1Brakes = driver1Data.filter(p => (p.brake || 0) > 0.1).length / driver1Data.length * 100;
+    const d2Brakes = driver2Data.length > 0 ? driver2Data.filter(p => (p.brake || 0) > 0.1).length / driver2Data.length * 100 : 0;
+
+    return {
+      d1MaxSpeed,
+      d2MaxSpeed,
+      d1AvgThrottle: Math.round(d1AvgThrottle),
+      d2AvgThrottle: Math.round(d2AvgThrottle),
+      d1Brakes: Math.round(d1Brakes),
+      d2Brakes: Math.round(d2Brakes),
+      speedDelta: d1MaxSpeed - d2MaxSpeed,
+      throttleDelta: Math.round(d1AvgThrottle - d2AvgThrottle),
+    };
+  }, [driver1Data, driver2Data]);
+
+  const scaledTracks = useMemo(() => {
+    const combined = [...driver1Data, ...driver2Data].filter(p => typeof p.x === "number" && typeof p.y === "number");
+    if (combined.length === 0) return { d1Scaled: [], d2Scaled: [] };
+
+    let minX = Infinity; let maxX = -Infinity;
+    let minY = Infinity; let maxY = -Infinity;
+
+    combined.forEach(p => {
+      if (p.x! < minX) minX = p.x!;
+      if (p.x! > maxX) maxX = p.x!;
+      if (p.y! < minY) minY = p.y!;
+      if (p.y! > maxY) maxY = p.y!;
+    });
+
+    const width = maxX - minX;
+    const height = maxY - minY;
+    const maxDim = Math.max(width, height) || 1;
+
+    const margin = 10;
+    const size = 100 - 2 * margin;
+    const scale = size / maxDim;
+
+    const offsetX = margin + (size - width * scale) / 2;
+    const offsetY = margin + (size - height * scale) / 2;
+
+    const scaleList = (list: any[]) => {
+      return list.filter(p => typeof p.x === "number" && typeof p.y === "number").map(p => ({
+        ...p,
+        x: offsetX + (p.x! - minX) * scale,
+        y: offsetY + (maxY - p.y!) * scale,
+      }));
+    };
+
+    return {
+      d1Scaled: scaleList(driver1Data),
+      d2Scaled: scaleList(driver2Data),
+    };
+  }, [driver1Data, driver2Data]);
+
+  async function loadTelemetry() {
+    setTelemetryLoading(true);
+    setIsPlaying(false);
+    setScrubberPosition(0);
+    try {
+      const [r1, r2] = await Promise.allSettled([
+        f1Api.getTelemetry(season, selectedRound, selectedSession, driver1, selectedLap === "all" ? undefined : selectedLap as number),
+        f1Api.getTelemetry(season, selectedRound, selectedSession, driver2, selectedLap === "all" ? undefined : selectedLap as number),
+      ]);
+      if (r1.status === "fulfilled") setDriver1Data((r1.value as any).data || []);
+      if (r2.status === "fulfilled") setDriver2Data((r2.value as any).data || []);
+    } catch (e) {
+      console.error("[Telemetry] load failed:", e);
+    } finally {
+      setTelemetryLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!isPlaying || driver1Data.length === 0) return;
+
+    const interval = setInterval(() => {
+      const currentPos = useTelemetryStore.getState().scrubberPosition;
+      if (currentPos >= driver1Data.length - 1) {
+        setScrubberPosition(0);
+      } else {
+        setScrubberPosition(currentPos + playbackSpeed);
+      }
+    }, 45);
+
+    return () => clearInterval(interval);
+  }, [isPlaying, driver1Data.length, playbackSpeed, setScrubberPosition]);
+
+  const activePt1 = driver1Data[scrubberPosition] || null;
+  const activePt2 = useMemo(() => {
+    if (!activePt1 || driver2Data.length === 0) return null;
+    if (typeof activePt1.distance === "number") {
+      let bestPt = driver2Data[0];
+      let minDiff = Math.abs((bestPt.distance || 0) - activePt1.distance);
+      for (let i = 1; i < driver2Data.length; i++) {
+        const pt = driver2Data[i];
+        const diff = Math.abs((pt.distance || 0) - activePt1.distance);
+        if (diff < minDiff) {
+          minDiff = diff;
+          bestPt = pt;
+        }
+      }
+      return bestPt;
+    }
+    const ratio = driver2Data.length / driver1Data.length;
+    const idx = Math.min(Math.round(scrubberPosition * ratio), driver2Data.length - 1);
+    return driver2Data[idx] || null;
+  }, [activePt1, driver2Data, scrubberPosition]);
+
+  const activeDist = activePt1?.distance ? Math.round(activePt1.distance) : scrubberPosition;
+
+  const telemetryTrackPathD = useMemo(() => {
+    const track = scaledTracks.d1Scaled;
+    if (track.length === 0) return "";
+    return track.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ") + " Z";
+  }, [scaledTracks.d1Scaled]);
+
+  const car1Coord = scaledTracks.d1Scaled[scrubberPosition] || null;
+  const car2Coord = useMemo(() => {
+    if (scaledTracks.d2Scaled.length === 0) return null;
+    if (activePt2) {
+      const originalIdx = driver2Data.indexOf(activePt2);
+      if (originalIdx !== -1) {
+        return scaledTracks.d2Scaled[originalIdx] || null;
+      }
+    }
+    return scaledTracks.d2Scaled[scrubberPosition] || null;
+  }, [scaledTracks.d2Scaled, activePt2, driver2Data, scrubberPosition]);
+
+  const trackStatus = live.session_info?.track_status || "GREEN";
+
+  const DriverSelector = ({ value, onChange, color }: { value: string; onChange: (v: string) => void; color: string }) => (
+    <div className="relative flex items-center">
+      <span className="w-1.5 h-1.5 rounded-full mr-[-20px] z-10" style={{ backgroundColor: color }} />
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="appearance-none pl-8 pr-7 py-1.5 rounded-lg text-[9px] font-mono font-bold cursor-pointer outline-none bg-white/5 border border-border/40 text-foreground uppercase tracking-wider"
+      >
+        {Object.entries(db).map(([num, d]) => (
+          <option key={num} value={num} className="bg-background">{d.abbr} #{num}</option>
+        ))}
+      </select>
+      <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none text-muted-foreground" />
+    </div>
+  );
+
+  if (live.state === "UNKNOWN" || live.is_waking) {
+    return (
+      <div className="min-h-screen px-6 pb-32 pt-12 lg:px-12 flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <RefreshCw className="w-10 h-10 text-muted-foreground/30 animate-spin mx-auto" />
+          <div className="font-display text-2xl">Initializing Command Feed</div>
+          <p className="text-xs text-muted-foreground uppercase font-mono tracking-widest">Compiling OpenF1 Telemetry Loops</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen px-6 pb-32 pt-12 lg:px-12 space-y-6">
+      {/* 1. BROADCAST PANEL */}
+      <div className="flex flex-wrap items-center justify-between gap-6 border-b border-border/40 pb-6 z-10 relative">
+        <div>
+          <div className="flex items-center gap-3">
+            {live.is_live ? (
+              <span className="flex items-center gap-2 bg-[#ff3333]/15 border border-[#ff3333]/30 px-3 py-1 rounded-full text-[9px] font-mono font-bold text-[#ff3333] tracking-widest uppercase">
+                <Radio className="w-3.5 h-3.5 animate-pulse" /> LIVE STREAM
+              </span>
+            ) : (
+              <span className="flex items-center gap-2 bg-white/5 border border-border/40 px-3 py-1 rounded-full text-[9px] font-mono font-bold text-muted-foreground tracking-widest uppercase">
+                <Archive className="w-3.5 h-3.5" /> ARCHIVE ANALYSIS
+              </span>
+            )}
+            <h1 className="font-display text-4xl leading-none">Race Center</h1>
+          </div>
+          <p className="font-mono text-[9px] text-muted-foreground uppercase tracking-widest mt-3 flex items-center gap-3 font-bold">
+            <span>{season} season</span>
+            <span className="w-1 h-1 rounded-full bg-border" />
+            <span>Round {selectedRound}</span>
+            <span className="w-1 h-1 rounded-full bg-border" />
+            <span className="text-foreground/80">{raceLabel}</span>
+            <span className="w-1 h-1 rounded-full bg-border" />
+            <span className="text-primary font-black">{selectedSession}</span>
+          </p>
+        </div>
+
+        <div className="flex items-center gap-4 text-xs font-mono">
+          {live.is_live && (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-white/[0.02] border border-border/40 rounded-xl text-[9px] text-muted-foreground font-bold uppercase tracking-wider">
+              {live.ws_connected ? (
+                <><span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> timing loops live</>
+              ) : (
+                <><span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" /> timing loops polling</>
+              )}
+            </div>
+          )}
+          {live.last_update && (
+            <span className="text-muted-foreground/60 text-[9px] uppercase tracking-widest font-semibold">
+              Updated {new Date(live.last_update).toLocaleTimeString()}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* 2. LIVE STATE ALERTS */}
+      <TrackStatusBanner status={trackStatus} />
+      {live.race_control.length > 0 && <RaceControlTicker messages={live.race_control} />}
+
+      {/* 3. CORE TWO-COLUMN BROADCAST VIEW */}
+      <div className="grid gap-6 xl:grid-cols-3">
+        {/* LEFT COLUMN: Timing Tower */}
+        <div className="xl:col-span-1 space-y-4">
+          <div className="flex justify-between items-center px-1">
+            <span className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase flex items-center gap-2">
+              <CalendarDays className="w-4 h-4 text-muted-foreground/45" /> Timing Tower
+            </span>
+          </div>
+
+          {live.is_live ? (
+            <div className="bg-[#0b0b14]/10 rounded-3xl border border-border/40 overflow-hidden">
+              <LeaderboardTable rows={live.leaderboard} loading={false} expanded={expandedRow} setExpanded={setExpandedRow} />
+            </div>
+          ) : isArchive ? (
+            <ArchiveLeaderboard year={season} round={selectedRound} session={selectedSession} expanded={expandedRow} setExpanded={setExpandedRow} />
+          ) : (
+            <GlassPanel className="p-8 py-20 text-center flex flex-col items-center justify-center gap-4 border border-border/40">
+              <Flag className="w-8 h-8 text-muted-foreground/30" />
+              <div>
+                <h3 className="font-display text-2xl">Timing Standby</h3>
+                <p className="text-xs text-muted-foreground mt-2 leading-relaxed max-w-xs mx-auto">
+                  On-track streams active during session windows. Degrading gracefully until lights out.
+                </p>
+              </div>
+            </GlassPanel>
+          )}
+        </div>
+
+        {/* RIGHT COLUMN: Interactive Telemetry Compare / Circuit Vector */}
+        <div className="xl:col-span-2 space-y-4">
+          {/* Segmented controls tabs */}
+          <div className="flex items-center gap-1 bg-white/5 p-1 rounded-2xl border border-border/40 self-start backdrop-blur-md max-w-max">
+            {[
+              { id: "circuit", label: "Circuit Profile", icon: Compass },
+              { id: "telemetry", label: "Telemetry compare", icon: Activity }
+            ].map(tab => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setRightPanelTab(tab.id as any)}
+                  className={cn(
+                    "px-4 py-2 rounded-xl text-[10px] font-mono font-bold uppercase tracking-wider transition duration-300 flex items-center gap-1.5",
+                    rightPanelTab === tab.id
+                      ? "bg-foreground/10 text-foreground border border-transparent shadow-lg"
+                      : "text-muted-foreground hover:text-foreground border border-transparent"
+                  )}
+                >
+                  <Icon className="w-3.5 h-3.5 text-muted-foreground/50" />
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* TAB 1: Circuit Profile */}
+          {rightPanelTab === "circuit" && (
+            <GlassPanel className="p-6 space-y-6 border border-border/40">
+              <div className="flex justify-between items-start border-b border-border/20 pb-4">
+                <div>
+                  <span className="text-[9px] font-mono text-muted-foreground/60 tracking-widest uppercase font-bold">Track Profile</span>
+                  <h3 className="font-display text-2xl mt-1">{activeTrack.name}</h3>
+                </div>
+                {live.weather && <WeatherBar weather={live.weather} />}
+              </div>
+
+              <div className="relative w-full h-[220px] flex items-center justify-center my-6">
+                <svg className="w-full h-full max-w-[340px]" viewBox="0 0 120 100">
+                  <path d={activeTrack.path} fill="none" stroke="rgba(255,255,255,0.02)" strokeWidth="5" strokeLinecap="round" />
+                  <path d={activeTrack.path} fill="none" stroke="oklch(0.82 0.13 75 / 0.15)" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4 text-center border-t border-border/20 pt-4">
+                <div>
+                  <div className="text-[9px] font-mono tracking-widest text-muted-foreground font-bold uppercase">Distance</div>
+                  <div className="font-display text-xl mt-1">{activeTrack.length}</div>
+                </div>
+                <div>
+                  <div className="text-[9px] font-mono tracking-widest text-muted-foreground font-bold uppercase">Laps</div>
+                  <div className="font-display text-xl mt-1">{activeTrack.laps} laps</div>
+                </div>
+                <div>
+                  <div className="text-[9px] font-mono tracking-widest text-muted-foreground font-bold uppercase">DRS Zones</div>
+                  <div className="font-display text-xl mt-1">{activeTrack.drs} zones</div>
+                </div>
+              </div>
+            </GlassPanel>
+          )}
+
+          {/* TAB 2: Telemetry compare */}
+          {rightPanelTab === "telemetry" && (
+            <div className="space-y-4">
+              <GlassPanel className="p-6 border border-border/40 space-y-6">
+                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border/20 pb-4">
+                  <div className="flex items-center gap-3">
+                    <DriverSelector value={driver1} onChange={setDriver1} color={DRIVER_COLOR_1} />
+                    <span className="text-muted-foreground/30 font-mono text-xs">VS</span>
+                    <DriverSelector value={driver2} onChange={setDriver2} color={DRIVER_COLOR_2} />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={loadTelemetry}
+                      disabled={telemetryLoading}
+                      className="inline-flex items-center justify-center gap-2 rounded-full bg-foreground px-4 py-2 text-xs font-bold text-background transition hover:bg-foreground/90 disabled:opacity-50"
+                    >
+                      {telemetryLoading ? "Loading traces..." : "Sync telemetry"}
+                    </button>
+                  </div>
+                </div>
+
+                {driver1Data.length > 0 ? (
+                  <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
+                    {/* Visual Spline coordinate maps */}
+                    <div>
+                      <div className="text-[9px] font-mono tracking-widest text-muted-foreground uppercase font-bold mb-4">Track traces</div>
+                      <div className="relative aspect-[4/3] rounded-xl bg-gradient-to-br from-surface to-background/50 border border-border/40 p-4 flex items-center justify-center">
+                        <svg className="w-full h-full max-w-[280px]" viewBox="0 0 100 100">
+                          <path d={telemetryTrackPathD} fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth="3" strokeLinecap="round" />
+                          <path d={telemetryTrackPathD} fill="none" stroke="oklch(0.82 0.13 75 / 0.1)" strokeWidth="1.2" strokeLinecap="round" />
+                          
+                          {/* Active car coordinates indicator */}
+                          {car1Coord && <circle cx={car1Coord.x} cy={car1Coord.y} r="2.5" fill={DRIVER_COLOR_1} />}
+                          {car2Coord && <circle cx={car2Coord.x} cy={car2Coord.y} r="2.5" fill={DRIVER_COLOR_2} />}
+                        </svg>
+                      </div>
+
+                      {/* Scrubber panel controls */}
+                      <div className="mt-4 flex items-center justify-between gap-4 bg-white/[0.01] border border-border/40 p-4 rounded-2xl">
+                        <div className="flex items-center gap-2.5">
+                          <button
+                            onClick={() => setIsPlaying(!isPlaying)}
+                            className="h-8 w-8 rounded-full bg-foreground text-background flex items-center justify-center hover:scale-105 transition"
+                          >
+                            {isPlaying ? <Pause className="h-4.5 w-4.5 fill-current" /> : <Play className="h-4.5 w-4.5 fill-current ml-0.5" />}
+                          </button>
+                          <button
+                            onClick={() => setScrubberPosition(0)}
+                            className="h-8 w-8 rounded-full glass flex items-center justify-center hover:bg-white/10 transition"
+                          >
+                            <RotateCcw className="h-4 w-4" />
+                          </button>
+                        </div>
+                        <div className="flex-1 px-4">
+                          <input
+                            type="range"
+                            min="0"
+                            max={driver1Data.length - 1}
+                            value={scrubberPosition}
+                            onChange={(e) => setScrubberPosition(Number(e.target.value))}
+                            className="w-full h-1 bg-foreground/10 rounded-full appearance-none outline-none accent-primary cursor-pointer"
+                          />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {[1, 2, 4].map(s => (
+                            <button
+                              key={s}
+                              onClick={() => setPlaybackSpeed(s)}
+                              className={cn(
+                                "text-[9px] font-mono font-bold px-2 py-1 rounded-md transition",
+                                playbackSpeed === s ? "bg-foreground/10 text-foreground" : "text-muted-foreground hover:bg-white/5"
+                              )}
+                            >
+                              {s}x
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Speeds & Pedals trace compare dashboards */}
+                    <div className="space-y-4">
+                      {telemetryAnalysis && (
+                        <div className="grid grid-cols-2 gap-3">
+                          <GlassPanel className="p-4 border border-border/40 text-center">
+                            <div className="text-[8px] font-mono text-muted-foreground uppercase tracking-widest font-bold">Top Speed</div>
+                            <div className="font-display text-2xl mt-1.5">
+                              {activePt1?.speed || 0}<span className="text-xs text-muted-foreground"> km/h</span>
+                            </div>
+                            <div className="text-[8px] font-mono text-primary font-bold uppercase tracking-wider mt-1">{d1Meta.abbr}</div>
+                          </GlassPanel>
+                          <GlassPanel className="p-4 border border-border/40 text-center">
+                            <div className="text-[8px] font-mono text-muted-foreground uppercase tracking-widest font-bold">Top Speed</div>
+                            <div className="font-display text-2xl mt-1.5">
+                              {activePt2?.speed || 0}<span className="text-xs text-muted-foreground"> km/h</span>
+                            </div>
+                            <div className="text-[8px] font-mono text-primary font-bold uppercase tracking-wider mt-1" style={{ color: DRIVER_COLOR_2 }}>{d2Meta.abbr}</div>
+                          </GlassPanel>
+                        </div>
+                      )}
+
+                      <ChartSection title="Speed trace (km/h)" d1={driver1Data} d2={driver2Data} dataKey="speed" color1={DRIVER_COLOR_1} color2={DRIVER_COLOR_2} domain={[50, 350]} activeDist={activeDist} />
+                      <ChartSection title="Throttle logs (%)" d1={driver1Data} d2={driver2Data} dataKey="throttle" color1={DRIVER_COLOR_1} color2={DRIVER_COLOR_2} domain={[0, 100]} activeDist={activeDist} />
+                      <ChartSection title="Brake traces (0-1)" d1={driver1Data} d2={driver2Data} dataKey="brake" color1={DRIVER_COLOR_1} color2={DRIVER_COLOR_2} domain={[0, 1]} activeDist={activeDist} />
+                    </div>
+                  </div>
+                ) : (
+                  <GlassPanel className="p-8 py-20 text-center border border-border/40 flex flex-col items-center justify-center gap-4">
+                    <Activity className="w-8 h-8 text-muted-foreground/30" />
+                    <div>
+                      <h3 className="font-display text-2xl">Sync telemetry</h3>
+                      <p className="text-xs text-muted-foreground mt-2 leading-relaxed max-w-xs mx-auto">
+                        Choose constructor driving pairs above and trigger synchronization loops to load FastF1 pedal maps.
+                      </p>
+                    </div>
+                  </GlassPanel>
+                )}
+              </GlassPanel>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
