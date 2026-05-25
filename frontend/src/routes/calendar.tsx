@@ -54,7 +54,7 @@ export function CalendarPage() {
 
   const getCalendarSyncUrl = () => {
     // Premium webcal F1 feed url
-    return "webcal://files.apexf1.onrender.com/calendar/f1.ics";
+    return "webcal://apexf1-api.onrender.com/calendar/f1.ics";
   };
 
   return (

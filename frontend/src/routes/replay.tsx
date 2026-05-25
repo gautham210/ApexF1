@@ -51,7 +51,7 @@ export function ReplayPage() {
         name: g.event_name,
         date: dateStr,
         weather: idx % 3 === 0 ? "sunny" : idx % 3 === 1 ? "cloudy" : "rainy",
-        note: `Full session archive logs for the ${g.location} Grand Prix. Replay scrubber charts open.`,
+        note: `Full session archive for the ${g.location} Grand Prix. Replay charts ready.`,
         img: bgImg,
       };
     });
@@ -92,7 +92,7 @@ export function ReplayPage() {
                   to="/race-center"
                   className="absolute bottom-5 left-5 inline-flex items-center gap-2 rounded-full glass-strong px-4 py-2 text-xs transition hover:bg-white/10 font-bold"
                 >
-                  <Play className="h-3 w-3 fill-current" /> Telemetry scrubber
+                  <Play className="h-3 w-3 fill-current" /> Race replay
                 </Link>
               </div>
               <div className="flex flex-col justify-between p-7">
@@ -152,7 +152,7 @@ export function ReplayPage() {
             <div className="mt-6 flex items-center gap-3 rounded-2xl border border-border/40 p-5">
               <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
               <span className="text-xs text-muted-foreground font-mono uppercase tracking-wider font-bold">
-                Standby — Telemetry logs synchronized and compiled
+                Replay feeds ready
               </span>
             </div>
           </GlassPanel>

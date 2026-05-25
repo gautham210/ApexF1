@@ -336,7 +336,7 @@ export function Dashboard() {
                 {favoriteDriver} is preparing for the grid
               </h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                As a registered {favoriteTeam?.name || "paddock"} supporter, your home room is synchronized to spotlight their session countdowns, telemetry logs, and standings updates.
+                As a registered {favoriteTeam?.name || "paddock"} supporter, your dashboard spotlights their season campaign, standings, and race moments.
               </p>
               <div className="text-[11px] font-mono text-foreground/80 flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-lg max-w-max border border-border/20">
                 <Clock className="w-3.5 h-3.5 text-primary" />
@@ -408,7 +408,7 @@ export function Dashboard() {
           <GlassPanel className="p-8 py-16 text-center max-w-md mx-auto">
             <Compass className="w-10 h-10 text-muted-foreground/30 mx-auto mb-4" />
             <div className="font-display text-2xl">Stories offline</div>
-            <p className="mt-2 text-sm text-muted-foreground">Paddock journalism streams will synchronize dynamically during session windows.</p>
+            <p className="mt-2 text-sm text-muted-foreground">Paddock reports will update as the weekend unfolds.</p>
           </GlassPanel>
         )}
       </section>

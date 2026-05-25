@@ -22,7 +22,7 @@ const getBaseUrl = () => {
   }
 
   // 5. Default production backend Render fallback
-  return "https://files.apexf1.onrender.com";
+  return "https://apexf1-api.onrender.com";
 };
 
 const BASE_URL = getBaseUrl();

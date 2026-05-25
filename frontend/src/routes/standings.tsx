@@ -178,7 +178,7 @@ function StandingsPage() {
         ) : error ? (
           <GlassPanel className="glass border border-white/5 rounded-3xl py-20 text-center max-w-lg mx-auto p-8 border-border/40">
             <Trophy className="w-12 h-12 text-muted-foreground/20 mx-auto mb-4" />
-            <h3 className="font-display text-2xl">Championship Standby</h3>
+            <h3 className="font-display text-2xl">Standings will populate after Round 1</h3>
             <p className="text-muted-foreground text-sm mt-3 leading-relaxed max-w-xs mx-auto">
               {error}
             </p>

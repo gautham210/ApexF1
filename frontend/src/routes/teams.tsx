@@ -133,8 +133,8 @@ export function TeamsPage() {
           </div>
         ) : constructors.length === 0 ? (
           <GlassPanel className="p-8 py-16 text-center max-w-md mx-auto">
-            <div className="font-display text-2xl">Constructors standings standby</div>
-            <p className="mt-2 text-sm text-muted-foreground">Constructor details will populate once timings go live.</p>
+            <div className="font-display text-2xl">Garages are offline</div>
+            <p className="mt-2 text-sm text-muted-foreground">Constructor standings will populate as the championship gets underway.</p>
           </GlassPanel>
         ) : (
           <div className="grid gap-8 lg:grid-cols-[300px_1fr]">

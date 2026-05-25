@@ -677,9 +677,9 @@ export function RaceCenter() {
             <GlassPanel className="p-8 py-20 text-center flex flex-col items-center justify-center gap-4 border border-border/40">
               <Flag className="w-8 h-8 text-muted-foreground/30" />
               <div>
-                <h3 className="font-display text-2xl">Timing Standby</h3>
+                <h3 className="font-display text-2xl">Live timing is offline</h3>
                 <p className="text-xs text-muted-foreground mt-2 leading-relaxed max-w-xs mx-auto">
-                  On-track streams active during session windows. Degrading gracefully until lights out.
+                  Live timing appears when the session begins. Enjoy telemetry replays and calendar synchronization.
                 </p>
               </div>
             </GlassPanel>
@@ -858,9 +858,9 @@ export function RaceCenter() {
                   <GlassPanel className="p-8 py-20 text-center border border-border/40 flex flex-col items-center justify-center gap-4">
                     <Activity className="w-8 h-8 text-muted-foreground/30" />
                     <div>
-                      <h3 className="font-display text-2xl">Sync telemetry</h3>
+                      <h3 className="font-display text-2xl">Race replay offline</h3>
                       <p className="text-xs text-muted-foreground mt-2 leading-relaxed max-w-xs mx-auto">
-                        Choose constructor driving pairs above and trigger synchronization loops to load FastF1 pedal maps.
+                        Select a driver pair above and sync telemetry to compare speed traces and braking maps.
                       </p>
                     </div>
                   </GlassPanel>
