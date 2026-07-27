@@ -1,0 +1,144 @@
+#include<stdio.h>
+#include<conio.h>
+#include<stdlib.h>
+
+struct node
+{
+    int data;
+    struct node *next;
+};
+
+void main()
+{
+    struct node *head=0,*temp,*NEW,*del,*prev;
+    int n,i,ch,pos,cont;
+
+    clrscr();
+
+    printf("Enter number of nodes : ");
+    scanf("%d",&n);
+
+    for(i=1;i<=n;i++)
+    {
+        NEW=(struct node *)malloc(sizeof(struct node));
+
+        printf("Enter data : ");
+        scanf("%d",&NEW->data);
+
+        NEW->next=0;
+
+        if(head==0)
+        {
+            head=temp=NEW;
+        }
+        else
+        {
+            temp->next=NEW;
+            temp=NEW;
+        }
+    }
+
+    do
+    {
+        printf("\n\n1.Delete at Beginning");
+        printf("\n2.Delete at Specified Position");
+        printf("\n3.Delete at End");
+        printf("\nEnter your choice : ");
+        scanf("%d",&ch);
+
+        switch(ch)
+        {
+            case 1:
+
+                if(head==0)
+                {
+                    printf("\nList is Empty");
+                }
+                else
+                {
+                    del=head;
+                    head=head->next;
+                    free(del);
+                }
+                break;
+
+            case 2:
+
+                printf("\nEnter Position : ");
+                scanf("%d",&pos);
+
+                if(pos==1)
+                {
+                    del=head;
+                    head=head->next;
+                    free(del);
+                }
+                else
+                {
+                    temp=head;
+
+                    for(i=1;i<pos-1 && temp!=0;i++)
+                        temp=temp->next;
+
+                    if(temp==0 || temp->next==0)
+                    {
+                        printf("\nInvalid Position");
+                    }
+                    else
+                    {
+                        del=temp->next;
+                        temp->next=del->next;
+                        free(del);
+                    }
+                }
+                break;
+
+            case 3:
+
+                if(head==0)
+                {
+                    printf("\nList is Empty");
+                }
+                else if(head->next==0)
+                {
+                    free(head);
+                    head=0;
+                }
+                else
+                {
+                    temp=head;
+
+                    while(temp->next->next!=0)
+                        temp=temp->next;
+
+                    del=temp->next;
+                    temp->next=0;
+                    free(del);
+                }
+                break;
+
+            default:
+                printf("\nInvalid Choice");
+        }
+
+        printf("\n\nLinked List : ");
+
+        temp=head;
+
+        while(temp!=0)
+        {
+            printf("%d -> ",temp->data);
+            temp=temp->next;
+        }
+
+        printf("NULL");
+
+        printf("\n\nDo you want to continue (1/0): ");
+        scanf("%d",&cont);
+
+    }while(cont==1);
+
+    printf("\nCOMPLETED");
+
+    getch();
+}

@@ -1,0 +1,158 @@
+#include <stdio.h>
+#include <stdlib.h>
+
+struct node
+{
+    int data;
+    struct node *next;
+};
+
+struct node *head = NULL;
+
+void create()
+{
+    int n, i;
+    struct node *newnode, *temp;
+
+    printf("Enter the number of nodes: ");
+    scanf("%d", &n);
+
+    for(i = 1; i <= n; i++)
+    {
+        newnode = (struct node *)malloc(sizeof(struct node));
+
+        printf("Enter data for node %d: ", i);
+        scanf("%d", &newnode->data);
+
+        newnode->next = NULL;
+
+        if(head == NULL)
+        {
+            head = newnode;
+            temp = newnode;
+        }
+        else
+        {
+            temp->next = newnode;
+            temp = newnode;
+        }
+    }
+}
+
+void insertBeginning()
+{
+    struct node *newnode;
+
+    newnode = (struct node *)malloc(sizeof(struct node));
+
+    printf("Enter data to insert at beginning: ");
+    scanf("%d", &newnode->data);
+
+    newnode->next = head;
+    head = newnode;
+}
+
+void insertEnd()
+{
+    struct node *newnode, *temp;
+
+    newnode = (struct node *)malloc(sizeof(struct node));
+
+    printf("Enter data to insert at end: ");
+    scanf("%d", &newnode->data);
+
+    newnode->next = NULL;
+
+    if(head == NULL)
+    {
+        head = newnode;
+    }
+    else
+    {
+        temp = head;
+
+        while(temp->next != NULL)
+        {
+            temp = temp->next;
+        }
+
+        temp->next = newnode;
+    }
+}
+
+void insertPosition()
+{
+    int pos, i;
+    struct node *newnode, *temp;
+
+    printf("Enter position: ");
+    scanf("%d", &pos);
+
+    newnode = (struct node *)malloc(sizeof(struct node));
+
+    printf("Enter data to insert: ");
+    scanf("%d", &newnode->data);
+
+    if(pos == 1)
+    {
+        newnode->next = head;
+        head = newnode;
+        return;
+    }
+
+    temp = head;
+
+    for(i = 1; i < pos - 1 && temp != NULL; i++)
+    {
+        temp = temp->next;
+    }
+
+    if(temp == NULL)
+    {
+        printf("Invalid Position!\n");
+        free(newnode);
+        return;
+    }
+
+    newnode->next = temp->next;
+    temp->next = newnode;
+}
+
+void display()
+{
+    struct node *temp;
+
+    temp = head;
+
+    printf("Linked List: ");
+
+    while(temp != NULL)
+    {
+        printf("%d -> ", temp->data);
+        temp = temp->next;
+    }
+
+    printf("NULL\n");
+}
+
+int main()
+{
+    create();
+
+    printf("\nOriginal Linked List:\n");
+    display();
+
+    insertBeginning();
+    printf("\nAfter insertion at the beginning:\n");
+    display();
+
+    insertEnd();
+    printf("\nAfter insertion at the end:\n");
+    display();
+
+    insertPosition();
+    printf("\nAfter insertion at specified position:\n");
+    display();
+
+    return 0;
+}
