@@ -8,137 +8,138 @@ struct node
     struct node *next;
 };
 
-void main()
+struct node *head = 0;
+
+void create()
 {
-    struct node *head=0,*temp,*NEW,*del,*prev;
-    int n,i,ch,pos,cont;
-
-    clrscr();
-
+    int n, i;
+    struct node *newnode, *temp;
     printf("Enter number of nodes : ");
-    scanf("%d",&n);
-
-    for(i=1;i<=n;i++)
+    scanf("%d", &n);
+    for(i = 1; i <= n; i++)
     {
-        NEW=(struct node *)malloc(sizeof(struct node));
-
+        newnode = (struct node *)malloc(sizeof(struct node));
         printf("Enter data : ");
-        scanf("%d",&NEW->data);
-
-        NEW->next=0;
-
-        if(head==0)
+        scanf("%d", &newnode->data);
+        newnode->next = 0;
+        if(head == 0)
         {
-            head=temp=NEW;
+            head = temp = newnode;
         }
         else
         {
-            temp->next=NEW;
-            temp=NEW;
+            temp->next = newnode;
+            temp = newnode;
         }
     }
+}
 
-    do
+void deleteBeginning()
+{
+    struct node *del;
+    if(head == 0)
     {
-        printf("\n\n1.Delete at Beginning");
-        printf("\n2.Delete at Specified Position");
-        printf("\n3.Delete at End");
-        printf("\nEnter your choice : ");
-        scanf("%d",&ch);
+        printf("\nList is Empty");
+    }
+    else
+    {
+        del = head;
+        head = head->next;
+        free(del);
+    }
+}
 
-        switch(ch)
+void deletePosition()
+{
+    int pos, i;
+    struct node *temp, *del;
+    printf("\nEnter Position : ");
+    scanf("%d", &pos);
+    if(head == 0)
+    {
+        printf("\nList is Empty");
+        return;
+    }
+    if(pos == 1)
+    {
+        del = head;
+        head = head->next;
+        free(del);
+    }
+    else
+    {
+        temp = head;
+        for(i = 1; i < pos - 1 && temp != 0; i++)
+            temp = temp->next;
+        if(temp == 0 || temp->next == 0)
         {
-            case 1:
-
-                if(head==0)
-                {
-                    printf("\nList is Empty");
-                }
-                else
-                {
-                    del=head;
-                    head=head->next;
-                    free(del);
-                }
-                break;
-
-            case 2:
-
-                printf("\nEnter Position : ");
-                scanf("%d",&pos);
-
-                if(pos==1)
-                {
-                    del=head;
-                    head=head->next;
-                    free(del);
-                }
-                else
-                {
-                    temp=head;
-
-                    for(i=1;i<pos-1 && temp!=0;i++)
-                        temp=temp->next;
-
-                    if(temp==0 || temp->next==0)
-                    {
-                        printf("\nInvalid Position");
-                    }
-                    else
-                    {
-                        del=temp->next;
-                        temp->next=del->next;
-                        free(del);
-                    }
-                }
-                break;
-
-            case 3:
-
-                if(head==0)
-                {
-                    printf("\nList is Empty");
-                }
-                else if(head->next==0)
-                {
-                    free(head);
-                    head=0;
-                }
-                else
-                {
-                    temp=head;
-
-                    while(temp->next->next!=0)
-                        temp=temp->next;
-
-                    del=temp->next;
-                    temp->next=0;
-                    free(del);
-                }
-                break;
-
-            default:
-                printf("\nInvalid Choice");
+            printf("\nInvalid Position");
         }
-
-        printf("\n\nLinked List : ");
-
-        temp=head;
-
-        while(temp!=0)
+        else
         {
-            printf("%d -> ",temp->data);
-            temp=temp->next;
+            del = temp->next;
+            temp->next = del->next;
+            free(del);
         }
+    }
+}
 
-        printf("NULL");
+void deleteEnd()
+{
+    struct node *temp, *del;
+    if(head == 0)
+    {
+        printf("\nList is Empty");
+    }
+    else if(head->next == 0)
+    {
+        free(head);
+        head = 0;
+    }
+    else
+    {
+        temp = head;
+        while(temp->next->next != 0)
+            temp = temp->next;
+        del = temp->next;
+        temp->next = 0;
+        free(del);
+    }
+}
 
-        printf("\n\nDo you want to continue (1/0): ");
-        scanf("%d",&cont);
+void display()
+{
+    struct node *temp;
+    temp = head;
+    printf("\nLinked List : ");
+    while(temp != 0)
+    {
+        printf("%d -> ", temp->data);
+        temp = temp->next;
+    }
+    printf("NULL\n");
+}
 
-    }while(cont==1);
+void main()
+{
+    clrscr();
+
+    create();
+    printf("\nOriginal Linked List:");
+    display();
+
+    deleteBeginning();
+    printf("\nAfter deleting at beginning:");
+    display();
+
+    deletePosition();
+    printf("\nAfter deleting at specified position:");
+    display();
+
+    deleteEnd();
+    printf("\nAfter deleting at end:");
+    display();
 
     printf("\nCOMPLETED");
-
     getch();
 }
