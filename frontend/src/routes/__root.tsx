@@ -1,10 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import {
-  Outlet,
-  Link,
-  createRootRouteWithContext,
-  useRouter,
-} from "@tanstack/react-router";
+import { Outlet, Link, createRootRouteWithContext, useRouter } from "@tanstack/react-router";
 import { AppSidebar, MobileNav } from "@/components/AppSidebar";
 import { AmbientBackdrop } from "@/components/AmbientBackdrop";
 import { GlobalContextInit } from "@/components/GlobalContextInit";
@@ -28,7 +23,7 @@ function NotFoundComponent() {
   );
 }
 
-function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
+function ErrorComponent({ error, reset }: { error: unknown; reset: () => void }) {
   console.error(error);
   const router = useRouter();
   return (
@@ -37,7 +32,10 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
         <h1 className="font-display text-3xl">Signal lost</h1>
         <p className="mt-2 text-sm text-muted-foreground">Something interrupted the feed.</p>
         <button
-          onClick={() => { router.invalidate(); reset(); }}
+          onClick={() => {
+            router.invalidate();
+            reset();
+          }}
           className="mt-6 rounded-full glass-strong px-5 py-2.5 text-sm transition hover:bg-foreground/10"
         >
           Reconnect

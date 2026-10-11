@@ -32,15 +32,33 @@ export interface SessionContext {
 export function useSessionContext(): SessionContext {
   const store = useSettingsStore();
   const {
-    selectedYear, selectedRound, selectedSession, selectedLap,
-    currentRound, raceStatus, isLiveWeekend, isArchive,
-    activeEvent, nextEvent, completedEvent, timezone,
+    selectedYear,
+    selectedRound,
+    selectedSession,
+    selectedLap,
+    currentRound,
+    raceStatus,
+    isLiveWeekend,
+    isArchive,
+    activeEvent,
+    nextEvent,
+    completedEvent,
+    timezone,
     schedule,
-    setSelectedYear, setSelectedRound, setCurrentRace,
-    setSelectedSession, setSelectedLap, setScheduleCache,
+    setSelectedYear,
+    setSelectedRound,
+    setCurrentRace,
+    setSelectedSession,
+    setSelectedLap,
+    setScheduleCache,
   } = store;
 
-  const currentRace = schedule.find((e) => e.round_number === selectedRound) || activeEvent || nextEvent || completedEvent || null;
+  const currentRace =
+    schedule.find((e) => e.round_number === selectedRound) ||
+    activeEvent ||
+    nextEvent ||
+    completedEvent ||
+    null;
   const raceLabel = currentRace?.event_name || currentRace?.location || currentRace?.country || "—";
   const isNextRace = nextEvent ? selectedRound === nextEvent.round_number : false;
 
@@ -65,7 +83,7 @@ export function useSessionContext(): SessionContext {
     nextEvent,
     completedEvent,
     timezone,
-    
+
     currentRace,
     schedule,
     raceLabel,

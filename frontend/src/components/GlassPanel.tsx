@@ -12,13 +12,7 @@ export const GlassPanel = forwardRef<HTMLDivElement, GlassPanelProps>(
       strong: "glass-strong",
       subtle: "glass-subtle",
     };
-    return (
-      <div
-        ref={ref}
-        className={cn(variants[variant], "rounded-2xl", className)}
-        {...props}
-      />
-    );
+    return <div ref={ref} className={cn(variants[variant], "rounded-2xl", className)} {...props} />;
   },
 );
 GlassPanel.displayName = "GlassPanel";

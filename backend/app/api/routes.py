@@ -72,19 +72,13 @@ async def leaderboard(
     session: str = Query(default="Race"),
 ):
     """
-    Live: served from OpenF1 if session is active.
-    Archive: served from FastF1.
+    Requested classification: Jolpica race results, with FastF1 fallback.
+    Live timing uses /live/snapshot and /ws/live.
     """
     _validate_year(year)
     _validate_round(round)
 
-    # Check if OpenF1 has a live session
-    state_info = await openf1_service.get_session_state()
-    if state_info.get("is_live") and state_info.get("session_key"):
-        data = await openf1_service.get_live_timing(state_info["session_key"])
-        return APIResponse(success=True, data=data)
-
-    # Fall back to FastF1 for historical data
+    # Explicit event coordinates always resolve that archive; live has dedicated endpoints.
     data = await f1_service.get_leaderboard(year, round, session)
     return APIResponse(success=True, data=[e.model_dump() for e in data])
 
@@ -102,6 +96,8 @@ async def live_snapshot():
             "state": state_info.get("state", "ARCHIVE"),
             "session_info": {
                 "session_name": state_info.get("session_name"),
+                    "date_start": state_info.get("date_start"),
+                    "session_key": state_info.get("session_key"),
                 "display_name": state_info.get("display_name"),
                 "circuit": state_info.get("circuit"),
                 "country": state_info.get("country"),
@@ -119,6 +115,8 @@ async def live_snapshot():
         "state": state_info.get("state"),
         "session_info": {
             "session_name": state_info.get("session_name"),
+                    "date_start": state_info.get("date_start"),
+                    "session_key": state_info.get("session_key"),
             "display_name": state_info.get("display_name"),
             "circuit": state_info.get("circuit"),
             "country": state_info.get("country"),
@@ -187,13 +185,6 @@ async def weather(
     _validate_year(year)
     _validate_round(round)
 
-    # Try OpenF1 first for live weather
-    state_info = await openf1_service.get_session_state()
-    if state_info.get("is_live") and state_info.get("session_key"):
-        live_w = await openf1_service.get_live_weather(state_info["session_key"])
-        if live_w:
-            return APIResponse(success=True, data=live_w)
-
     data = await f1_service.get_weather(year, round, session)
     return APIResponse(success=True, data=data.model_dump() if data else None)
 
@@ -240,7 +231,7 @@ async def track_status(
     _validate_round(round)
     messages = await f1_service.get_race_control(year, round, session)
     flags = [m for m in messages if m.flag]
-    latest_flag = flags[-1].flag if flags else "GREEN"
+    latest_flag = flags[-1].flag if flags else "UNKNOWN"
     return APIResponse(success=True, data={"status": latest_flag, "messages": [m.model_dump() for m in flags[-5:]]})
 
 
@@ -301,6 +292,11 @@ async def websocket_live(ws: WebSocket):
     Stays connected to receive push updates from the live broadcaster.
     Frontend should reconnect automatically on disconnect.
     """
+    from app.core.config import settings
+    origin = ws.headers.get("origin")
+    if origin and origin not in settings.cors_origins_list:
+        await ws.close(code=1008)
+        return
     await manager.connect(ws, channel="live")
     try:
         # Send immediate state snapshot on connect
@@ -313,6 +309,8 @@ async def websocket_live(ws: WebSocket):
                 "is_live": True,
                 "session_info": {
                     "session_name": state_info.get("session_name"),
+                    "date_start": state_info.get("date_start"),
+                    "session_key": state_info.get("session_key"),
                     "display_name": state_info.get("display_name"),
                     "circuit": state_info.get("circuit"),
                     "country": state_info.get("country"),
@@ -328,6 +326,8 @@ async def websocket_live(ws: WebSocket):
                 "is_live": False,
                 "session_info": {
                     "session_name": state_info.get("session_name"),
+                    "date_start": state_info.get("date_start"),
+                    "session_key": state_info.get("session_key"),
                     "display_name": state_info.get("display_name"),
                     "circuit": state_info.get("circuit"),
                     "country": state_info.get("country"),
@@ -357,3 +357,12 @@ async def websocket_live(ws: WebSocket):
         logging.getLogger(__name__).warning(f"WS error: {e}")
     finally:
         await manager.disconnect(ws, channel="live")
+
+
+@router.get("/results", response_model=APIResponse)
+async def season_results(year: int = Query(default=_CURRENT_YEAR)):
+    _validate_year(year)
+    data = await f1_service.get_season_results(year)
+    if data.get("unavailable"):
+        raise HTTPException(status_code=503, detail="Official classifications unavailable from provider")
+    return APIResponse(success=True, data=data)

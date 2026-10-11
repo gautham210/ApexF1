@@ -1,0 +1,56 @@
+# Changed files
+
+Changes relative to upstream a666f90. See FORENSIC_AUDIT.md for reasons and evidence.
+
+- `README.md`
+- `backend/Dockerfile`
+- `backend/app/api/routes.py`
+- `backend/app/core/config.py`
+- `backend/app/main.py`
+- `backend/app/models/schemas.py`
+- `backend/app/services/f1_service.py`
+- `backend/app/services/live_service.py`
+- `backend/app/services/metadata.py`
+- `backend/app/services/openf1_service.py`
+- `backend/requirements.txt`
+- `backend/tests/owner_snapshot.json`
+- `backend/tests/test_integrity.py`
+- `docker-compose.yml`
+- `docs/CHANGED_FILES.md`
+- `docs/DATA_FLOW_MAP.md`
+- `docs/FORENSIC_AUDIT.md`
+- `docs/REMEDIATION_PLAN.md`
+- `docs/VALIDATION.md`
+- `docs/backend-dependency-audit-after.json`
+- `docs/frontend-dependency-audit-after.json`
+- `docs/secret-scan.json`
+- `frontend/.gitignore`
+- `frontend/Dockerfile`
+- `frontend/eslint.config.js`
+- `frontend/package-lock.json`
+- `frontend/package.json`
+- `frontend/src/components/AmbientBackdrop.tsx`
+- `frontend/src/components/AppSidebar.tsx`
+- `frontend/src/components/CircuitOutline.tsx`
+- `frontend/src/components/GlassPanel.tsx`
+- `frontend/src/components/GlobalContextInit.tsx`
+- `frontend/src/hooks/useLiveSession.ts`
+- `frontend/src/hooks/useSessionContext.ts`
+- `frontend/src/lib/api/client.ts`
+- `frontend/src/lib/calendar.ts`
+- `frontend/src/lib/preferences.ts`
+- `frontend/src/lib/session.ts`
+- `frontend/src/lib/store/index.ts`
+- `frontend/src/main.tsx`
+- `frontend/src/routes/__root.tsx`
+- `frontend/src/routes/calendar.tsx`
+- `frontend/src/routes/index.tsx`
+- `frontend/src/routes/notifications.tsx`
+- `frontend/src/routes/profile.tsx`
+- `frontend/src/routes/race-center.tsx`
+- `frontend/src/routes/replay.tsx`
+- `frontend/src/routes/sessions.tsx`
+- `frontend/src/routes/standings.tsx`
+- `frontend/src/styles.css`
+- `frontend/tests/integrity.test.ts`
+- `frontend/vite.config.ts`

@@ -19,7 +19,10 @@ export const Route = createFileRoute("/sessions")({
   head: () => ({
     meta: [
       { title: "ApexF1 — Sessions schedule" },
-      { name: "description", content: "Explore the complete Formula 1 race calendar session by session." },
+      {
+        name: "description",
+        content: "Explore the complete Formula 1 race calendar session by session.",
+      },
     ],
   }),
   component: SessionsPage,
@@ -90,17 +93,32 @@ function SessionsPage() {
 
   const parsedSessions = useMemo(() => {
     if (!selected) return [];
-    const items = [];
+    const items: {
+      name: string;
+      date: string;
+      time: string;
+      duration: string;
+      isPast: boolean;
+      bg: string;
+    }[] = [];
     const push = (name?: string, dateStr?: string) => {
       if (!name || !dateStr) return;
       const d = new Date(dateStr);
       items.push({
         name,
         date: d.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" }),
-        time: d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false }),
-        duration: getSessionDuration(name),
+        time: d.toLocaleTimeString(undefined, {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        }),
+        duration: "Local time",
         isPast: d < new Date(),
-        bg: name.toLowerCase().includes("race") ? heroRace : name.toLowerCase().includes("qual") ? heroSession : heroPit,
+        bg: name.toLowerCase().includes("race")
+          ? heroRace
+          : name.toLowerCase().includes("qual")
+            ? heroSession
+            : heroPit,
       });
     };
     push(selected.session1, selected.session1_date);
@@ -115,17 +133,22 @@ function SessionsPage() {
     <div className="min-h-screen px-6 pb-32 pt-12 lg:px-12">
       <div className="mx-auto max-w-[1500px]">
         <header className="mb-10">
-          <div className="text-[10px] font-mono tracking-[0.2em] text-muted-foreground uppercase">WEEKEND PROGRAMME</div>
+          <div className="text-[10px] font-mono tracking-[0.2em] text-muted-foreground uppercase">
+            WEEKEND PROGRAMME
+          </div>
           <h1 className="mt-2 font-display text-5xl md:text-6xl">Sessions</h1>
           <p className="mt-3 max-w-xl text-muted-foreground">
-            Explore the absolute Formula 1 calendar weekend by weekend — practices, shootouts, and races.
+            Explore the absolute Formula 1 calendar weekend by weekend — practices, shootouts, and
+            races.
           </p>
         </header>
 
         <div className="grid gap-8 lg:grid-cols-[320px_1fr]">
           {/* Calendar Rails */}
           <aside className="space-y-4">
-            <div className="text-[10px] font-mono tracking-[0.2em] text-muted-foreground">CALENDAR RAIL</div>
+            <div className="text-[10px] font-mono tracking-[0.2em] text-muted-foreground">
+              CALENDAR RAIL
+            </div>
             <div className="flex flex-col gap-2 max-h-[70vh] overflow-y-auto scrollbar-none pr-1">
               {schedule.map((r) => {
                 const active = r.round_number === selectedRound;
@@ -154,7 +177,9 @@ function SessionsPage() {
                         )}
                       </div>
                       <div className="truncate font-display text-lg mt-0.5">{r.event_name}</div>
-                      <div className="text-[10px] text-muted-foreground mt-0.5 font-mono">{r.location}</div>
+                      <div className="text-[10px] text-muted-foreground mt-0.5 font-mono">
+                        {r.location}
+                      </div>
                     </div>
                     {active && <ChevronRight className="h-4 w-4 text-muted-foreground ml-auto" />}
                   </button>
@@ -176,13 +201,19 @@ function SessionsPage() {
               >
                 {/* Hero Banner card */}
                 <div className="relative h-[420px] overflow-hidden rounded-3xl border border-border/40">
-                  <img src={heroCircuit} alt="" className="absolute inset-0 h-full w-full object-cover opacity-60" />
+                  <img
+                    src={heroCircuit}
+                    alt=""
+                    className="absolute inset-0 h-full w-full object-cover opacity-60"
+                  />
                   <div className="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent" />
                   <div className="absolute inset-0 flex flex-col justify-end p-8">
                     <div className="text-[10px] font-mono tracking-[0.2em] text-muted-foreground font-bold uppercase">
                       ROUND {selected.round_number} · {selected.location.toUpperCase()}
                     </div>
-                    <h2 className="mt-2 font-display text-5xl leading-none md:text-6xl">{selected.event_name}</h2>
+                    <h2 className="mt-2 font-display text-5xl leading-none md:text-6xl">
+                      {selected.event_name}
+                    </h2>
                   </div>
                   <div className="absolute right-8 top-8 h-32 w-48 opacity-80 max-sm:hidden">
                     <CircuitOutline circuit={activeCircuit.key} className="h-full w-full" />
@@ -192,7 +223,9 @@ function SessionsPage() {
                 {/* Session lists */}
                 <div>
                   <div className="mb-4">
-                    <div className="text-[10px] font-mono tracking-[0.2em] text-muted-foreground">WEEKEND TIMETABLES</div>
+                    <div className="text-[10px] font-mono tracking-[0.2em] text-muted-foreground">
+                      WEEKEND TIMETABLES
+                    </div>
                     <h3 className="mt-1 font-display text-3xl">Session program</h3>
                   </div>
 
@@ -207,7 +240,12 @@ function SessionsPage() {
                           transition={{ duration: 0.4, delay: i * 0.05 }}
                           className="group relative h-72 overflow-hidden rounded-2xl border border-border/40"
                         >
-                          <img src={s.bg} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover opacity-50 transition duration-700 group-hover:scale-105" />
+                          <img
+                            src={s.bg}
+                            alt=""
+                            loading="lazy"
+                            className="absolute inset-0 h-full w-full object-cover opacity-50 transition duration-700 group-hover:scale-105"
+                          />
                           <div className="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-background/10" />
                           <div className="absolute inset-0 flex flex-col justify-between p-5">
                             <div className="flex items-center justify-between">
@@ -216,7 +254,7 @@ function SessionsPage() {
                               </span>
                               {s.isPast ? (
                                 <span className="rounded-full glass px-2.5 py-0.5 text-[8px] font-mono tracking-widest text-muted-foreground uppercase">
-                                  COMPLETED
+                                  START TIME PASSED
                                 </span>
                               ) : (
                                 <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[8px] font-mono tracking-widest text-primary uppercase font-bold">
@@ -227,12 +265,20 @@ function SessionsPage() {
                             <div>
                               <div className="font-display text-2xl">{s.name}</div>
                               <div className="mt-3 flex items-center justify-between text-[10px] text-muted-foreground font-mono">
-                                <span className="inline-flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" /> {s.time}</span>
+                                <span className="inline-flex items-center gap-1.5">
+                                  <Clock className="h-3.5 w-3.5" /> {s.time}
+                                </span>
                                 <span>{s.duration}</span>
                               </div>
                               {s.isPast && (
                                 <Link
                                   to="/race-center"
+                                  search={{
+                                    mode: "replay",
+                                    year: season,
+                                    round: selected.round_number,
+                                    session: s.name,
+                                  }}
                                   className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full glass-strong py-2 text-xs transition hover:bg-foreground/10"
                                 >
                                   <Play className="h-3 w-3 fill-current" /> Telemetry comparison
@@ -247,18 +293,21 @@ function SessionsPage() {
                     <GlassPanel className="p-8 py-16 text-center border border-border/40">
                       <Compass className="w-10 h-10 text-muted-foreground/30 mx-auto mb-4" />
                       <div className="font-display text-2xl">Timetable unavailable</div>
-                      <p className="mt-2 text-sm text-muted-foreground">Detailed practice schedules will update dynamically during the race season.</p>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        Detailed practice schedules will update dynamically during the race season.
+                      </p>
                     </GlassPanel>
                   )}
                 </div>
 
                 {/* Circuit Info block */}
                 <GlassPanel className="p-6">
-                  <div className="text-[10px] font-mono tracking-[0.2em] text-muted-foreground">CIRCUIT OVERVIEW</div>
+                  <div className="text-[10px] font-mono tracking-[0.2em] text-muted-foreground">
+                    CIRCUIT OVERVIEW
+                  </div>
                   <p className="mt-3 max-w-2xl leading-relaxed text-foreground/85 text-sm">
                     {activeCircuit.name} hosts Round {selected.round_number} of the championship.
-                    Teams carry tailored aero packages, adjusting downforce values to resolve straights velocity
-                    versus mid-corner chassis balance parameters.
+                    Session times are shown in your local timezone.
                   </p>
                 </GlassPanel>
               </motion.div>

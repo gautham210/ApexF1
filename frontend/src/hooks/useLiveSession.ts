@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { f1Api, WS_URL } from "@/lib/api/client";
 
 export interface LiveSessionInfo {
+  date_start?: string;
+  session_key?: number;
   session_name: string;
   display_name: string;
   circuit: string;
@@ -49,12 +51,25 @@ export interface WeatherReading {
 }
 
 export type SessionState =
-  | "UPCOMING" | "WEEKEND" | "FP1" | "FP2" | "FP3"
-  | "QUALIFYING" | "SPRINT_Q" | "SPRINT" | "RACE"
-  | "RED_FLAG" | "SC" | "VSC" | "CHECKERED" | "ARCHIVE"
-  | "WAKING" | "UNKNOWN";
+  | "UPCOMING"
+  | "WEEKEND"
+  | "FP1"
+  | "FP2"
+  | "FP3"
+  | "QUALIFYING"
+  | "SPRINT_Q"
+  | "SPRINT"
+  | "RACE"
+  | "RED_FLAG"
+  | "SC"
+  | "VSC"
+  | "CHECKERED"
+  | "ARCHIVE"
+  | "WAKING"
+  | "UNKNOWN";
 
 export interface LiveSessionData {
+  timestamp?: string;
   is_live: boolean;
   state: SessionState;
   session_info: LiveSessionInfo | null;
@@ -82,19 +97,35 @@ export function useLiveSession(): LiveSessionData {
   const [data, setData] = useState<LiveSessionData>(INITIAL);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const retryCount = useRef(0);
   const mountedRef = useRef(true);
 
-  const applyPayload = useCallback((payload: any) => {
+  const applyPayload = useCallback((payload: Partial<LiveSessionData> & { timestamp?: string }) => {
     if (!mountedRef.current) return;
     setData((prev) => ({
       ...prev,
       is_live: payload.is_live ?? prev.is_live,
       state: payload.state ?? prev.state,
       session_info: payload.session_info ?? prev.session_info,
-      leaderboard: payload.leaderboard?.length > 0 ? payload.leaderboard : prev.leaderboard,
-      weather: payload.weather ?? prev.weather,
-      race_control: payload.race_control?.length > 0 ? payload.race_control : prev.race_control,
+      leaderboard:
+        payload.leaderboard !== undefined
+          ? payload.leaderboard
+          : payload.is_live === false
+            ? []
+            : prev.leaderboard,
+      weather:
+        payload.weather !== undefined
+          ? payload.weather
+          : payload.is_live === false
+            ? null
+            : prev.weather,
+      race_control:
+        payload.race_control !== undefined
+          ? payload.race_control
+          : payload.is_live === false
+            ? []
+            : prev.race_control,
       last_update: payload.timestamp ?? new Date().toISOString(),
       is_waking: false,
       ws_connected: true,
@@ -106,7 +137,7 @@ export function useLiveSession(): LiveSessionData {
     const startMs = Date.now();
     setData((prev) => ({ ...prev, is_waking: true }));
     try {
-      const res = await f1Api.getLiveSnapshot() as any;
+      const res = await f1Api.getLiveSnapshot();
       const d = res?.data ?? res;
       if (!mountedRef.current) return;
       const elapsed = Date.now() - startMs;
@@ -119,17 +150,17 @@ export function useLiveSession(): LiveSessionData {
         weather: d.weather ?? null,
         race_control: d.race_control ?? [],
         last_update: d.timestamp ?? new Date().toISOString(),
-        is_waking: elapsed > 20_000 ? false : prev.is_waking,
+        is_waking: false,
       }));
     } catch {
       if (!mountedRef.current) return;
-      setData((prev) => ({ ...prev, is_waking: false, state: "ARCHIVE" }));
+      setData((prev) => ({ ...prev, is_waking: false, is_live: false, state: "UNKNOWN" }));
     }
   }, []);
 
   const connect = useCallback(() => {
     if (!mountedRef.current) return;
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+    if (wsRef.current && wsRef.current.readyState <= WebSocket.OPEN) return;
 
     const wsEndpoint = `${WS_URL}/api/ws/live`;
     let ws: WebSocket;
@@ -152,18 +183,22 @@ export function useLiveSession(): LiveSessionData {
         const payload = JSON.parse(ev.data);
         if (payload.type === "pong") return;
         applyPayload(payload);
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     };
 
     ws.onclose = () => {
       if (!mountedRef.current) return;
-      setData((prev) => ({ ...prev, ws_connected: false }));
+      setData((prev) => ({ ...prev, ws_connected: false, is_live: false }));
       const delay = Math.min(1000 * Math.pow(2, retryCount.current), 30_000);
       retryCount.current += 1;
       reconnectTimer.current = setTimeout(connect, delay);
     };
 
-    ws.onerror = () => { ws.close(); };
+    ws.onerror = () => {
+      ws.close();
+    };
 
     const pingInterval = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) {
@@ -171,6 +206,7 @@ export function useLiveSession(): LiveSessionData {
       }
     }, 25_000);
 
+    pingTimer.current = pingInterval;
     const origOnClose = ws.onclose;
     ws.onclose = (ev) => {
       clearInterval(pingInterval);
@@ -187,6 +223,7 @@ export function useLiveSession(): LiveSessionData {
 
     return () => {
       mountedRef.current = false;
+      if (pingTimer.current) clearInterval(pingTimer.current);
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
       if (wsRef.current) {
         wsRef.current.onclose = null;

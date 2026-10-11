@@ -1,14 +1,11 @@
+import type { StandingsEntry } from "@/lib/store";
 import { createFileRoute } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useEffect } from "react";
 import { Trophy } from "lucide-react";
 import { f1Api } from "@/lib/api/client";
 import { useSessionContext } from "@/hooks/useSessionContext";
-import {
-  useCanonicalStore,
-  getDriverNumberByAbbr,
-  getDriverNumberByName,
-} from "@/lib/store";
+import { useCanonicalStore, getDriverNumberByAbbr, getDriverNumberByName } from "@/lib/store";
 import { GlassPanel } from "@/components/GlassPanel";
 import { cn } from "@/lib/utils";
 
@@ -20,8 +17,7 @@ export const Route = createFileRoute("/standings")({
       { title: "ApexF1 — Championship standings" },
       {
         name: "description",
-        content:
-          "Official driver and constructor standings for the Formula 1 season.",
+        content: "Official driver and constructor standings for the Formula 1 season.",
       },
     ],
   }),
@@ -29,7 +25,7 @@ export const Route = createFileRoute("/standings")({
 });
 
 function StandingsPage() {
-  const { season } = useSessionContext();
+  const { season, setSelectedYear } = useSessionContext();
   const {
     standings: canonicalDrivers,
     constructors: canonicalConstructors,
@@ -39,14 +35,16 @@ function StandingsPage() {
     setEngines,
   } = useCanonicalStore();
 
-  const [tab, setTab] = useState<"drivers" | "constructors" | "engines">(
-    "drivers"
-  );
+  const [tab, setTab] = useState<"drivers" | "constructors" | "engines">("drivers");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Use canonical store data; only fetch if store is empty for this season
   useEffect(() => {
+    let cancelled = false;
+    setStandings([]);
+    setConstructors([]);
+    setEngines([]);
     async function load() {
       setLoading(true);
       setError(null);
@@ -56,29 +54,26 @@ function StandingsPage() {
           f1Api.getEngineStandings(season),
         ]);
 
-        let driverList: any[] = [];
-        let constructorList: any[] = [];
-        let engineList: any[] = [];
+        if (cancelled) return;
+        let driverList: StandingsEntry[] = [];
+        let constructorList: StandingsEntry[] = [];
+        let engineList: StandingsEntry[] = [];
 
         if (res.status === "fulfilled") {
-          const d = (res.value as any).data || res.value;
+          const d = res.value.data;
           driverList = d.drivers || [];
           constructorList = d.constructors || [];
         }
         if (engRes.status === "fulfilled") {
-          engineList = (engRes.value as any).data || engRes.value;
+          engineList = engRes.value.data;
           if (!Array.isArray(engineList)) engineList = [];
         }
 
         if (driverList.length === 0 && constructorList.length === 0) {
           if (season > 2025) {
-            setError(
-              `Championship standings for this season will appear once the opening race concludes.`
-            );
+            setError(`Championship standings are unavailable from the configured provider.`);
           } else {
-            setError(
-              "Championship standings are currently unavailable for this season."
-            );
+            setError("Championship standings are currently unavailable for this season.");
           }
         }
 
@@ -87,39 +82,33 @@ function StandingsPage() {
         setConstructors(constructorList);
         setEngines(engineList);
       } catch {
-        setError(
-          "Championship standings are currently offline. Please try again later."
-        );
+        setError("Championship standings are currently offline. Please try again later.");
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
     load();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [season]);
 
   // Resolve driver car number from available fields
-  function resolveDriverNumber(entry: any): string {
+  function resolveDriverNumber(entry: StandingsEntry): string {
     if (entry.number && entry.number !== "0") return entry.number;
-    const byAbbr = entry.code
-      ? getDriverNumberByAbbr(season, entry.code)
-      : null;
+    const byAbbr = entry.code ? getDriverNumberByAbbr(season, entry.code) : null;
     if (byAbbr) return byAbbr;
-    const byName = entry.name
-      ? getDriverNumberByName(season, entry.name)
-      : null;
+    const byName = entry.name ? getDriverNumberByName(season, entry.name) : null;
     if (byName) return byName;
     return "—";
   }
 
   // Compute per-driver contribution within a constructor entry
   const getDriverContributions = (teamName: string, teamTotalPoints: number) => {
-    if (!canonicalDrivers || canonicalDrivers.length === 0 || teamTotalPoints <= 0)
-      return [];
-    const teamDrivers = canonicalDrivers.filter(
-      (d: any) => d.team === teamName
-    );
-    const contribs = teamDrivers.map((d: any) => {
+    if (!canonicalDrivers || canonicalDrivers.length === 0 || teamTotalPoints <= 0) return [];
+    const teamDrivers = canonicalDrivers.filter((d) => d.team === teamName);
+    const contribs = teamDrivers.map((d) => {
       const pts = d.points || 0;
       const pct = (pts / teamTotalPoints) * 100;
       return {
@@ -143,9 +132,25 @@ function StandingsPage() {
             <div className="text-[10px] font-mono tracking-[0.2em] text-muted-foreground uppercase">
               CHAMPIONSHIP STANDINGS
             </div>
-            <h1 className="mt-2 font-display text-5xl md:text-6xl">
-              Standings
-            </h1>
+            <label className="block text-xs text-muted-foreground mb-4">
+              Season
+              <select
+                aria-label="Championship season"
+                value={season}
+                onChange={(e) => setSelectedYear(Number(e.target.value))}
+                className="ml-3 rounded-lg border border-border bg-background px-3 py-2"
+              >
+                {Array.from(
+                  { length: new Date().getFullYear() - 2017 },
+                  (_, i) => new Date().getFullYear() - i,
+                ).map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <h1 className="mt-2 font-display text-5xl md:text-6xl">Standings</h1>
             <p className="mt-3 max-w-xl text-muted-foreground">
               Official championship results compiled from verified timing feeds.
             </p>
@@ -161,14 +166,10 @@ function StandingsPage() {
                   "rounded-full px-5 py-2.5 transition text-xs font-mono uppercase tracking-wider font-bold",
                   tab === t
                     ? "bg-foreground/10 text-foreground"
-                    : "text-muted-foreground hover:text-foreground"
+                    : "text-muted-foreground hover:text-foreground",
                 )}
               >
-                {t === "drivers"
-                  ? "Drivers"
-                  : t === "constructors"
-                  ? "Constructors"
-                  : "Power unit"}
+                {t === "drivers" ? "Drivers" : t === "constructors" ? "Constructors" : "Power unit"}
               </button>
             ))}
           </div>
@@ -179,18 +180,13 @@ function StandingsPage() {
             {Array(6)
               .fill(0)
               .map((_, i) => (
-                <div
-                  key={i}
-                  className="h-16 skeleton rounded-2xl bg-white/5"
-                />
+                <div key={i} className="h-16 skeleton rounded-2xl bg-white/5" />
               ))}
           </div>
         ) : error ? (
           <GlassPanel className="glass border border-white/5 rounded-3xl py-20 text-center max-w-lg mx-auto p-8 border-border/40">
             <Trophy className="w-12 h-12 text-muted-foreground/20 mx-auto mb-4" />
-            <h3 className="font-display text-2xl">
-              Standings will populate after Round 1
-            </h3>
+            <h3 className="font-display text-2xl">Standings will populate after Round 1</h3>
             <p className="text-muted-foreground text-sm mt-3 leading-relaxed max-w-xs mx-auto">
               {error}
             </p>
@@ -199,13 +195,10 @@ function StandingsPage() {
           <div className="grid gap-6">
             <AnimatePresence mode="wait">
               {tab === "drivers" && (
-                <div
-                  className="grid gap-6 lg:grid-cols-[1.6fr_1fr]"
-                  key="drivers"
-                >
+                <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]" key="drivers">
                   {/* Drivers catalog */}
                   <div className="flex flex-col gap-3">
-                    {canonicalDrivers.map((d: any, i: number) => {
+                    {canonicalDrivers.map((d, i) => {
                       const driverNum = resolveDriverNumber(d);
                       const teamColor = d.color || "#888888";
                       return (
@@ -244,8 +237,7 @@ function StandingsPage() {
                                     <>
                                       <span>·</span>
                                       <span>
-                                        {d.wins}{" "}
-                                        {d.wins === 1 ? "win" : "wins"}
+                                        {d.wins} {d.wins === 1 ? "win" : "wins"}
                                       </span>
                                     </>
                                   )}
@@ -280,16 +272,12 @@ function StandingsPage() {
                           <div className="text-[10px] font-mono tracking-[0.2em] text-muted-foreground font-bold uppercase">
                             CHAMPIONSHIP LEADER
                           </div>
-                          <div className="mt-2 font-display text-4xl">
-                            {leaderDriver.name}
-                          </div>
+                          <div className="mt-2 font-display text-4xl">{leaderDriver.name}</div>
                           <div className="mt-1 text-sm text-muted-foreground">
                             {leaderDriver.points} pts
                             {leaderDriver.wins != null && leaderDriver.wins > 0
                               ? ` · ${leaderDriver.wins} ${
-                                  leaderDriver.wins === 1
-                                    ? "victory"
-                                    : "victories"
+                                  leaderDriver.wins === 1 ? "victory" : "victories"
                                 }`
                               : ""}
                           </div>
@@ -302,7 +290,7 @@ function StandingsPage() {
                         LEADERBOARD GAPS
                       </div>
                       <div className="mt-4 space-y-4">
-                        {canonicalDrivers.slice(0, 5).map((d: any) => (
+                        {canonicalDrivers.slice(0, 5).map((d) => (
                           <div key={d.name} className="space-y-1.5">
                             <div className="flex items-baseline justify-between text-xs">
                               <span>{d.name.split(" ").pop()}</span>
@@ -314,11 +302,7 @@ function StandingsPage() {
                               <div
                                 className="h-full rounded-full transition-all duration-500"
                                 style={{
-                                  width: `${
-                                    (d.points /
-                                      (leaderDriver?.points || 1)) *
-                                    100
-                                  }%`,
+                                  width: `${(d.points / (leaderDriver?.points || 1)) * 100}%`,
                                   background: d.color || "#888888",
                                 }}
                               />
@@ -333,15 +317,12 @@ function StandingsPage() {
 
               {tab === "constructors" && (
                 <div className="grid gap-3" key="constructors">
-                  {canonicalConstructors.map((c: any, i: number) => {
+                  {canonicalConstructors.map((c, i) => {
                     const teamColor = c.color || "#888888";
-                    const driverContrib = getDriverContributions(
-                      c.name,
-                      c.points
-                    );
+                    const driverContrib = getDriverContributions(c.name, c.points);
                     return (
                       <motion.div
-                        key={c.name}
+                        key={c.display_name || c.name}
                         initial={{ opacity: 0, y: 12 }}
                         whileInView={{ opacity: 1, y: 0 }}
                         viewport={{ once: true }}
@@ -356,14 +337,11 @@ function StandingsPage() {
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-6">
                                 <div className="font-display text-4xl text-muted-foreground/60 w-8 tabular-nums">
-                                  {String(c.position || i + 1).padStart(
-                                    2,
-                                    "0"
-                                  )}
+                                  {String(c.position || i + 1).padStart(2, "0")}
                                 </div>
                                 <div>
                                   <div className="font-display text-2xl uppercase tracking-wider">
-                                    {c.name}
+                                    {c.display_name || c.name}
                                   </div>
                                   <div className="text-[10px] text-muted-foreground mt-1 font-mono uppercase font-bold tracking-wider">
                                     {c.wins || 0} victories
@@ -386,40 +364,31 @@ function StandingsPage() {
                                 <div className="flex justify-between text-[8px] font-bold text-muted-foreground uppercase tracking-wider">
                                   <span>Contribution split</span>
                                   <div className="flex gap-4">
-                                    {driverContrib.map(
-                                      (dc: any, idx: number) => (
-                                        <span key={idx} className="font-mono">
-                                          {dc.name}:{" "}
-                                          <strong className="text-foreground">
-                                            {dc.points} pts ({dc.pct}%)
-                                          </strong>
-                                        </span>
-                                      )
-                                    )}
+                                    {driverContrib.map((dc, idx) => (
+                                      <span key={idx} className="font-mono">
+                                        {dc.name}:{" "}
+                                        <strong className="text-foreground">
+                                          {dc.points} pts ({dc.pct}%)
+                                        </strong>
+                                      </span>
+                                    ))}
                                   </div>
                                 </div>
                                 <div className="w-full h-1 rounded-full bg-foreground/5 overflow-hidden flex">
-                                  {driverContrib.map(
-                                    (dc: any, idx: number) => {
-                                      const opacity =
-                                        idx === 0
-                                          ? "100%"
-                                          : idx === 1
-                                          ? "60%"
-                                          : "30%";
-                                      return (
-                                        <div
-                                          key={idx}
-                                          className="h-full transition-all first:rounded-l-full last:rounded-r-full"
-                                          style={{
-                                            width: `${dc.pct}%`,
-                                            backgroundColor: teamColor,
-                                            opacity: opacity,
-                                          }}
-                                        />
-                                      );
-                                    }
-                                  )}
+                                  {driverContrib.map((dc, idx) => {
+                                    const opacity = idx === 0 ? "100%" : idx === 1 ? "60%" : "30%";
+                                    return (
+                                      <div
+                                        key={idx}
+                                        className="h-full transition-all first:rounded-l-full last:rounded-r-full"
+                                        style={{
+                                          width: `${dc.pct}%`,
+                                          backgroundColor: teamColor,
+                                          opacity: opacity,
+                                        }}
+                                      />
+                                    );
+                                  })}
                                 </div>
                               </div>
                             )}
@@ -433,7 +402,7 @@ function StandingsPage() {
 
               {tab === "engines" && (
                 <div className="grid gap-3" key="engines">
-                  {canonicalEngines.map((e: any, i: number) => {
+                  {canonicalEngines.map((e, i) => {
                     const engineColor = e.color || "#888888";
                     const breakdown = e.breakdown || [];
                     return (
@@ -453,10 +422,7 @@ function StandingsPage() {
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-6">
                                 <div className="font-display text-4xl text-muted-foreground/60 w-8 tabular-nums">
-                                  {String(e.position || i + 1).padStart(
-                                    2,
-                                    "0"
-                                  )}
+                                  {String(e.position || i + 1).padStart(2, "0")}
                                 </div>
                                 <div>
                                   <div className="font-display text-2xl uppercase tracking-wider">
@@ -483,11 +449,8 @@ function StandingsPage() {
                                 <div className="flex justify-between text-[8px] font-bold text-muted-foreground uppercase tracking-wider">
                                   <span>Customer distribution</span>
                                   <div className="flex gap-4">
-                                    {breakdown.map((b: any, idx: number) => (
-                                      <span
-                                        key={idx}
-                                        className="font-mono flex items-center gap-1"
-                                      >
+                                    {breakdown.map((b, idx) => (
+                                      <span key={idx} className="font-mono flex items-center gap-1">
                                         <span className="w-1 h-1 rounded-full bg-muted-foreground" />
                                         {b.team}:{" "}
                                         <strong className="text-foreground">
@@ -498,7 +461,7 @@ function StandingsPage() {
                                   </div>
                                 </div>
                                 <div className="w-full h-1 rounded-full bg-foreground/5 overflow-hidden flex">
-                                  {breakdown.map((b: any, idx: number) => (
+                                  {breakdown.map((b, idx) => (
                                     <div
                                       key={idx}
                                       className="h-full transition-all first:rounded-l-full last:rounded-r-full"
@@ -509,10 +472,10 @@ function StandingsPage() {
                                           idx === 0
                                             ? "100%"
                                             : idx === 1
-                                            ? "70%"
-                                            : idx === 2
-                                            ? "45%"
-                                            : "20%",
+                                              ? "70%"
+                                              : idx === 2
+                                                ? "45%"
+                                                : "20%",
                                       }}
                                     />
                                   ))}

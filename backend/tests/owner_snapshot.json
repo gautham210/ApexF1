@@ -1,0 +1,116 @@
+{
+  "season": 2026,
+  "provenance": "Owner-confirmed historical snapshot, date unspecified. Test data only.",
+  "drivers": [
+    [
+      "Andrea Kimi Antonelli",
+      156,
+      "Mercedes"
+    ],
+    [
+      "Lewis Hamilton",
+      90,
+      "Ferrari"
+    ],
+    [
+      "George Russell",
+      88,
+      "Mercedes"
+    ],
+    [
+      "Charles Leclerc",
+      75,
+      "Ferrari"
+    ],
+    [
+      "Oscar Piastri",
+      60,
+      "McLaren"
+    ],
+    [
+      "Lando Norris",
+      58,
+      "McLaren"
+    ],
+    [
+      "Max Verstappen",
+      43,
+      "Red Bull Racing"
+    ],
+    [
+      "Isack Hadjar",
+      29,
+      "Red Bull Racing"
+    ],
+    [
+      "Liam Lawson",
+      26,
+      "Racing Bulls"
+    ],
+    [
+      "Pierre Gasly",
+      26,
+      "Alpine"
+    ],
+    [
+      "Oliver Bearman",
+      18,
+      "Haas F1 Team"
+    ],
+    [
+      "Franco Colapinto",
+      15,
+      "Alpine"
+    ],
+    [
+      "Arvid Lindblad",
+      13,
+      "Racing Bulls"
+    ],
+    [
+      "Carlos Sainz",
+      6,
+      "Williams"
+    ],
+    [
+      "Alexander Albon",
+      5,
+      "Williams"
+    ],
+    [
+      "Esteban Ocon",
+      3,
+      "Haas F1 Team"
+    ],
+    [
+      "Gabriel Bortoleto",
+      2,
+      "Audi"
+    ],
+    [
+      "Fernando Alonso",
+      1,
+      "Aston Martin"
+    ],
+    [
+      "Nico Hulkenberg",
+      0,
+      "Audi"
+    ],
+    [
+      "Valtteri Bottas",
+      0,
+      "Cadillac"
+    ],
+    [
+      "Sergio Perez",
+      0,
+      "Cadillac"
+    ],
+    [
+      "Lance Stroll",
+      0,
+      "Aston Martin"
+    ]
+  ]
+}

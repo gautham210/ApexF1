@@ -27,8 +27,8 @@ export const Route = createFileRoute("/replay")({
   component: ReplayPage,
 });
 
-export function ReplayPage() {
-  const { schedule } = useSessionContext();
+function ReplayPage() {
+  const { schedule, season } = useSessionContext();
   const { sessionResults } = useCanonicalStore();
 
   // Only show races that are actually confirmed complete
@@ -49,12 +49,10 @@ export function ReplayPage() {
         : "Completed";
 
       // Winner — only from verified canonical data
-      const raceKey = `${g.round_number}-Race`;
+      const raceKey = `${season}-${g.round_number}-Race`;
       const results = sessionResults[raceKey] ?? [];
       const winner = results.find((d) => d.position === 1);
-      const winnerLabel = winner
-        ? winner.abbreviation || winner.driver_name
-        : null;
+      const winnerLabel = winner ? winner.abbreviation || winner.driver_name : null;
 
       return {
         round: g.round_number,
@@ -65,7 +63,7 @@ export function ReplayPage() {
         winner: winnerLabel,
       };
     });
-  }, [completedGPs, sessionResults]);
+  }, [completedGPs, sessionResults, season]);
 
   return (
     <div className="pb-32">
@@ -87,13 +85,10 @@ export function ReplayPage() {
           <div className="text-[10px] font-mono tracking-[0.2em] text-muted-foreground uppercase">
             Episodic archives
           </div>
-          <h1 className="mt-3 font-display text-6xl md:text-7xl leading-none">
-            Replays
-          </h1>
+          <h1 className="mt-3 font-display text-6xl md:text-7xl leading-none">Replays</h1>
           <p className="mt-3 max-w-md text-muted-foreground text-sm leading-relaxed">
-            Every completed Grand Prix session archived in premium editorial
-            layouts. Explore pit timings and race highlights like episodes of a
-            sports documentary.
+            Browse completed Grands Prix, verified winners and available classifications. Telemetry
+            coverage varies by event.
           </p>
         </div>
       </section>
@@ -110,10 +105,10 @@ export function ReplayPage() {
           /* Editorial standby — no fabricated episodes */
           <GlassPanel className="py-24 text-center border border-border/40 rounded-3xl">
             <Compass className="w-12 h-12 text-muted-foreground/20 mx-auto mb-5" />
-            <h3 className="font-display text-3xl">Archive opens after Round 1</h3>
+            <h3 className="font-display text-3xl">No completed events available</h3>
             <p className="mt-3 text-sm text-muted-foreground max-w-sm mx-auto leading-relaxed">
-              Completed Grand Prix sessions appear here as official results are
-              confirmed. Check back after the first race weekend concludes.
+              No completed events were returned for this season. The schedule or archive provider
+              may be unavailable.
             </p>
           </GlassPanel>
         ) : (
@@ -158,7 +153,7 @@ export function ReplayPage() {
                     </h3>
                     {!e.winner && (
                       <p className="text-xs text-muted-foreground leading-relaxed italic">
-                        Race classification pending official confirmation.
+                        Official classification unavailable from the configured provider.
                       </p>
                     )}
                   </div>
@@ -166,14 +161,14 @@ export function ReplayPage() {
                   <div className="mt-8 grid grid-cols-2 gap-2 border-t border-border/20 pt-6">
                     <Link
                       to="/race-center"
-                      search={{ mode: "replay", round: e.round, session: "Race" }}
+                      search={{ mode: "replay", year: season, round: e.round, session: "Race" }}
                       className="inline-flex items-center justify-center gap-2 rounded-xl bg-foreground text-background py-2 text-xs font-bold transition hover:bg-foreground/90"
                     >
-                      <Play className="h-3.5 w-3.5 fill-current" /> Watch Replay
+                      <Play className="h-3.5 w-3.5 fill-current" /> View Results
                     </Link>
                     <Link
                       to="/race-center"
-                      search={{ mode: "replay", round: e.round, session: "Race" }}
+                      search={{ mode: "replay", year: season, round: e.round, session: "Race" }}
                       className="inline-flex items-center justify-center gap-1.5 rounded-xl glass py-2 text-xs font-bold transition hover:bg-white/10 text-muted-foreground hover:text-foreground"
                     >
                       <Radio className="h-3.5 w-3.5" /> Race Archive
@@ -192,14 +187,10 @@ export function ReplayPage() {
               <div className="text-[10px] font-mono tracking-[0.2em] text-muted-foreground font-bold uppercase">
                 Episodic breakdown
               </div>
-              <h3 className="mt-1 font-display text-3xl">
-                Strategy &amp; telemetry archive
-              </h3>
+              <h3 className="mt-1 font-display text-3xl">Strategy &amp; telemetry archive</h3>
               <p className="mt-3 text-sm text-muted-foreground leading-relaxed max-w-2xl">
-                Lap charts, speed deltas, and tyre stints are compiled once
-                official timing logs are published for each race. Access visual
-                graphs and compare driver lines directly inside the unified
-                replay player.
+                Open a race for its classification. Where recorded telemetry is available, compare
+                driver laps in Race Center. Video and team radio are not provided.
               </p>
             </div>
             <div className="mt-6 flex items-center gap-3 rounded-2xl border border-border/40 p-5 bg-white/[0.005]">

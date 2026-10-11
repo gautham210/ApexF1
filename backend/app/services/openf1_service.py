@@ -126,7 +126,7 @@ async def get_session_state() -> Dict[str, Any]:
             "country": "—",
             "year": datetime.now(timezone.utc).year,
             "round": 0,
-            "track_status": "GREEN",
+            "track_status": "UNKNOWN",
         }
         _session_cache[cache_key] = result
         return result
@@ -147,7 +147,7 @@ async def get_session_state() -> Dict[str, Any]:
 
     state = "ARCHIVE"
     is_live = False
-    track_status = "GREEN"
+    track_status = "UNKNOWN"
 
     if date_start_str and date_end_str:
         try:
@@ -174,20 +174,17 @@ async def get_session_state() -> Dict[str, Any]:
                 is_live = True
                 state = display_name.replace(" ", "_").upper()
 
-                # Fetch live track status
-                ts_data = await _get("/track_status", {"session_key": session_key})
-                if ts_data and isinstance(ts_data, list) and len(ts_data) > 0:
-                    latest_ts = ts_data[-1]
-                    raw_status = str(latest_ts.get("track_status", "1"))
-                    track_status = TRACK_STATUS_MAP.get(raw_status, "GREEN")
-
-                    # Override state for safety car / red flag
+                # Race-control is the documented provider endpoint; no /track_status API exists.
+                messages = await get_race_control_messages(session_key)
+                track_flags = [m for m in messages if m.get("scope") == "Track" and m.get("flag")]
+                if track_flags:
+                    flag = track_flags[0]["flag"]
+                    track_status = {"RED": "RED", "YELLOW": "YELLOW", "DOUBLE YELLOW": "YELLOW", "GREEN": "GREEN", "CLEAR": "GREEN", "CHEQUERED": "CHECKERED"}.get(flag, "UNKNOWN")
                     if track_status == "RED":
                         state = "RED_FLAG"
-                    elif track_status == "SC":
-                        state = "SC"
-                    elif track_status == "VSC":
-                        state = "VSC"
+                    elif track_status == "CHECKERED":
+                        state = "CHECKERED"
+                        is_live = False
             else:
                 # Session ended — CHECKERED within 30 min, then ARCHIVE
                 elapsed_minutes = (now - session_end_with_buffer).total_seconds() / 60
@@ -208,7 +205,7 @@ async def get_session_state() -> Dict[str, Any]:
         "circuit": circuit,
         "country": country,
         "year": year,
-        "round": session.get("meeting_key", 0),
+        "round": None,
         "track_status": track_status,
         "date_start": date_start_str,
         "date_end": date_end_str,
@@ -227,7 +224,7 @@ async def get_live_timing(session_key: int) -> List[Dict]:
         return _live_cache[cache_key]
 
     # Fetch intervals (gaps between drivers)
-    intervals = await _get("/intervals", {"session_key": session_key, "interval<": 10})
+    intervals = await _get("/intervals", {"session_key": session_key})
     if not intervals:
         intervals = []
 
@@ -274,7 +271,7 @@ async def get_live_timing(session_key: int) -> List[Dict]:
     result = []
     seen_drivers = set()
 
-    for interval in intervals:
+    for interval in sorted(intervals, key=lambda item: item.get("date", ""), reverse=True):
         num = interval.get("driver_number")
         if num is None:
             continue
@@ -293,10 +290,10 @@ async def get_live_timing(session_key: int) -> List[Dict]:
             if gap == 0:
                 gap_str = "LEADER"
             else:
-                gap_str = f"+{gap:.3f}"
+                gap_str = f"+{gap:.3f}" if isinstance(gap, (int, float)) else str(gap)
 
         interval_val = interval.get("interval")
-        interval_str = f"+{interval_val:.3f}" if interval_val is not None and interval_val > 0 else None
+        interval_str = (f"+{interval_val:.3f}" if interval_val > 0 else None) if isinstance(interval_val, (int, float)) else interval_val
 
         compound = stint.get("compound", "UNKNOWN")
         if compound:
@@ -315,8 +312,8 @@ async def get_live_timing(session_key: int) -> List[Dict]:
             "best_lap": None,
             "current_tyre": compound,
             "tyre_age": stint.get("tyre_age_at_start"),
-            "pits": pit_map.get(num, 0),
-            "status": "ON_TRACK",
+            "pits": pit_map.get(num, 0) if pits is not None else None,
+            "status": None,
             "drs": False,
             "speed": None,
         })
@@ -344,8 +341,8 @@ async def get_live_timing(session_key: int) -> List[Dict]:
                 "best_lap": None,
                 "current_tyre": compound,
                 "tyre_age": stint.get("tyre_age_at_start"),
-                "pits": pit_map.get(num, 0),
-                "status": "ON_TRACK",
+                "pits": pit_map.get(num, 0) if pits is not None else None,
+                "status": None,
                 "drs": False,
                 "speed": None,
             })
@@ -373,7 +370,8 @@ async def get_live_weather(session_key: int) -> Optional[Dict]:
         "pressure": latest.get("pressure"),
         "wind_speed": latest.get("wind_speed"),
         "wind_direction": latest.get("wind_direction"),
-        "rainfall": bool(latest.get("rainfall", False)),
+        "rainfall": bool(latest["rainfall"]) if latest.get("rainfall") is not None else None,
+        "observed_at": latest.get("date"),
     }
     _medium_cache[cache_key] = result
     return result

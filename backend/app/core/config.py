@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     RATE_LIMIT_PER_MINUTE: int = 60
     WS_HEARTBEAT_INTERVAL: int = 30
-    LIVE_DATA_REFRESH_SECONDS: int = 5
+    LIVE_DATA_REFRESH_SECONDS: int = 30
 
     @property
     def cors_origins_list(self) -> List[str]:

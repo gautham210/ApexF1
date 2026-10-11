@@ -1,7 +1,13 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
-  LayoutGrid, CalendarRange, Radio, Trophy,
-  User, Bell, CalendarPlus, Film,
+  LayoutGrid,
+  CalendarRange,
+  Radio,
+  Trophy,
+  User,
+  Bell,
+  CalendarPlus,
+  Film,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -32,26 +38,42 @@ export function AppSidebar() {
       </Link>
 
       <nav className="glass rounded-full p-1.5 flex flex-col gap-0.5">
-        {primary.map((item) => <DockLink key={item.to} {...item} active={pathname === item.to} />)}
+        {primary.map((item) => (
+          <DockLink key={item.to} {...item} active={pathname === item.to} />
+        ))}
       </nav>
 
       <nav className="glass-subtle rounded-full p-1.5 flex flex-col gap-0.5">
-        {secondary.map((item) => <DockLink key={item.to} {...item} active={pathname === item.to} small />)}
+        {secondary.map((item) => (
+          <DockLink key={item.to} {...item} active={pathname === item.to} small />
+        ))}
       </nav>
     </aside>
   );
 }
 
 function DockLink({
-  to, label, icon: Icon, active, small,
-}: { to: string; label: string; icon: React.ComponentType<{ className?: string; strokeWidth?: number }>; active: boolean; small?: boolean }) {
+  to,
+  label,
+  icon: Icon,
+  active,
+  small,
+}: {
+  to: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
+  active: boolean;
+  small?: boolean;
+}) {
   return (
     <Link
       to={to}
       className={cn(
         "group relative grid place-items-center rounded-full transition-all duration-300",
         small ? "h-9 w-9" : "h-10 w-10",
-        active ? "bg-foreground/10 text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-foreground/5",
+        active
+          ? "bg-foreground/10 text-foreground"
+          : "text-muted-foreground hover:text-foreground hover:bg-foreground/5",
       )}
       aria-label={label}
     >
@@ -69,9 +91,9 @@ function DockLink({
 export function MobileNav() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   // Show Today, Sessions, Race Center, Standings, Profile
-  const items = [primary[0], primary[1], primary[2], primary[4], secondary[2]];
+  const items = [...primary, ...secondary];
   return (
-    <nav className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 gap-1 rounded-full glass-strong p-1.5 lg:hidden">
+    <nav className="fixed bottom-4 left-1/2 z-40 flex max-w-[calc(100vw-24px)] -translate-x-1/2 gap-1 overflow-x-auto rounded-full glass-strong p-1.5 lg:hidden">
       {items.map((item) => {
         const active = pathname === item.to;
         const Icon = item.icon;
@@ -80,7 +102,7 @@ export function MobileNav() {
             key={item.to}
             to={item.to}
             className={cn(
-              "grid h-10 w-10 place-items-center rounded-full transition-colors",
+              "grid h-11 w-11 shrink-0 place-items-center rounded-full transition-colors",
               active ? "bg-foreground/10 text-foreground" : "text-muted-foreground",
             )}
             aria-label={item.label}
@@ -92,4 +114,3 @@ export function MobileNav() {
     </nav>
   );
 }
-
