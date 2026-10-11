@@ -1,5 +1,25 @@
 # Validation record
 
+## 2026-10-11 canonical pipeline migration (based on `8886239f9d2fdddcf58d9932a1bd2ca2dab641c0`)
+
+Windows, Python 3.13.5, Node 22.18.0, npm 10.9.3. Changes were validated in the Git checkout on `codex/apexf1-forensic-remediation`. The workspace-root source mirror and the pre-existing unstaged mirror/config/UI edits in the checkout were preserved.
+
+| Check | Result | Evidence / limits |
+|---|---|---|
+| Backend full suite | PASS, 43 tests | `cd backend; python -X utf8 -m unittest discover -s tests -v`; all 43 passed after the final changes. Python 3.13 async loop startup still stalls in the sandbox before test setup; the same command completed outside the sandbox. |
+| Frontend tests | PASS, 5 tests | `cd frontend; npm test`; all five Node tests passed, including the dashboard Zod contract with partial provider metadata. |
+| TypeScript | PASS | `cd frontend; npm run typecheck` (`tsc --noEmit`). |
+| ESLint | PASS, 0 errors, 8 warnings | `cd frontend; npm run lint`. The warnings are existing Fast Refresh export warnings in `CircuitOutline`, `SeasonData` and shared UI components. |
+| Vite production build | PASS | `cd frontend; npm run build`, outside the sandbox because sandboxed Node `realpathSync.native('index.html')` returns `EPERM`. Vite 7.3.7 transformed 3,003 modules in 22.94 s. Main entry: 481.82 kB / 150.22 kB gzip; Race Center: 421.28 kB / 116.72 kB gzip. |
+| Jolpica public-provider smoke | PASS, 2025 Round 1 and latest standings | Read-only `history_service.season(2025, 1)` returned status `success`, official standings round 1, 20 race rows, complete qualifying coverage, no domain errors and race winner `norris`. `f1_service.get_standings(2025)` returned status `success`, round 24, 21 drivers, 10 constructors and Lando Norris as leader. The first smoke exposed a valid page split (one result row then 19 rows under the same event envelope); the shared transport now merges matching event envelopes and still rejects duplicate/conflicting classifications. |
+| Browser route / viewport review | BLOCKED | The `@oai/sky` browser inspection call returned `Computer Use app approval timed out`. No Home, standings, driver, constructor or unavailable-state route, and no desktop/tablet/mobile viewport, is claimed as visually verified. |
+| OpenF1 and RSS real-provider smoke | NOT VERIFIED | Existing deterministic tests cover stale/unauthenticated OpenF1 and RSS URL/XML protections. This pass did not verify authenticated OpenF1 or live RSS availability. |
+| Sandboxed Python/Vite execution | BLOCKED | Python 3.13’s Windows Proactor socket-pair startup and Node `realpathSync.native` restrictions prevented in-sandbox execution. Tests and build were successfully run outside the sandbox; no application workaround was added. |
+
+Regression coverage added for single-event classifications split across pages, duplicate classifications, canonical dashboard insight provenance, partial qualifying coverage, unavailable dashboard domains, legacy standings partial status, legacy result projections using the canonical provider adapter, and unknown power-unit mappings. Existing qualifying, official-points, transfers, standings-round, career-title and sprint-separation tests remain in the suite.
+
+This is not a full production-readiness certification. Visual route/viewport testing, authenticated OpenF1 smoke, RSS smoke and broader season/event provider coverage remain outstanding.
+
 2026-10-11 follow-up to commit `1709ecdb4e49e2c9a79eca6f869e758a8b66e9f0`, branch `codex/apexf1-forensic-remediation`. Windows; Python 3.13.5, Node 22.18.0, npm 10.9.3. The isolated clone is the Git checkout; the supplied workspace root has no `.git` directory. Existing unstaged mirror/config/UI changes in the clone were preserved and excluded from this commit.
 
 | Check | Result | Evidence / limits |

@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { getDriverNumberByName, getDriverByYear, getDriverNumberByAbbr } from "../src/lib/store";
 import { createCalendar } from "../src/lib/calendar";
 import { safeImageUrl } from "../src/lib/media";
+import { dashboardResponseSchema } from "../src/lib/api/client";
 test("season-aware driver numbers never prefer global aliases", () => {
   for (const [name, number] of [
     ["Max Verstappen", "3"],
@@ -62,5 +63,48 @@ test("provider portraits reject unsafe URLs and preserve missing-image fallback"
   assert.equal(
     safeImageUrl("https://example.com/portrait.png"),
     "https://example.com/portrait.png",
+  );
+});
+
+test("dashboard contract preserves official snapshot and partial-domain metadata", () => {
+  const payload = {
+    success: true,
+    timestamp: "2026-10-11T00:00:00Z",
+    data: {
+      season_context: {
+        year: 2025,
+        current_round: 2,
+        completed_rounds: 1,
+        total_rounds: 24,
+        is_active_weekend: false,
+        latest_completed_race: null,
+        next_race: null,
+      },
+      news: [],
+      insights: {
+        qualifying_p1_leader: {
+          name: "Unavailable",
+          stat: "Qualifying unavailable",
+          status: "unavailable",
+        },
+      },
+      driver_standings: [],
+      constructor_standings: [],
+      history_status: "partial",
+      history_round: 2,
+      history_source: "Jolpica",
+      history_fetched_at: "2026-10-11T00:00:00Z",
+      history_errors: { qualifying: "unavailable" },
+      news_status: "stale",
+      news_errors: { publisher: "unavailable" },
+      upcoming_schedule: [],
+    },
+  };
+  assert.equal(dashboardResponseSchema.parse(payload).data.history_round, 2);
+  assert.throws(() =>
+    dashboardResponseSchema.parse({
+      ...payload,
+      data: { ...payload.data, history_status: "complete" },
+    }),
   );
 });

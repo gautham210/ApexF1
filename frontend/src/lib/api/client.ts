@@ -8,6 +8,7 @@ import type {
   SeasonContext,
 } from "../store";
 import type { LiveSessionData } from "@/hooks/useLiveSession";
+import { z } from "zod";
 export interface APIResponse<T> {
   success: boolean;
   data: T;
@@ -19,15 +20,130 @@ export interface NewsItem {
   source: string;
   tag: string;
   link: string;
-  published: string;
+  published: string | null;
+  summary?: string;
+  source_url?: string;
+  ingested_at?: string;
+  topics?: string[];
+  image?: string | null;
 }
 export interface DashboardContext {
   season_context: SeasonContext;
   news: NewsItem[];
-  insights: Record<string, { name: string; stat: string }>;
+  insights: Record<
+    string,
+    { name: string; stat: string; status?: "available" | "partial" | "unavailable" }
+  >;
   driver_standings: StandingsEntry[];
   constructor_standings: StandingsEntry[];
+  history_status?: "success" | "partial" | "unavailable";
+  history_round?: number | null;
+  history_source?: string | null;
+  history_fetched_at?: string | null;
+  history_errors?: Record<string, string>;
+  news_status?: "success" | "partial" | "stale" | "unavailable";
+  news_errors?: Record<string, string>;
+  upcoming_schedule?: ScheduleEvent[];
 }
+
+const scheduleEventSchema = z
+  .object({
+    round_number: z.number(),
+    country: z.string(),
+    location: z.string(),
+    event_name: z.string(),
+    is_completed: z.boolean(),
+    is_upcoming: z.boolean(),
+  })
+  .passthrough();
+export const dashboardResponseSchema = z.object({
+  success: z.literal(true),
+  timestamp: z.string(),
+  error: z.string().optional(),
+  data: z
+    .object({
+      season_context: z
+        .object({
+          year: z.number().optional(),
+          current_round: z.number(),
+          completed_rounds: z.number(),
+          total_rounds: z.number(),
+          is_active_weekend: z.boolean(),
+          latest_completed_race: scheduleEventSchema.nullable(),
+          next_race: scheduleEventSchema.nullable(),
+        })
+        .passthrough(),
+      news: z.array(
+        z
+          .object({
+            title: z.string(),
+            source: z.string(),
+            tag: z.string(),
+            link: z.string(),
+            published: z.string().nullable(),
+            summary: z.string().optional(),
+            source_url: z.string().optional(),
+            ingested_at: z.string().optional(),
+            topics: z.array(z.string()).optional(),
+            image: z.string().nullable().optional(),
+          })
+          .passthrough(),
+      ),
+      insights: z.record(
+        z.string(),
+        z.object({
+          name: z.string(),
+          stat: z.string(),
+          status: z.enum(["available", "partial", "unavailable"]).optional(),
+        }),
+      ),
+      driver_standings: z.array(
+        z
+          .object({
+            position: z.number(),
+            name: z.string(),
+            points: z.number(),
+            wins: z.number().nullable().optional(),
+            driver_id: z.string().nullable().optional(),
+            constructor_id: z.string().nullable().optional(),
+            number: z.string().nullable().optional(),
+            code: z.string().nullable().optional(),
+            display_name: z.string().nullable().optional(),
+            team: z.string().nullable().optional(),
+            nationality: z.string().nullable().optional(),
+            color: z.string().nullable().optional(),
+          })
+          .passthrough(),
+      ),
+      constructor_standings: z.array(
+        z
+          .object({
+            position: z.number(),
+            name: z.string(),
+            points: z.number(),
+            wins: z.number().nullable().optional(),
+            driver_id: z.string().nullable().optional(),
+            constructor_id: z.string().nullable().optional(),
+            number: z.string().nullable().optional(),
+            code: z.string().nullable().optional(),
+            display_name: z.string().nullable().optional(),
+            team: z.string().nullable().optional(),
+            nationality: z.string().nullable().optional(),
+            color: z.string().nullable().optional(),
+          })
+          .passthrough(),
+      ),
+      history_status: z.enum(["success", "partial", "unavailable"]),
+      history_round: z.number().nullable(),
+      history_source: z.string().nullable(),
+      history_fetched_at: z.string().nullable(),
+      history_errors: z.record(z.string(), z.string()),
+      news_status: z.enum(["success", "partial", "stale", "unavailable"]),
+      news_errors: z.record(z.string(), z.string()),
+      upcoming_schedule: z.array(scheduleEventSchema),
+    })
+    .passthrough(),
+});
 declare global {
   interface Window {
     VITE_API_URL?: string;
@@ -101,7 +217,7 @@ export const f1Api = {
   getCurrentSession: () => api.get("/api/session/current"),
 
   // ── Schedule ─────────────────────────────────────────────────────
-  getSeasonResults: (year: number) =>
+  getSeasonResults: (year: number, signal?: AbortSignal) =>
     api.get<
       never,
       APIResponse<{
@@ -110,9 +226,9 @@ export const f1Api = {
         fetched_at: string;
         results: Record<string, LeaderboardEntry[]>;
       }>
-    >("/api/results", { params: { year } }),
-  getSchedule: (year?: number) =>
-    api.get<never, APIResponse<ScheduleEvent[]>>("/api/schedule", { params: { year } }),
+    >("/api/results", { params: { year }, signal }),
+  getSchedule: (year?: number, signal?: AbortSignal) =>
+    api.get<never, APIResponse<ScheduleEvent[]>>("/api/schedule", { params: { year }, signal }),
 
   // ── Live (OpenF1 primary) ─────────────────────────────────────────
   /** Full live snapshot: timing + weather + race control */
@@ -160,6 +276,11 @@ export const f1Api = {
   getNews: () => api.get<never, APIResponse<NewsItem[]>>("/api/news"),
 
   // ── Dashboard ────────────────────────────────────────────────────
-  getDashboardContext: (year?: number) =>
-    api.get<never, APIResponse<DashboardContext>>("/api/dashboard-context", { params: { year } }),
+  getDashboardContext: async (year?: number, signal?: AbortSignal) => {
+    const response = await api.get<never, unknown>("/api/dashboard-context", {
+      params: { year },
+      signal,
+    });
+    return dashboardResponseSchema.parse(response) as APIResponse<DashboardContext>;
+  },
 };

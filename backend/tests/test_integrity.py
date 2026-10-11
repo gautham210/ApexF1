@@ -1,8 +1,7 @@
 import unittest
 from unittest.mock import AsyncMock, patch
 import pandas as pd
-import httpx
-from app.services import f1_service as f, openf1_service as o
+from app.services import f1_service as f, openf1_service as o, history_service as h, jolpica as j
 from app.models.schemas import ScheduleEvent, StandingsEntry
 from app.api import routes
 
@@ -21,31 +20,32 @@ class IntegrityTests(unittest.IsolatedAsyncioTestCase):
             weather.assert_awaited_once_with(2024, 6, "Race")
             live.assert_not_awaited()
 
-    async def test_owner_driver_snapshot_normalization(self):
+    async def test_legacy_standings_projection_uses_official_history_snapshot(self):
         import json
         from pathlib import Path
         snapshot=json.loads((Path(__file__).parent / "owner_snapshot.json").read_text())
         raw=[]
         for i,(name,points,team) in enumerate(snapshot["drivers"]):
             first,last=name.rsplit(" ",1)
-            raw.append({"position":str(i+1),"points":str(points),"wins":"0","Driver":{"givenName":first,"familyName":last},"Constructors":[{"name":team}]})
-        body={"MRData":{"StandingsTable":{"StandingsLists":[{"season":"2026","DriverStandings":raw}]}}}
-        with patch("httpx.AsyncClient.get",AsyncMock(return_value=httpx.Response(200,json=body,request=httpx.Request("GET","https://example.test")))):
-            entries=await f._fetch_jolpica_driver_standings(2026)
+            raw.append({"position":i+1,"points":points,"wins":0,"Driver":{"driverId":f"driver-{i}","givenName":first,"familyName":last},"Constructors":[{"constructorId":f"team-{i}","name":team}]})
+        snapshots={"drivers":{"round":1,"rows":raw},"constructors":{"round":1,"rows":[{"position":1,"points":280,"wins":8,"Constructor":{"constructorId":"team","name":"Mercedes"}}]}}
+        with patch.object(h,"standings",AsyncMock(side_effect=lambda year,round_number,kind:snapshots[kind])) as shared:
+            data=await f.get_standings(2026)
+        entries=data["drivers"]
+        self.assertEqual(shared.await_count,2)
         self.assertEqual([(e.name,e.points) for e in entries],[(n,p) for n,p,_ in snapshot["drivers"]])
         totals={}
         for entry in entries: totals[entry.team]=totals.get(entry.team,0)+entry.points
         self.assertEqual(totals,{"Mercedes":244,"Ferrari":165,"McLaren":118,"Red Bull Racing":72,"Alpine":41,"Racing Bulls":39,"Haas F1 Team":21,"Williams":11,"Audi":2,"Aston Martin":1,"Cadillac":0})
 
-    async def test_standings_fetches_once_and_caches(self):
-        entry = StandingsEntry(position=1, name="Fixture", points=156, wins=3)
-        with patch.object(f, "_load_standings_from_disk", return_value=None), patch.object(f, "_save_standings_to_disk"), patch.object(f, "_fetch_jolpica_driver_standings", AsyncMock(return_value=[entry])) as drivers, patch.object(f, "_fetch_jolpica_constructor_standings", AsyncMock(return_value=[entry])) as teams:
-            result = await f.get_standings(2026)
-            again = await f.get_standings(2026)
-        drivers.assert_awaited_once()
-        teams.assert_awaited_once()
-        self.assertEqual(result["drivers"][0].points, 156)
-        self.assertEqual(result, again)
+    async def test_standings_uses_one_canonical_snapshot_without_a_second_cache(self):
+        entry={"position":1,"points":156,"wins":3,"Driver":{"driverId":"fixture","givenName":"Fixture","familyName":"Driver","nationality":"Test"},"Constructors":[{"constructorId":"fixture-team","name":"Mercedes"}]}
+        snapshots={"drivers":{"round":5,"rows":[entry]},"constructors":{"round":5,"rows":[{"position":1,"points":100,"wins":2,"Constructor":{"constructorId":"fixture-team","name":"Mercedes"}}]}}
+        with patch.object(h,"standings",AsyncMock(side_effect=lambda year,round_number,kind:snapshots[kind])) as shared:
+            result=await f.get_standings(2026)
+        self.assertEqual(shared.await_count,2)
+        self.assertEqual(result["drivers"][0].points,156)
+        self.assertEqual(result["round"],5)
 
     def test_utc_conversion_and_missing_dates(self):
         self.assertEqual(f._session_date({"Session5Date": "2026-06-07T23:00:00-04:00"}, 5).isoformat(), "2026-06-08T03:00:00+00:00")
@@ -71,6 +71,13 @@ class IntegrityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual({r["name"]:r["points"] for r in result}, {"Mercedes":414,"Ferrari":186,"Ford RBPT":111,"Audi":2,"Honda":1})
         self.assertEqual(sum(len(r["teams"]) for r in result), 11)
 
+    async def test_unknown_power_unit_identity_is_not_guessed(self):
+        constructor = StandingsEntry(position=1, name="Future Constructor", points=42, wins=1)
+        with patch.object(f, "get_standings", AsyncMock(return_value={"constructors":[constructor]})):
+            result = await f.get_engine_standings(2026)
+        self.assertEqual(result[0]["name"], "Unmapped supplier")
+        self.assertEqual(result[0]["teams"], ["Future Constructor"])
+
     async def test_classification_preserves_dsq_and_position(self):
         session = type("Session", (), {"results":pd.DataFrame([{"Position":4,"DriverNumber":"44","FullName":"Test driver","Abbreviation":"TST","TeamName":"Ferrari","Status":"Disqualified","Laps":30}])})()
         with patch.object(f, "_load_session", AsyncMock(return_value=session)):
@@ -89,25 +96,28 @@ class IntegrityTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(rows[0]["pits"])
 
     async def test_results_timeout_is_unavailable_not_success(self):
-        with patch("httpx.AsyncClient.get", AsyncMock(side_effect=httpx.ReadTimeout("timeout"))):
+        with patch.object(h, "races", AsyncMock(side_effect=j.ProviderError("timeout"))):
             result = await f.get_season_results(2026)
         self.assertTrue(result["unavailable"])
         self.assertNotIn("season_results_2026", f._data_cache)
 
-    async def test_results_pagination_and_season_validation(self):
-        def result(driver):
-            return {"position":"1","number":driver,"Driver":{"driverId":driver,"givenName":"Fixture","familyName":driver},"Constructor":{"name":"Test"},"laps":"10","points":"25","status":"Finished"}
-        pages = [{"MRData":{"total":"2","RaceTable":{"season":"2026","Races":[{"round":"1","Results":[result("1")]}]}}}, {"MRData":{"total":"2","RaceTable":{"season":"2026","Races":[{"round":"2","Results":[result("2")]}]}}}]
-        responses = [httpx.Response(200,json=p,request=httpx.Request("GET","https://example.test")) for p in pages]
-        with patch("httpx.AsyncClient.get",AsyncMock(side_effect=responses)) as fetch:
+    async def test_legacy_results_projection_uses_canonical_classifications_and_cache(self):
+        from app.models.history import Race
+        def race(round_number, driver_id):
+            return Race.model_validate({
+                "season":"2026", "round":str(round_number), "raceName":"Fixture GP", "date":"2026-03-01",
+                "Circuit":{"circuitId":"fixture","circuitName":"Fixture","Location":{"locality":"Test","country":"Test"}},
+                "Results":[{"position":"1","number":"7","Driver":{"driverId":driver_id,"givenName":"Fixture","familyName":driver_id,"code":"FIX"},"Constructor":{"constructorId":"team","name":"Test Team"},"laps":"10","points":"25","status":"Finished"}],
+            })
+        with patch.object(h, "races", AsyncMock(return_value=[race(1,"one"),race(2,"two")])) as fetch:
             data=await f.get_season_results(2026)
             cached=await f.get_season_results(2026)
         self.assertEqual(set(data["results"]),{"1","2"})
-        self.assertEqual(fetch.await_count,2)
+        self.assertEqual(data["results"]["1"][0]["driver_name"],"Fixture one")
+        self.assertEqual(fetch.await_count,1)
         self.assertEqual(data,cached)
         f._data_cache.clear()
-        pages[0]["MRData"]["RaceTable"]["season"]="2025"
-        with patch("httpx.AsyncClient.get",AsyncMock(return_value=httpx.Response(200,json=pages[0],request=httpx.Request("GET","https://example.test")))):
+        with patch.object(h, "races", AsyncMock(side_effect=j.ProviderError("invalid_payload"))):
             self.assertTrue((await f.get_season_results(2026))["unavailable"])
 
     async def test_backend_http_contract(self):

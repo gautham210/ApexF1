@@ -6,7 +6,7 @@ import { GlassPanel } from "./GlassPanel";
 export function useSeason(year: number, round?: number) {
   return useQuery({
     queryKey: ["history", year, round ?? "latest"],
-    queryFn: () => getSeason(year, round),
+    queryFn: ({ signal }) => getSeason(year, round, signal),
     staleTime: 900000,
     retry: 1,
   });

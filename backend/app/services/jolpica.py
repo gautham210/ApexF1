@@ -47,6 +47,7 @@ async def collect(path, table, collection, nested=None):
 
     async def fetch():
         rows, offset, total = [], 0, None
+        row_indexes, nested_identities = {}, {}
         for _ in range(100):
             payload = await page(path, offset)
             try:
@@ -58,7 +59,38 @@ async def collect(path, table, collection, nested=None):
                 if not isinstance(batch, list):
                     raise ValueError("Invalid collection")
                 count = sum(len(row[nested]) for row in batch) if nested else len(batch)
-                rows.extend(batch)
+                if nested:
+                    for row in batch:
+                        if table == "RaceTable":
+                            circuit_id = row.get("Circuit", {}).get("circuitId")
+                            identity = (row.get("season"), row.get("round"), row.get("raceName"), row.get("date"), circuit_id)
+                        elif table == "StandingsTable":
+                            identity = (row.get("season"), row.get("round"))
+                        else:
+                            identity = None
+                        if identity is None or any(value is None for value in identity):
+                            raise ValueError("Missing nested collection identity")
+                        if identity not in row_indexes:
+                            row_indexes[identity] = len(rows)
+                            rows.append({**row, nested: list(row[nested])})
+                            nested_identities[identity] = set()
+                        else:
+                            merged = rows[row_indexes[identity]]
+                            previous_envelope = {key: value for key, value in merged.items() if key != nested}
+                            current_envelope = {key: value for key, value in row.items() if key != nested}
+                            if previous_envelope != current_envelope:
+                                raise ValueError("Conflicting event envelope across pages")
+                            merged[nested].extend(row[nested])
+                        seen = nested_identities[identity]
+                        for item in row[nested]:
+                            driver_id = (item.get("Driver") or {}).get("driverId")
+                            constructor_id = (item.get("Constructor") or {}).get("constructorId")
+                            classification_id = driver_id or constructor_id
+                            if classification_id is None or classification_id in seen:
+                                raise ValueError("Missing or duplicate nested classification identity")
+                            seen.add(classification_id)
+                else:
+                    rows.extend(batch)
                 offset += count
                 if offset == total:
                     cache[key] = rows

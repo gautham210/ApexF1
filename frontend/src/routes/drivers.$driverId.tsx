@@ -33,17 +33,17 @@ function DriverProfile() {
   const [careerEnabled, setCareerEnabled] = useState(false);
   const career = useQuery({
     queryKey: ["career", driverId],
-    queryFn: () => getCareer(driverId),
+    queryFn: ({ signal }) => getCareer(driverId, signal),
     enabled: careerEnabled,
     staleTime: 900000,
     retry: 1,
   });
   const portrait = useQuery({
     queryKey: ["portrait", year, driverId],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const response = await api.get<never, unknown>(
         `/api/history/drivers/${encodeURIComponent(driverId)}/portrait`,
-        { params: { year } },
+        { params: { year }, signal },
       );
       const media = z
         .object({

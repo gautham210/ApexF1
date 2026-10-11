@@ -2,9 +2,13 @@
 
 ## Domain boundary
 
-`backend/app/models/history.py` validates Jolpica identities and classification rows. `services/jolpica.py` is the sole transport for the new history surfaces: 100-row pages, 300 ms minimum spacing (below the documented anonymous burst limit), bounded concurrency, 15-minute process cache, bounded page count, in-process single-flight and explicit `ProviderError` outcomes. Existing legacy routes remain in place during migration. Jolpica records are keyed by season, round, session and provider driver/constructor identity; cache keys include the complete query path and response collection.
+`backend/app/models/history.py` validates Jolpica identities and classification rows. `services/jolpica.py` is the shared transport: 100-row pages, 300 ms minimum spacing, bounded concurrency, 15-minute process cache, bounded page count, in-process single-flight and explicit `ProviderError` outcomes. Nested classifications can split one event across pages; the transport merges only matching season/round/event/date/circuit envelopes with identical metadata. It rejects duplicate driver/constructor identities and conflicting envelopes. Cache keys include the complete path, table, collection and nested field.
 
 `services/history_service.py` combines calendar, race, sprint, qualifying and standings data. Official championship points/positions are passed through from the provider's selected-round snapshot; historical points, deductions and scoring rules are not re-created. Event-point progression is a sum of race and sprint classification points, not official historical championship progression. Grand Prix wins/podiums use classified race position, excluding disqualifications, non-classified rows and DNS. Sprint classifications remain separate.
+
+Dashboard insights and legacy standings consumers now project from this canonical service. `/api/dashboard-context` and `/api/insights` derive official driver/team leaders, recent winner, grid-to-finish places gained and Qualifying P1 counts from one shared season payload. Legacy `/api/standings` and `/api/constructors` use the canonical official standings snapshots; `/api/engine-standings` derives points from those constructor rows. The dashboard preserves its existing `StandingsEntry` arrays and news fields, adds history/news status metadata, and validates the response through a frontend Zod schema. Insight objects include per-metric `status`; dashboard context includes history status/errors, provider source, fetch timestamp and official snapshot round. A partial domain remains visible while unrelated valid domains are retained. Home shows “Official standings through round N” and marks partial/unavailable history instead of inferring completed races from schedule dates.
+
+The legacy `/api/results` response is a compatibility projection over canonical race classifications. Its existing integer-rank timing-store schema cannot express unranked rows, so that projection omits them; `/api/history/season` retains the full positions and statuses. Unknown power-unit mappings use the explicit `Unmapped supplier` bucket rather than a guessed manufacturer.
 
 Qualifying P1 is counted only from `QualifyingResults` where the official classified `position` is 1. It is not represented as an all-era official pole tally because qualifying formats, sprint formats and grid penalties vary. Race `grid == 1` is separately counted as a race start from grid P1, excluding DNS and non-starters; raw grid position remains on each result. Neither metric includes sprint starting positions. Driver and constructor qualifying P1 is attributed to the identity recorded on that event's qualifying classification, which preserves transfers. The response reports qualifying coverage as complete, partial or unavailable; when unavailable, driver and constructor counts are `null`, never zero. Fastest-lap counts require a recorded `FastestLap.rank`, are nullable where no rank is supplied, and include season-level coverage metadata.
 
@@ -14,13 +18,13 @@ The `/api/history/season?year=&round=` response includes the provider standings 
 
 ## Frontend ownership
 
-TanStack Query owns season, round, career, portrait, news and supplier requests. Keys include all identity coordinates. Zod validates payloads at the browser boundary, followed by year/round/driver identity checks. Zustand carries the selected season between existing routes; URL search state remains authoritative on season pages. Query data is not copied into the canonical Zustand standings arrays. Retries are limited, error and partial states remain visible, and selectors preserve browser history.
+TanStack Query owns season, round, career, portrait, news and supplier requests. Keys include all identity coordinates. Zod validates payloads at the browser boundary, followed by year/round/driver identity checks. Season, career, portrait, supplier, schedule, result and dashboard requests receive TanStack's abort signal. The backend single-flight task is shielded so one disconnected client does not cancel a fetch shared by other requests. Zustand carries the selected season between existing routes; URL search state remains authoritative on season pages. Query data is not copied into canonical standings arrays. Retries are limited, error and partial states remain visible, and selectors preserve browser history.
 
 ## Refresh and provenance
 
 | Data | Provider / route | Cache and refresh | Coverage |
 |---|---|---|---|
-| Historical seasons, race/sprint/qualifying results, standings, schedule | Jolpica via `/api/history/season` | 900 seconds in process; 900 seconds TanStack stale time | Jolpica/Ergast supported F1 dataset; provider-specific gaps remain visible |
+| Historical seasons, race/sprint/qualifying results, standings, schedule | Jolpica via `/api/history/season`; legacy standings/results reuse the history service and transport | 900 seconds in process; 900 seconds TanStack stale time; dashboard query 60 seconds | Jolpica/Ergast supported F1 dataset; provider-specific gaps remain visible |
 | Driver championship career snapshots | Jolpica `/drivers/{id}/driverStandings` plus matching season calendars | 900 seconds shared transport; load on demand | Final snapshot per season used for career points/wins; a title counts only when position 1 is at the final scheduled round. In-progress seasons are excluded; title count is unavailable if finality cannot be verified |
 | Driver portraits | OpenF1 exact matched historical Race session, opt-in | 3600 seconds after a match | OpenF1 historical endpoints from 2023; disabled by default until image reuse rights are reviewed |
 | News | Environment-configured RSS publishers | 600 seconds; stale result allowed for up to 24 hours if all current feeds fail | Public RSS only; dates reflect publisher publication time; ingestion timestamp is separate; images omitted |
@@ -41,10 +45,12 @@ News source entries use `NEWS_FEEDS=URL|Publisher,...`. Feed retrieval is bounde
 
 ## Known gaps
 
-- A browser-integrated end-to-end multi-route fixture suite has not yet been added. One 2025 Jolpica qualifying response passed a read-only provider smoke; RSS and authenticated OpenF1 smoke checks remain unverified.
+- A browser-integrated end-to-end multi-route fixture suite has not yet been added. The 2025 Round 1 canonical smoke passed after fixing split-page event merging; RSS and authenticated OpenF1 smoke checks remain unverified. Browser route/viewport review was blocked by the Computer Use approval timeout.
 - Historical constructor rename/merger lineage and historical power-unit relationships are not synthesized. Provider identities remain separate.
 - Driver profile portrait display is off by default pending rights review. No team logos or arbitrary image proxy are introduced.
 - Jolpica provides official final standings but not consistent per-round standings for every historical era. Requested round responses surface the provider's round and fail when mismatched.
 - Points progression shows summed event classification points, not historic re-scoring, dropped scores, penalties or adjusted official standings.
+- Legacy `/api/results` omits classifications without a numeric position because its old consumer requires an integer; full unranked statuses remain in canonical history.
+- Supplier mappings are only configured for supported seasons. Unknown constructor mappings remain “Unmapped supplier”; historical lineage is not inferred.
 - Qualifying P1 is not equivalent to an all-era official pole statistic; partial qualifying and fastest-lap coverage is disclosed in the response and UI.
 - Session lifecycle uses fresh provider events/timing with a conservative 180-second evidence window. Real authenticated lifecycle, cancellation and reconnect checks remain unverified here.

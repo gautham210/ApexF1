@@ -115,9 +115,9 @@ function Dashboard() {
   // Canonical store — single source of truth for race results
   const { sessionResults } = useCanonicalStore();
 
-  const { data: dashboard, isPending: loading } = useQuery({
+  const { data: dashboard, isError: dashboardError } = useQuery({
     queryKey: ["dashboard", season],
-    queryFn: () => f1Api.getDashboardContext(season),
+    queryFn: ({ signal }) => f1Api.getDashboardContext(season, signal),
     staleTime: 60000,
   });
   const ctx = dashboard?.data;
@@ -166,9 +166,8 @@ function Dashboard() {
     retry: 1,
   });
   const news = newsQuery.data?.articles ?? [];
-  const insights = ctx?.insights ?? {};
 
-  const activeEventName = currentRace?.event_name || currentRace?.location || "Grand Prix";
+  const activeEventName = currentRace?.event_name || currentRace?.location || "Event unavailable";
   const activeCountry = currentRace?.country || "";
   const weather =
     live.session_info?.year === season &&
@@ -249,7 +248,7 @@ function Dashboard() {
                 </span>
               )}
               <span>·</span>
-              <span>{currentRace?.location || "Paddock"}</span>
+              <span>{currentRace?.location || "Location unavailable"}</span>
             </div>
 
             <h1 className="mt-5 font-display text-5xl leading-[0.95] text-balance md:text-7xl">
@@ -308,10 +307,10 @@ function Dashboard() {
                 <MapPin className="h-3 w-3" /> Location
               </div>
               <div className="mt-2 font-display text-2xl leading-none truncate">
-                {currentRace?.location || "Paddock"}
+                {currentRace?.location || "Unavailable"}
               </div>
               <div className="text-[10px] text-muted-foreground truncate mt-1">
-                {currentRace?.country || "F1 Track"}
+                {currentRace?.country || "Unavailable"}
               </div>
             </GlassPanel>
             <GlassPanel className="p-4">
@@ -346,8 +345,19 @@ function Dashboard() {
               </div>
               <div className="mt-2 font-display text-2xl">{season}</div>
               <div className="text-[10px] text-muted-foreground mt-1">
-                {ctx?.season_context?.completed_rounds ?? "Unavailable"} completed rounds
+                {ctx?.history_round
+                  ? `Official standings through round ${ctx.history_round}`
+                  : "Official standings unavailable"}
               </div>
+              {(dashboardError ||
+                ctx?.history_status === "partial" ||
+                ctx?.history_status === "unavailable") && (
+                <div role="status" className="text-[10px] text-muted-foreground mt-1">
+                  {dashboardError || ctx?.history_status === "unavailable"
+                    ? "Championship snapshot unavailable"
+                    : "Championship snapshot has partial provider coverage"}
+                </div>
+              )}
             </GlassPanel>
           </motion.div>
         </div>
@@ -454,7 +464,7 @@ function Dashboard() {
                       ))
                     ) : (
                       <div className="py-12 text-center text-xs text-muted-foreground uppercase tracking-widest font-mono">
-                        Standings populate as laps unfold
+                        Live classification unavailable for this session.
                       </div>
                     )}
                   </div>
@@ -492,8 +502,8 @@ function Dashboard() {
                     </div>
                     <h3 className="mt-1 font-display text-3xl">Race command feed</h3>
                     <p className="mt-3 text-sm text-muted-foreground leading-relaxed">
-                      Live tyre selections, pit strategies, gap intervals, and sector splits are
-                      available in the full Race Center timing feed.
+                      Race Center shows timing, tyre, interval, and sector data when the
+                      authenticated provider supplies it.
                     </p>
                   </div>
                   <div className="mt-6">
@@ -619,8 +629,8 @@ function Dashboard() {
                   </div>
                   <h3 className="mt-1 font-display text-3xl">Explore the weekend</h3>
                   <p className="mt-3 text-sm text-muted-foreground leading-relaxed">
-                    Championship standings have been updated. View the full classification or
-                    revisit the race through the archive.
+                    View the official classification when available, or revisit the race in the
+                    archive.
                   </p>
                 </div>
                 <div className="mt-6 flex flex-col gap-2">

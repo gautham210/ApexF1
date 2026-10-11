@@ -7,19 +7,19 @@ export function GlobalContextInit() {
   const { selectedYear, bootstrapFromBackend, setScheduleCache } = useSettingsStore();
   const schedule = useQuery({
     queryKey: ["schedule", selectedYear],
-    queryFn: () => f1Api.getSchedule(selectedYear),
+    queryFn: ({ signal }) => f1Api.getSchedule(selectedYear, signal),
     staleTime: 60000,
     refetchInterval: 60000,
   });
   const context = useQuery({
     queryKey: ["dashboard", selectedYear],
-    queryFn: () => f1Api.getDashboardContext(selectedYear),
+    queryFn: ({ signal }) => f1Api.getDashboardContext(selectedYear, signal),
     staleTime: 60000,
     refetchInterval: 60000,
   });
   const results = useQuery({
     queryKey: ["results", selectedYear],
-    queryFn: () => f1Api.getSeasonResults(selectedYear),
+    queryFn: ({ signal }) => f1Api.getSeasonResults(selectedYear, signal),
     staleTime: 300000,
   });
   useEffect(() => {

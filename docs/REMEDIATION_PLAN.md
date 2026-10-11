@@ -11,6 +11,7 @@
 7. Regression tests, source/validation reports, dedicated Git branch, commit and push verification.
 8. Continuation: canonical season/round API; official standings snapshots; race, sprint and qualifying classifications; event-point progression; transferred-driver constructor contributions; driver/constructor profiles; exact-session optional portrait lookup; normalized publisher RSS feed and Home/News integration; environment-driven OpenF1 OAuth health and stale-session guard.
 9. P1 statistics integrity: calculate Qualifying P1 from classified qualifying position, report race grid-P1 starts separately, surface qualifying/fastest-lap coverage, validate duplicate/oversized pagination and verify career titles against each season's final scheduled round. Add regressions for sprint separation, constructor transfers, missing metrics and current-season title exclusion.
+10. P1 canonical pipeline continuation: route Home insights, legacy standings and engine-point projections through shared provider-backed history services; expose per-domain partial/unavailable metadata and the official standings round; make the legacy race-results projection use canonical classifications; preserve explicit unmapped power-unit identity; propagate TanStack cancellation; merge valid split-event pagination pages while rejecting duplicate classifications. Validate against live public 2025 Round 1 data.
 
 ## Outstanding — not represented as complete
 
@@ -20,6 +21,7 @@
 - P1: Full historical roster/constructor rename lineage and power-unit relationships; authenticated real sector/lap/tyre age coverage.
 - P2: Full browser route matrix at desktop/tablet/mobile and assistive technology; initial desktop route checks passed, but tablet/mobile viewport control was blocked. Measured rendering performance remains outstanding.
 - P2: Browser viewport review for this follow-up was blocked because the in-app browser could not connect to the locally running Vite server. No desktop/tablet/mobile pass is claimed.
+- P2: This continuation's browser route review was not completed: the Computer Use browser inspection timed out before state capture. No Home, standings, driver, constructor or partial/unavailable UI state is visually verified in this pass.
 - P2: Jolpica passed a single completed-season qualifying smoke; broader historical coverage, real RSS feeds and authenticated OpenF1 smoke remain unverified. Portraits remain opt-in pending rights review.
 - P2: Sandboxed Windows Proactor loop creation stalls in socket-pair setup; the full Python suite passes when run outside the sandbox. The default sandboxed Vite build also hits Node `realpath` EPERM; the production build passes without source/config workarounds outside the sandbox.
 - P2: Backend session-load single-flight and cancellation/resource bounds; transitive backend dependency lock/audit in clean Python 3.11 environment.

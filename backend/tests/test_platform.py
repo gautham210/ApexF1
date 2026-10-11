@@ -83,6 +83,33 @@ class PlatformTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(result["drivers"]["fixture"]["fastest_laps"])
         self.assertEqual(result["metric_coverage"]["fastest_laps"],"unavailable")
 
+    def test_dashboard_insights_use_official_rows_and_qualifying_coverage(self):
+        qualifying = Race.model_validate(race(grid=None, position="1", session="QualifyingResults"))
+        summary = h.summarize([Race.model_validate(race(grid="3"))], [], [qualifying], 1, "partial", "unavailable")
+        driver = {"id": "fixture", "position": 1, "points": 25, "Driver": race()["Results"][0]["Driver"]}
+        constructor = {"id": "alpha", "position": 1, "points": 25, "Constructor": race()["Results"][0]["Constructor"]}
+        data = {
+            **summary,
+            "status": "partial",
+            "errors": {"qualifying": "unavailable"},
+            "driver_standings": {"rows": [driver]},
+            "constructor_standings": {"rows": [constructor]},
+        }
+        insights = h.dashboard_insights(data)
+        self.assertEqual(insights["driver_in_form"]["name"], "Fixture Driver")
+        self.assertIn("Official championship leader", insights["driver_in_form"]["stat"])
+        self.assertEqual(insights["constructor_leader"]["name"], "alpha")
+        self.assertEqual(insights["recent_winner"]["name"], "Fixture Driver")
+        self.assertEqual(insights["biggest_gainer"]["stat"], "Gained 2 places · Round 1")
+        self.assertEqual(insights["qualifying_p1_leader"]["status"], "partial")
+        self.assertIn("partial coverage", insights["qualifying_p1_leader"]["stat"])
+
+    def test_dashboard_insights_report_missing_domains_as_unavailable(self):
+        insights = h.dashboard_insights({"errors": {"driver_standings": "unavailable"}, "results": [], "drivers": {}, "metric_coverage": {"qualifying_p1": "unavailable"}})
+        self.assertEqual(insights["driver_in_form"]["status"], "unavailable")
+        self.assertEqual(insights["recent_winner"]["status"], "unavailable")
+        self.assertEqual(insights["qualifying_p1_leader"]["status"], "unavailable")
+
     def test_historical_points_not_recalculated_and_disqualified(self):
         data=h.summarize([Race.model_validate(race(year=1950,points="4.5")),Race.model_validate(race(2,year=1950,points="0",position="2",status="Disqualified"))],[],[],None)
         self.assertEqual(data["drivers"]["fixture"]["race_points"],4.5)
@@ -98,6 +125,23 @@ class PlatformTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(fetch.await_count,2)
         with patch.object(j,"page",AsyncMock(return_value={"total":"1","RaceTable":{"Races":[]}})):
             with self.assertRaises(j.ProviderError): await j.collect("bad","RaceTable","Races","Results")
+
+    async def test_pagination_merges_one_event_split_across_pages(self):
+        import copy
+        first, second = race(), copy.deepcopy(race())
+        second["Results"][0]["Driver"].update({"driverId":"second","givenName":"Second"})
+        pages = [
+            {"total":"2", "RaceTable":{"Races":[first]}},
+            {"total":"2", "RaceTable":{"Races":[second]}},
+        ]
+        with patch.object(j, "page", AsyncMock(side_effect=pages)):
+            rows = await j.collect("2024/results", "RaceTable", "Races", "Results")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual({row["Driver"]["driverId"] for row in rows[0]["Results"]}, {"fixture", "second"})
+        duplicate = copy.deepcopy(first)
+        with patch.object(j, "page", AsyncMock(side_effect=[{"total":"2", "RaceTable":{"Races":[first]}}, {"total":"2", "RaceTable":{"Races":[duplicate]}}])):
+            with self.assertRaises(j.ProviderError):
+                await j.collect("2024/duplicate", "RaceTable", "Races", "Results")
 
     async def test_reject_wrong_season_and_missing_points(self):
         with patch.object(j,"collect",AsyncMock(return_value=[race(year=2023)])):
@@ -132,6 +176,48 @@ class PlatformTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await h.season(2024))["status"],"partial")
         with patch.object(h,"races",AsyncMock(side_effect=j.ProviderError())),patch.object(h,"standings",AsyncMock(side_effect=j.ProviderError())):
             with self.assertRaises(j.ProviderError): await h.season(2024)
+
+    async def test_legacy_dashboard_and_insights_use_shared_history_payload(self):
+        from app.services import f1_service
+        official_driver = {"id": "fixture", "position": 1, "points": 25, "wins": 1, "Driver": race()["Results"][0]["Driver"]}
+        official_team = {"id": "alpha", "position": 1, "points": 25, "wins": 1, "Constructor": race()["Results"][0]["Constructor"]}
+        history = {
+            "year": 2024, "status": "partial", "errors": {"qualifying": "unavailable"},
+            "source": "Jolpica", "fetched_at": "2026-01-01T00:00:00+00:00",
+            "driver_standings": {"round": 1, "rows": [official_driver]},
+            "constructor_standings": {"round": 1, "rows": [official_team]},
+            "metric_coverage": {"qualifying_p1": "unavailable", "fastest_laps": "unavailable"},
+            "drivers": {}, "constructors": {}, "results": [],
+        }
+        with patch.object(f1_service, "get_season_context", AsyncMock(return_value={"next_race": None, "upcoming_schedule": []})), \
+             patch.object(h, "season", AsyncMock(return_value=history)) as shared, \
+             patch.object(n, "get_feed", AsyncMock(return_value={"status":"partial","articles":[],"errors":{"publisher":"unavailable"}})):
+            dashboard = await f1_service.get_dashboard_context(2024)
+            insight_data = await f1_service.get_insights(2024)
+        self.assertEqual(shared.await_count, 2)
+        self.assertEqual(dashboard["driver_standings"][0]["name"], "Fixture Driver")
+        self.assertEqual(dashboard["driver_standings"][0]["points"], 25)
+        self.assertEqual(dashboard["driver_standings"][0]["position"], 1)
+        self.assertEqual(dashboard["constructor_standings"][0]["name"], "alpha")
+        self.assertEqual(dashboard["history_status"], "partial")
+        self.assertEqual(dashboard["history_errors"], {"qualifying": "unavailable"})
+        self.assertEqual(dashboard["news_status"], "partial")
+        self.assertEqual(dashboard["news_errors"], {"publisher":"unavailable"})
+        self.assertEqual(dashboard["insights"]["qualifying_p1_leader"]["status"], "unavailable")
+        self.assertEqual(insight_data["status"], "partial")
+
+    async def test_legacy_standings_marks_one_failed_domain_as_partial(self):
+        from app.services import f1_service
+        driver_snapshot={"round":2,"rows":[{"id":"fixture","position":1,"points":25,"wins":1,"Driver":race()["Results"][0]["Driver"],"Constructors":[]} ]}
+        async def standings(year, round_number, kind):
+            if kind == "constructors": raise j.ProviderError("rate_limited")
+            return driver_snapshot
+        with patch.object(h,"standings",side_effect=standings):
+            result=await f1_service.get_standings(2024)
+        self.assertEqual(result["status"],"partial")
+        self.assertEqual(result["errors"],{"constructor_standings":"rate_limited"})
+        self.assertEqual(result["drivers"][0].points,25)
+        self.assertEqual(result["constructors"],[])
 
     async def test_latest_driver_and_constructor_standings_must_share_round(self):
         async def standings(year,round_number,kind):

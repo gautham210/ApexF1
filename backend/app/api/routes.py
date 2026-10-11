@@ -204,20 +204,36 @@ async def race_control(
 @router.get("/standings", response_model=APIResponse)
 async def standings(year: int = Query(default=_CURRENT_YEAR)):
     _validate_year(year)
-    data = await f1_service.get_standings(year)
+    from app.services.jolpica import ProviderError
+    try:
+        data = await f1_service.get_standings(year)
+    except ProviderError as exc:
+        raise HTTPException(503, detail={"status": "unavailable", "reason": exc.reason}) from exc
     return APIResponse(
-        success=True,
+        success=data["status"] != "unavailable",
         data={
             "drivers": [e.model_dump() for e in data["drivers"]],
             "constructors": [e.model_dump() for e in data["constructors"]],
+            "status": data["status"],
+            "errors": data["errors"],
+            "round": data["round"],
+            "source": data["source"],
+            "fetched_at": data["fetched_at"],
         },
+        error="Championship standings unavailable" if data["status"] == "unavailable" else None,
     )
 
 
 @router.get("/constructors", response_model=APIResponse)
 async def constructors(year: int = Query(default=_CURRENT_YEAR)):
     _validate_year(year)
-    data = await f1_service.get_standings(year)
+    from app.services.jolpica import ProviderError
+    try:
+        data = await f1_service.get_standings(year)
+    except ProviderError as exc:
+        raise HTTPException(503, detail={"status": "unavailable", "reason": exc.reason}) from exc
+    if not data["constructors"]:
+        raise HTTPException(503, detail={"status": "unavailable", "reason": data["errors"].get("constructor_standings", "no_standings")})
     return APIResponse(success=True, data=[e.model_dump() for e in data["constructors"]])
 
 
@@ -258,7 +274,12 @@ async def tyres(
 async def insights(year: int = Query(default=_CURRENT_YEAR)):
     _validate_year(year)
     data = await f1_service.get_insights(year)
-    return APIResponse(success=True, data=data)
+    unavailable = data.get("status") == "unavailable"
+    return APIResponse(
+        success=not unavailable,
+        data=data,
+        error="Historical insights unavailable" if unavailable else None,
+    )
 
 
 @router.get("/news", response_model=APIResponse)
@@ -274,7 +295,11 @@ async def news():
 @router.get("/engine-standings", response_model=APIResponse)
 async def engine_standings(year: int = Query(default=_CURRENT_YEAR)):
     _validate_year(year)
-    data = await f1_service.get_engine_standings(year)
+    from app.services.jolpica import ProviderError
+    try:
+        data = await f1_service.get_engine_standings(year)
+    except ProviderError as exc:
+        raise HTTPException(503, detail={"status": "unavailable", "reason": exc.reason}) from exc
     return APIResponse(success=True, data=data)
 
 

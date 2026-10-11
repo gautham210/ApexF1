@@ -65,9 +65,11 @@ async def standings(year, round_number, kind):
 def _classified(item):
     excluded_status = {"disqualified", "did not start", "not classified", "excluded", "withdrawn"}
     excluded_positions = {"D", "E", "W", "F", "R", "N", "NC", "EX"}
+    status = item.get("status") if isinstance(item, dict) else item.status
+    position_text = item.get("positionText") if isinstance(item, dict) else item.positionText
     return (
-        (item.status or "").strip().casefold() not in excluded_status
-        and (item.positionText or "").strip().upper() not in excluded_positions
+        (status or "").strip().casefold() not in excluded_status
+        and (position_text or "").strip().upper() not in excluded_positions
     )
 
 
@@ -145,6 +147,95 @@ def summarize(
             "qualifying_p1": qualifying_coverage,
             "fastest_laps": fastest_lap_coverage,
         },
+    }
+
+
+def dashboard_insights(data):
+    """Derive Home insight cards only from the canonical season response."""
+    errors = data.get("errors", {})
+
+    def value(domain, name=None, stat=None, *, status=None):
+        state = status or ("available" if domain not in errors and name and stat else "unavailable")
+        return {
+            "name": name if state != "unavailable" else "Unavailable",
+            "stat": stat if state != "unavailable" else f"{domain.replace('_', ' ').title()} unavailable",
+            "status": state,
+        }
+
+    drivers = (data.get("driver_standings") or {}).get("rows") or []
+    constructors = (data.get("constructor_standings") or {}).get("rows") or []
+    driver_leader = min(
+        (row for row in drivers if row.get("position") is not None),
+        key=lambda row: row["position"], default=None,
+    )
+    constructor_leader = min(
+        (row for row in constructors if row.get("position") is not None),
+        key=lambda row: row["position"], default=None,
+    )
+    driver_insight = value(
+        "driver_standings",
+        " ".join(filter(None, [driver_leader["Driver"].get("givenName"), driver_leader["Driver"].get("familyName")])) if driver_leader else None,
+        f"Official championship leader · {driver_leader['points']} pts" if driver_leader else None,
+    )
+    constructor_insight = value(
+        "constructor_standings",
+        constructor_leader["Constructor"].get("name") if constructor_leader else None,
+        f"Official championship leader · {constructor_leader['points']} pts" if constructor_leader else None,
+    )
+
+    race_rows = [row for row in data.get("results", []) if row.get("session") == "Race"]
+    latest_round = max((row["round"] for row in race_rows), default=None)
+    latest_race_rows = [row for row in race_rows if row["round"] == latest_round]
+    winner = next((row for row in latest_race_rows if row.get("position") == 1 and _classified(row)), None)
+    if winner:
+        driver = winner["Driver"]
+        recent_winner = value(
+            "races", " ".join(filter(None, [driver.get("givenName"), driver.get("familyName")])),
+            f"{winner['race']} winner · Round {winner['round']}",
+        )
+    else:
+        recent_winner = value("races")
+
+    gainers = []
+    for row in latest_race_rows:
+        grid, position = row.get("grid"), row.get("position")
+        if grid is None or grid < 1 or position is None or not _classified(row):
+            continue
+        gained = grid - position
+        if gained > 0:
+            name = " ".join(filter(None, [row["Driver"].get("givenName"), row["Driver"].get("familyName")]))
+            gainers.append((gained, name))
+    biggest_gainer = value(
+        "races",
+        max(gainers, key=lambda item: (item[0], item[1]))[1] if gainers else None,
+        f"Gained {max(gainers, key=lambda item: (item[0], item[1]))[0]} places · Round {latest_round}" if gainers else None,
+    )
+
+    coverage = data.get("metric_coverage", {}).get("qualifying_p1", "unavailable")
+    qualifying_leader = None
+    if coverage != "unavailable":
+        qualified = [
+            (entry.get("qualifying_p1"), " ".join(filter(None, [entry.get("givenName"), entry.get("familyName")])))
+            for entry in (data.get("drivers") or {}).values()
+            if entry.get("qualifying_p1") is not None
+        ]
+        if qualified:
+            count, name = max(qualified, key=lambda item: (item[0], item[1]))
+            suffix = " · partial coverage" if coverage == "partial" else ""
+            qualifying_leader = value(
+                "qualifying", name,
+                f"{count} Qualifying P1 classification{'s' if count != 1 else ''}{suffix}",
+                status="partial" if coverage == "partial" else "available",
+            )
+    if qualifying_leader is None:
+        qualifying_leader = value("qualifying", status="unavailable")
+
+    return {
+        "driver_in_form": driver_insight,
+        "qualifying_p1_leader": qualifying_leader,
+        "biggest_gainer": biggest_gainer,
+        "recent_winner": recent_winner,
+        "constructor_leader": constructor_insight,
     }
 
 

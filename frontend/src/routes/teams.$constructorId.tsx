@@ -22,7 +22,7 @@ function TeamProfile() {
     official = data?.constructor_standings?.rows.find((t) => t.id === constructorId);
   const powerUnit = useQuery({
     queryKey: ["team-power-unit", year, team?.name],
-    queryFn: () => getTeamPowerUnit(year, team!.name),
+    queryFn: ({ signal }) => getTeamPowerUnit(year, team!.name, signal),
     enabled: !!team && year >= 2024,
     staleTime: 900000,
   });

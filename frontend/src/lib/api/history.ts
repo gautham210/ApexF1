@@ -112,10 +112,11 @@ export const seasonSchema = z.object({
 });
 export type Season = z.infer<typeof seasonSchema>;
 export type Result = z.infer<typeof result>;
-export async function getSeason(year: number, round?: number) {
+export async function getSeason(year: number, round?: number, signal?: AbortSignal) {
   const response = await api.get<never, unknown>("/api/history/season", {
     params: { year, round },
     timeout: 90000,
+    signal,
   });
   const payload = z.object({ success: z.literal(true), data: seasonSchema }).parse(response).data;
   if (payload.year !== year || payload.selected_round !== (round ?? null))
@@ -135,17 +136,24 @@ const careerSchema = z.object({
     standing.omit({ id: true }).extend({ year: z.number(), round: z.number() }),
   ),
 });
-export async function getCareer(id: string) {
+export async function getCareer(id: string, signal?: AbortSignal) {
   const response = await api.get<never, unknown>(
     `/api/history/drivers/${encodeURIComponent(id)}/career`,
-    { timeout: 90000 },
+    { timeout: 90000, signal },
   );
   const data = z.object({ success: z.literal(true), data: careerSchema }).parse(response).data;
   if (data.driver_id !== id) throw new Error("Driver identity mismatch");
   return data;
 }
-export async function getTeamPowerUnit(year: number, constructorName: string) {
-  const response = await api.get<never, unknown>("/api/engine-standings", { params: { year } });
+export async function getTeamPowerUnit(
+  year: number,
+  constructorName: string,
+  signal?: AbortSignal,
+) {
+  const response = await api.get<never, unknown>("/api/engine-standings", {
+    params: { year },
+    signal,
+  });
   const payload = z
     .object({
       success: z.literal(true),
