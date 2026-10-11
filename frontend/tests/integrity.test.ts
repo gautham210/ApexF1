@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { getDriverNumberByName, getDriverByYear, getDriverNumberByAbbr } from "../src/lib/store";
 import { createCalendar } from "../src/lib/calendar";
+import { safeImageUrl } from "../src/lib/media";
 test("season-aware driver numbers never prefer global aliases", () => {
   for (const [name, number] of [
     ["Max Verstappen", "3"],
@@ -53,4 +54,13 @@ test("live identity uses session date, never country or meeting ID", () => {
   assert.equal(matchesSession(event, "Race", "2026-10-01T14:00:00Z"), false);
   assert.equal(matchesSession(event, "Qualifying", event.session5_date), false);
   assert.equal(matchesSession(event, "Race"), false);
+});
+
+test("provider portraits reject unsafe URLs and preserve missing-image fallback", () => {
+  assert.equal(safeImageUrl(null), null);
+  assert.equal(safeImageUrl("javascript:alert(1)"), null);
+  assert.equal(
+    safeImageUrl("https://example.com/portrait.png"),
+    "https://example.com/portrait.png",
+  );
 });

@@ -58,3 +58,10 @@ Browser DOM confirmed removal of fake Home weather/statistics, navigation reache
 - OpenF1 supported endpoints/access: https://openf1.org/docs/ and https://openf1.org/ (live authorization required; no track_status endpoint documented).
 
 Exact commands/results and changed paths are in VALIDATION.md and CHANGED_FILES.md. Remaining work is in REMEDIATION_PLAN.md. No claim of complete forensic coverage, authenticated live recovery, production security verification or complete UX validation is made.
+
+
+## Continued platform implementation
+
+After the verified remediation commit, the working continuation adds the season-aware Jolpica service, official round standings, race/sprint/qualifying rows, event-point progression, season-specific constructor contributions, driver career snapshots, driver and constructor profiles, exact-session optional portraits, reusable image fallback, configurable RSS news, and server-side OpenF1 OAuth/health handling. See [platform architecture](PLATFORM_ARCHITECTURE.md) for identities, cache rules, provenance, scoring definitions and known limits.
+
+Frontend checks in this continuation: TypeScript PASS, ESLint PASS with eight Fast Refresh warnings, four frontend tests PASS. Browser checks covered Standings unavailable state, News, and Driver profile at the default viewport. Build and current backend suite are NOT VERIFIED due sandbox restrictions. Real provider smoke tests are BLOCKED by the approval usage limit. The active work is on `codex/apexf1-forensic-remediation`; delivery SHA and push verification are reported separately.

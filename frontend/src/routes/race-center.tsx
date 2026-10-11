@@ -1,3 +1,4 @@
+import { LiveProviderNotice } from "@/components/LiveProviderNotice";
 import { matchesSession } from "@/lib/session";
 import type { LeaderboardEntry, TelemetryPoint } from "@/lib/store";
 import type { WeatherReading, RaceControlMsg } from "@/hooks/useLiveSession";
@@ -855,6 +856,7 @@ function RaceCenter() {
 
   return (
     <div className="min-h-screen px-6 pb-32 pt-12 lg:px-12 space-y-6">
+      <LiveProviderNotice />
       {/* 1. BROADCAST PANEL */}
       <div className="flex flex-wrap items-center justify-between gap-6 border-b border-border/40 pb-6 z-10 relative">
         <div>

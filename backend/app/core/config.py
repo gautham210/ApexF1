@@ -1,6 +1,6 @@
 from pydantic_settings import BaseSettings
 from typing import List
-import os
+from pydantic import SecretStr
 
 
 class Settings(BaseSettings):
@@ -13,6 +13,11 @@ class Settings(BaseSettings):
     RATE_LIMIT_PER_MINUTE: int = 60
     WS_HEARTBEAT_INTERVAL: int = 30
     LIVE_DATA_REFRESH_SECONDS: int = 30
+    OPENF1_USERNAME: SecretStr = SecretStr("")
+    OPENF1_PASSWORD: SecretStr = SecretStr("")
+    OPENF1_TOKEN: SecretStr = SecretStr("")
+    OPENF1_IMAGES_ENABLED: bool = False
+    NEWS_FEEDS: str = "https://www.autosport.com/rss/f1/news/|Autosport,https://www.motorsport.com/rss/f1/news/|Motorsport.com,https://www.bbc.co.uk/sport/formula1/rss.xml|BBC Sport"
 
     @property
     def cors_origins_list(self) -> List[str]:

@@ -43,4 +43,4 @@ Backend settings: `CORS_ORIGINS` (comma-separated origins), `CACHE_DIR`, `LOG_LE
 
 Tests: `cd backend; python -m unittest discover -s tests -v`. Fixtures under `backend/tests` are test data, never runtime fallbacks.
 
-See [forensic audit](docs/FORENSIC_AUDIT.md), [data flow](docs/DATA_FLOW_MAP.md), [remediation plan](docs/REMEDIATION_PLAN.md), and [validation](docs/VALIDATION.md). These distinguish verified improvements from remaining limitations; the project is not certified fully audited or production-ready.
+See [forensic audit](docs/FORENSIC_AUDIT.md), [data flow](docs/DATA_FLOW_MAP.md), [platform architecture](docs/PLATFORM_ARCHITECTURE.md), [remediation plan](docs/REMEDIATION_PLAN.md), and [validation](docs/VALIDATION.md). These distinguish verified improvements from remaining limitations; the project is not certified fully audited or production-ready.

@@ -8,6 +8,7 @@ import {
   Bell,
   CalendarPlus,
   Film,
+  Newspaper,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -17,6 +18,7 @@ const primary = [
   { to: "/race-center", label: "Race Center", icon: Radio },
   { to: "/replay", label: "Replays", icon: Film },
   { to: "/standings", label: "Standings", icon: Trophy },
+  { to: "/news", label: "News", icon: Newspaper },
 ] as const;
 
 const secondary = [

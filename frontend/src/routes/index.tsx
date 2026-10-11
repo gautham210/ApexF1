@@ -14,7 +14,6 @@ import {
   Clock,
   Trophy,
   Zap,
-  Compass,
   Radio,
   Flag,
   AlertTriangle,
@@ -24,12 +23,12 @@ import { useSessionContext } from "@/hooks/useSessionContext";
 import { useLiveSession } from "@/hooks/useLiveSession";
 import { usePreferences, TEAMS } from "@/lib/preferences";
 import { useCanonicalStore } from "@/lib/store";
+import { getNewsFeed } from "@/lib/api/news";
 
 import heroRace from "@/assets/hero-race.jpg";
 import heroPit from "@/assets/hero-pit.jpg";
 import heroCircuit from "@/assets/hero-circuit.jpg";
 import heroDriver from "@/assets/hero-driver.jpg";
-import heroSession from "@/assets/hero-session.jpg";
 import heroNight from "@/assets/hero-night.jpg";
 import heroRain from "@/assets/hero-rain.jpg";
 import heroGarage from "@/assets/hero-garage.jpg";
@@ -160,7 +159,13 @@ function Dashboard() {
     };
   }, [live.is_live, live.session_info?.session_name, currentRace?.is_completed]);
 
-  const news = ctx?.news ?? [];
+  const newsQuery = useQuery({
+    queryKey: ["news-feed"],
+    queryFn: getNewsFeed,
+    staleTime: 600000,
+    retry: 1,
+  });
+  const news = newsQuery.data?.articles ?? [];
   const insights = ctx?.insights ?? {};
 
   const activeEventName = currentRace?.event_name || currentRace?.location || "Grand Prix";
@@ -680,14 +685,22 @@ function Dashboard() {
               <h2 className="mt-1 font-display text-4xl">Stories from the paddock</h2>
             </div>
             <Link
-              to="/sessions"
+              to="/news"
+              search={{ source: undefined, topic: undefined, q: undefined }}
               className="text-xs text-muted-foreground hover:text-foreground font-mono transition"
             >
-              WEEKEND TIMETABLE →
+              ALL NEWS →
             </Link>
           </div>
+          {newsQuery.data && newsQuery.data.status !== "success" && (
+            <p role="status" className="text-xs text-muted-foreground">
+              {newsQuery.data.status === "stale"
+                ? "Showing cached publisher stories; a feed refresh failed."
+                : "Some publisher feeds are unavailable; the stories below remain attributed to their sources."}
+            </p>
+          )}
 
-          {loading ? (
+          {newsQuery.isPending ? (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {Array(2)
                 .fill(0)
@@ -697,45 +710,49 @@ function Dashboard() {
             </div>
           ) : news.length > 0 ? (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {news.slice(0, 2).map((a, i) => {
-                const bgStory = i === 0 ? heroSession : heroRain;
-                return (
-                  <a
-                    key={i}
-                    href={a.link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="group block relative overflow-hidden rounded-2xl border border-border/40 h-44 shadow-lg"
-                  >
-                    <img
-                      src={bgStory}
-                      alt=""
-                      loading="lazy"
-                      className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.04] opacity-40"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-background/95 via-background/40 to-transparent" />
-                    <div className="absolute inset-0 flex flex-col justify-end p-5">
-                      <span className="text-[9px] font-mono tracking-[0.2em] text-primary font-bold uppercase">
-                        {a.tag || "Paddock Update"}
-                      </span>
-                      <h3 className="mt-2 font-display text-2xl leading-tight text-balance group-hover:text-primary transition truncate">
-                        {a.title}
-                      </h3>
-                      <span className="mt-1 text-[10px] text-muted-foreground">
-                        {a.source || "Formula 1"}
-                      </span>
-                    </div>
-                  </a>
-                );
-              })}
+              {news.slice(0, 2).map((article) => (
+                <article
+                  key={article.link}
+                  className="group rounded-2xl border border-border/40 bg-gradient-to-br from-white/[0.04] to-transparent p-6 min-h-44 flex flex-col justify-between"
+                >
+                  <div>
+                    <p className="text-[10px] text-muted-foreground">
+                      {article.source} ·{" "}
+                      {article.published
+                        ? new Date(article.published).toLocaleDateString()
+                        : "Publication date unavailable"}
+                    </p>
+                    <h3 className="mt-3 font-display text-2xl leading-tight text-balance group-hover:text-primary transition">
+                      <a
+                        href={article.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="focus-visible:outline focus-visible:outline-2"
+                      >
+                        {article.title}
+                      </a>
+                    </h3>
+                    <p className="mt-2 text-xs text-muted-foreground line-clamp-2">
+                      {article.summary}
+                    </p>
+                  </div>
+                  <p className="mt-4 text-[10px] text-muted-foreground">Read at {article.source}</p>
+                </article>
+              ))}
             </div>
           ) : (
             <GlassPanel className="p-8 py-12 text-center max-w-md mx-auto border border-border/40">
-              <Compass className="w-10 h-10 text-muted-foreground/30 mx-auto mb-4" />
-              <div className="font-display text-2xl">Stories offline</div>
+              <div className="font-display text-2xl">
+                {newsQuery.isError ? "News unavailable" : "No current stories"}
+              </div>
               <p className="mt-2 text-xs text-muted-foreground">
-                Paddock reports will update as the weekend unfolds.
+                Publisher feeds report their own articles and publication dates.
               </p>
+              {newsQuery.isError && (
+                <button className="underline text-xs p-3" onClick={() => void newsQuery.refetch()}>
+                  Retry
+                </button>
+              )}
             </GlassPanel>
           )}
         </div>

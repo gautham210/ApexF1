@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.core.cache import setup_fastf1_cache
 from app.core.logging import setup_logging
 from app.api.routes import router as api_router
+from app.api.history import router as history_router
 from app.services.live_service import start_live_service, stop_live_service
 
 setup_logging()
@@ -53,6 +54,7 @@ app.add_middleware(
 
 # Routers
 app.include_router(api_router, prefix="/api")
+app.include_router(history_router, prefix="/api")
 
 
 @app.get("/health")

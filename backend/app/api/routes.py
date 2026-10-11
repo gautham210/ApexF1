@@ -102,7 +102,7 @@ async def live_snapshot():
                 "circuit": state_info.get("circuit"),
                 "country": state_info.get("country"),
                 "year": state_info.get("year"),
-                "track_status": "GREEN",
+                "track_status": state_info.get("track_status", "UNKNOWN"),
             },
             "leaderboard": [],
             "weather": None,
@@ -263,8 +263,12 @@ async def insights(year: int = Query(default=_CURRENT_YEAR)):
 
 @router.get("/news", response_model=APIResponse)
 async def news():
-    data = await f1_service.get_news()
-    return APIResponse(success=True, data=data)
+    from app.services.jolpica import ProviderError
+    try:
+        data = await f1_service.get_news()
+        return APIResponse(success=True, data=data)
+    except ProviderError as exc:
+        raise HTTPException(503, detail="News provider unavailable") from exc
 
 
 @router.get("/engine-standings", response_model=APIResponse)
@@ -332,7 +336,7 @@ async def websocket_live(ws: WebSocket):
                     "circuit": state_info.get("circuit"),
                     "country": state_info.get("country"),
                     "year": state_info.get("year"),
-                    "track_status": "GREEN",
+                    "track_status": state_info.get("track_status", "UNKNOWN"),
                 },
                 "leaderboard": [],
                 "weather": None,
@@ -366,3 +370,9 @@ async def season_results(year: int = Query(default=_CURRENT_YEAR)):
     if data.get("unavailable"):
         raise HTTPException(status_code=503, detail="Official classifications unavailable from provider")
     return APIResponse(success=True, data=data)
+
+
+@router.get("/live/health")
+async def live_health():
+    from app.services.openf1_auth import health
+    return {"success": True, "data": health()}

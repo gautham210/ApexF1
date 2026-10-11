@@ -28,7 +28,7 @@ _DISK_CACHE_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "cac
 os.makedirs(_DISK_CACHE_DIR, exist_ok=True)
 
 # Jolpica/Ergast API base (no API key required)
-_JOLPICA_BASE = "https://api.jolpi.ca/ergast/f1"
+from app.services.jolpica import BASE as _JOLPICA_BASE
 _JOLPICA_CACHE_TTL_SECONDS = 3600  # 1 hour
 
 # Constructor name normalization map — canonical mapping from ALL Jolpica/Ergast/FastF1
@@ -618,65 +618,10 @@ async def get_standings(year: int) -> Dict[str, List[StandingsEntry]]:
 
 import xml.etree.ElementTree as ET
 
-# Multiple RSS feeds tried in order until one succeeds
-_NEWS_FEEDS = [
-    ("https://www.motorsport.com/rss/f1/news/", "Motorsport.com"),
-    ("https://www.autosport.com/rss/f1/news/", "Autosport"),
-    ("https://www.racefans.net/feed/", "RaceFans"),
-]
-
 async def get_news(year: int = 2026, country: str = None) -> List[Dict[str, str]]:
-    """
-    Returns authentic news headlines from official RSS feeds.
-    Never hallucinates or generates fictional paddock journalism.
-    """
-    cache_key = f"news_feed_{year}_{country or 'all'}"
-    if cache_key in _news_cache:
-        return _news_cache[cache_key]
-
-    # ONLY fetch real live articles from actual RSS feeds.
-    # No fabricated news items for historical/upcoming coordinates.
-    news_items = []
-    for feed_url, source_name in _NEWS_FEEDS:
-        try:
-            async with httpx.AsyncClient(timeout=6.0, follow_redirects=True) as client:
-                resp = await client.get(feed_url)
-                resp.raise_for_status()
-                root = ET.fromstring(resp.text)
-                
-                for item in root.findall('.//item')[:6]:
-                    title_el = item.find('title')
-                    link_el = item.find('link')
-                    date_el = item.find('pubDate')
-                    title = title_el.text.strip() if title_el is not None and title_el.text else ""
-                    link = link_el.text.strip() if link_el is not None and link_el.text else ""
-                    pub_date = date_el.text.strip() if date_el is not None and date_el.text else ""
-                    if title and link and link.startswith(("https://", "http://")):
-                        news_items.append({
-                            "title": title,
-                            "source": source_name,
-                            "tag": "Paddock Story",
-                            "link": link,
-                            "published": pub_date,
-                        })
-        except Exception as e:
-            logger.warning(f"get_news feed {feed_url} failed: {e}")
-            continue
-
-    if news_items:
-        # Deduplicate by first 60 chars of title (case-insensitive)
-        seen = set()
-        unique = []
-        for item in news_items:
-            key = item["title"][:60].lower()
-            if key not in seen:
-                seen.add(key)
-                unique.append(item)
-        news_items = unique[:8]
-        _news_cache[cache_key] = news_items
-        return news_items
-        
-    return []
+    from app.services.news_service import get_feed
+    from app.services.jolpica import ProviderError
+    return (await get_feed())["articles"][:12]
 
 
 _ENGINE_SUPPLIER_COLORS: Dict[str, str] = {
@@ -935,6 +880,7 @@ async def get_dashboard_context(year: int) -> Dict[str, Any]:
         "constructor_standings": [e.model_dump() for e in constructors],
         "insights": insights,
         "news": news[:6],
+        "news_status": "unavailable" if isinstance(results[2], Exception) else "available",
         "upcoming_schedule": upcoming,
     }
 

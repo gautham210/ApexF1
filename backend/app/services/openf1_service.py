@@ -61,15 +61,30 @@ SESSION_DISPLAY = {
 
 
 async def _get(path: str, params: dict = None, timeout: float = 8.0) -> Any:
-    """Make an OpenF1 API request. Returns parsed JSON or None on failure."""
-    url = f"{OPENF1_BASE}{path}"
+    from app.services import openf1_auth
+    headers = await openf1_auth.headers()
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            r = await client.get(url, params=params or {})
-            r.raise_for_status()
-            return r.json()
-    except Exception as e:
-        logger.warning(f"OpenF1 request failed [{path}]: {e}")
+            response = await client.get(f"{OPENF1_BASE}{path}", params=params or {}, headers=headers)
+            if response.status_code == 401 and openf1_auth.configured():
+                headers = await openf1_auth.headers(force=True)
+                if headers:
+                    response = await client.get(f"{OPENF1_BASE}{path}", params=params or {}, headers=headers)
+            if response.status_code in (401, 403):
+                openf1_auth.record("unauthorized")
+                return None
+            if response.status_code == 429:
+                openf1_auth.record("rate_limited")
+                return None
+            response.raise_for_status()
+            payload = response.json()
+            if not isinstance(payload, list) or any(not isinstance(row, dict) for row in payload):
+                raise ValueError("Invalid response")
+            openf1_auth.record("available")
+            return payload
+    except (httpx.HTTPError, ValueError):
+        openf1_auth.record("unavailable")
+        logger.warning("OpenF1 request unavailable: %s", path)
         return None
 
 
@@ -91,126 +106,76 @@ async def get_latest_session() -> Optional[Dict]:
     return session
 
 
-async def get_session_state() -> Dict[str, Any]:
-    """
-    Determine the true current session state.
-
-    Returns a dict with:
-      - state: one of UPCOMING/WEEKEND/FP1/FP2/FP3/QUALIFYING/SPRINT_Q/SPRINT/RACE/
-               RED_FLAG/SC/VSC/CHECKERED/ARCHIVE
-      - is_live: bool (True only when a session is genuinely active)
-      - session: OpenF1 session dict or None
-      - session_key: int or None
-      - session_name: str
-      - display_name: str  (e.g. "FP1", "RACE")
-      - circuit: str
-      - country: str
-      - year: int
-      - round: int
-      - track_status: str (GREEN/YELLOW/SC/VSC/RED)
-    """
-    cache_key = "openf1_session_state"
-    if cache_key in _session_cache:
-        return _session_cache[cache_key]
-
-    session = await get_latest_session()
-    if not session:
-        result = {
-            "state": "ARCHIVE",
-            "is_live": False,
-            "session": None,
-            "session_key": None,
-            "session_name": "Unknown",
-            "display_name": "—",
-            "circuit": "—",
-            "country": "—",
-            "year": datetime.now(timezone.utc).year,
-            "round": 0,
-            "track_status": "UNKNOWN",
-        }
-        _session_cache[cache_key] = result
+def classify_session(session, messages, authenticated, now=None, timing=None):
+    """A scheduled time window is not proof of a live feed."""
+    now = now or datetime.now(timezone.utc)
+    result = {"state": "UNAVAILABLE", "is_live": False, "session": session,
+              "session_key": session.get("session_key") if session else None,
+              "session_name": (session or {}).get("session_name", "Unknown"),
+              "display_name": (session or {}).get("session_name", "Unavailable"),
+              "date_start": (session or {}).get("date_start"),
+              "circuit": (session or {}).get("circuit_short_name"),
+              "country": (session or {}).get("country_name"),
+              "year": (session or {}).get("year"), "round": None, "track_status": "UNKNOWN"}
+    if not session or not authenticated:
         return result
-
-    now = datetime.now(timezone.utc)
-
-    # Parse session window from OpenF1 data
-    date_start_str = session.get("date_start")
-    date_end_str = session.get("date_end")
-
-    session_key = session.get("session_key")
-    session_name = session.get("session_name", "Race")
-    display_name = SESSION_DISPLAY.get(session_name, session_name.upper())
-    circuit = session.get("circuit_short_name", session.get("circuit_key", "—"))
-    country = session.get("country_name", "—")
-    year = session.get("year", now.year)
-    meeting_key = session.get("meeting_key")
-
-    state = "ARCHIVE"
-    is_live = False
-    track_status = "UNKNOWN"
-
-    if date_start_str and date_end_str:
+    if session.get("is_cancelled") is True:
+        result["state"] = "CANCELLED"
+        return result
+    valid = []
+    for message in messages:
         try:
-            # OpenF1 returns UTC ISO strings
-            def _parse(s):
-                s = s.replace("Z", "+00:00")
-                return datetime.fromisoformat(s)
+            stamp = datetime.fromisoformat(message["date"].replace("Z", "+00:00"))
+            if stamp.tzinfo and stamp <= now:
+                valid.append((stamp, message))
+        except (ValueError, KeyError, TypeError):
+            continue
+    valid.sort(key=lambda x: x[0], reverse=True)
+    terminal = next((m for _, m in valid if any(word in m.get("message", "").upper() for word in ("SESSION ENDED", "SESSION FINISHED", "SESSION ABORTED", "SESSION CANCELLED"))), None)
+    restarted = next((stamp for stamp,m in valid if "SESSION STARTED" in m.get("message", "").upper() or "SESSION RESUMED" in m.get("message", "").upper()), None)
+    if terminal and (not restarted or datetime.fromisoformat(terminal["date"].replace("Z", "+00:00")) >= restarted):
+        result["state"] = "COMPLETED" if "CANCELLED" not in terminal.get("message", "") else "CANCELLED"
+        return result
+    recent_timing = []
+    for row in timing or []:
+        try:
+            stamp = datetime.fromisoformat(row["date"].replace("Z", "+00:00"))
+            if stamp.tzinfo and stamp <= now:
+                recent_timing.append(stamp)
+        except (ValueError, KeyError, TypeError):
+            continue
+    newest_timing = max(recent_timing, default=None)
+    control_fresh = valid and (now - valid[0][0]).total_seconds() <= 180
+    timing_fresh = newest_timing and (now - newest_timing).total_seconds() <= 180
+    if not control_fresh and not timing_fresh:
+        result["state"] = "STALE"
+        return result
+    evidence = max([s for s in [valid[0][0] if control_fresh else None, newest_timing if timing_fresh else None] if s])
+    result.update(is_live=True, state=SESSION_DISPLAY.get(session.get("session_name"), "LIVE"), observed_at=evidence.isoformat())
+    flags = [m.get("flag") for _,m in valid if m.get("scope") == "Track" and m.get("flag")]
+    if flags:
+        result["track_status"] = {"RED":"RED", "YELLOW":"YELLOW", "DOUBLE YELLOW":"YELLOW", "GREEN":"GREEN", "CLEAR":"GREEN", "CHEQUERED":"CHECKERED"}.get(flags[0], "UNKNOWN")
+        if flags[0] == "RED": result["state"] = "RED_FLAG"
+    return result
 
-            date_start = _parse(date_start_str)
-            date_end = _parse(date_end_str)
 
-            # Add a generous buffer: session may run over
-            session_end_with_buffer = date_end.replace(
-                tzinfo=date_end.tzinfo or timezone.utc
-            )
-            date_start = date_start.replace(tzinfo=date_start.tzinfo or timezone.utc)
-
-            if now < date_start:
-                # Session hasn't started yet — check if it's today/imminent
-                delta_hours = (date_start - now).total_seconds() / 3600
-                state = "UPCOMING" if delta_hours > 6 else "WEEKEND"
-            elif date_start <= now <= session_end_with_buffer:
-                # Session window is active — check track status for red flag etc.
-                is_live = True
-                state = display_name.replace(" ", "_").upper()
-
-                # Race-control is the documented provider endpoint; no /track_status API exists.
-                messages = await get_race_control_messages(session_key)
-                track_flags = [m for m in messages if m.get("scope") == "Track" and m.get("flag")]
-                if track_flags:
-                    flag = track_flags[0]["flag"]
-                    track_status = {"RED": "RED", "YELLOW": "YELLOW", "DOUBLE YELLOW": "YELLOW", "GREEN": "GREEN", "CLEAR": "GREEN", "CHEQUERED": "CHECKERED"}.get(flag, "UNKNOWN")
-                    if track_status == "RED":
-                        state = "RED_FLAG"
-                    elif track_status == "CHECKERED":
-                        state = "CHECKERED"
-                        is_live = False
-            else:
-                # Session ended — CHECKERED within 30 min, then ARCHIVE
-                elapsed_minutes = (now - session_end_with_buffer).total_seconds() / 60
-                state = "CHECKERED" if elapsed_minutes < 30 else "ARCHIVE"
-
-        except Exception as e:
-            logger.warning(f"Session state parse error: {e}")
-            state = "ARCHIVE"
-
-    result = {
-        "state": state,
-        "is_live": is_live,
-        "session": session,
-        "session_key": session_key,
-        "meeting_key": meeting_key,
-        "session_name": session_name,
-        "display_name": display_name,
-        "circuit": circuit,
-        "country": country,
-        "year": year,
-        "round": None,
-        "track_status": track_status,
-        "date_start": date_start_str,
-        "date_end": date_end_str,
-    }
-    _session_cache[cache_key] = result
+async def get_session_state() -> Dict[str, Any]:
+    from app.services import openf1_auth
+    key = "openf1_session_state"
+    if key in _session_cache:
+        return _session_cache[key]
+    if not openf1_auth.configured():
+        return classify_session(None, [], False)
+    session = await get_latest_session()
+    session_key = session.get("session_key") if session else None
+    messages, intervals, positions = await asyncio.gather(
+        get_race_control_messages(session_key) if session_key else asyncio.sleep(0, result=[]),
+        _get("/intervals", {"session_key": session_key}) if session_key else asyncio.sleep(0, result=[]),
+        _get("/position", {"session_key": session_key}) if session_key else asyncio.sleep(0, result=[]),
+    )
+    timing = intervals or positions or []
+    result = classify_session(session, messages or [], openf1_auth.state["status"] == "available", timing=timing)
+    _session_cache[key] = result
     return result
 
 
@@ -391,6 +356,7 @@ async def get_race_control_messages(session_key: int) -> List[Dict]:
     for msg in data[-20:]:  # last 20 messages
         messages.append({
             "time": msg.get("date"),
+            "date": msg.get("date"),
             "lap": msg.get("lap_number"),
             "category": msg.get("category"),
             "message": msg.get("message", ""),
@@ -425,7 +391,7 @@ async def get_stints(session_key: int) -> Dict[str, List[Dict]]:
             "compound": (stint.get("compound") or "UNKNOWN").upper(),
             "lap_start": stint.get("lap_start"),
             "lap_end": stint.get("lap_end"),
-            "tyre_age_at_start": stint.get("tyre_age_at_start", 0),
+            "tyre_age_at_start": stint.get("tyre_age_at_start"),
         })
 
     _medium_cache[cache_key] = result
