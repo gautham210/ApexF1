@@ -10,6 +10,7 @@
 6. P2 performance: query deduplication for Home/bootstrap, nonblocking schedule fetch, canonical standings reuse, route splitting (main bundle reduced from 1058 KB to roughly 422 KB).
 7. Regression tests, source/validation reports, dedicated Git branch, commit and push verification.
 8. Continuation: canonical season/round API; official standings snapshots; race, sprint and qualifying classifications; event-point progression; transferred-driver constructor contributions; driver/constructor profiles; exact-session optional portrait lookup; normalized publisher RSS feed and Home/News integration; environment-driven OpenF1 OAuth health and stale-session guard.
+9. P1 statistics integrity: calculate Qualifying P1 from classified qualifying position, report race grid-P1 starts separately, surface qualifying/fastest-lap coverage, validate duplicate/oversized pagination and verify career titles against each season's final scheduled round. Add regressions for sprint separation, constructor transfers, missing metrics and current-season title exclusion.
 
 ## Outstanding — not represented as complete
 
@@ -18,8 +19,9 @@
 - P1: Full runtime schemas and distinct unavailable/partial/stale states for every legacy API; source timestamps in all stores and screens.
 - P1: Full historical roster/constructor rename lineage and power-unit relationships; authenticated real sector/lap/tyre age coverage.
 - P2: Full browser route matrix at desktop/tablet/mobile and assistive technology; initial desktop route checks passed, but tablet/mobile viewport control was blocked. Measured rendering performance remains outstanding.
-- P2: Current continuation frontend build and Python suite could not be rerun to completion: Vite sandbox `realpath` EPERM; Python async test process stalls in this sandbox. Previous branch build and 24 tests are not proof for these new changes.
-- P2: Portraits remain opt-in pending rights review; RSS publisher real-feed smoke checks were blocked by the environment approval usage cap.
+- P2: Browser viewport review for this follow-up was blocked because the in-app browser could not connect to the locally running Vite server. No desktop/tablet/mobile pass is claimed.
+- P2: Jolpica passed a single completed-season qualifying smoke; broader historical coverage, real RSS feeds and authenticated OpenF1 smoke remain unverified. Portraits remain opt-in pending rights review.
+- P2: Sandboxed Windows Proactor loop creation stalls in socket-pair setup; the full Python suite passes when run outside the sandbox. The default sandboxed Vite build also hits Node `realpath` EPERM; the production build passes without source/config workarounds outside the sandbox.
 - P2: Backend session-load single-flight and cancellation/resource bounds; transitive backend dependency lock/audit in clean Python 3.11 environment.
 - P2: Complete per-file manual audit of remaining shared UI primitives; no claim that this entire codebase is exhaustively reviewed.
 - P3: Forecast notifications require a forecast provider and delivery infrastructure. Preferences currently do not send alerts.

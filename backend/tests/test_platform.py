@@ -12,12 +12,25 @@ def race(round_number=1, year=2024, team="alpha", points="25", position="1", gri
 
 
 class PlatformTests(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
+    async def asyncSetUp(self):
+        unfinished=[task for task in j.pending.values() if not task.done()]
+        if unfinished:
+            raise AssertionError("A previous test left Jolpica request tasks running")
+        j.pending.clear()
         j.cache.clear()
         j.last_request = 0
         j.gate = asyncio.Lock()
         auth.lock = asyncio.Lock()
         auth.token, auth.expires = None, 0
+
+    async def asyncTearDown(self):
+        await asyncio.sleep(0)
+        unfinished=[task for task in j.pending.values() if not task.done()]
+        if unfinished:
+            for task in unfinished:
+                task.cancel()
+            await asyncio.gather(*unfinished, return_exceptions=True)
+            self.fail("Test left Jolpica request tasks running")
 
     def test_transfer_contributions_and_sprints(self):
         races=[Race.model_validate(race()), Race.model_validate(race(2,team="beta",points="18",position="2",grid="4"))]
@@ -27,9 +40,48 @@ class PlatformTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["constructors"]["beta"]["contributions"],{"fixture":26})
         self.assertEqual(result["drivers"]["fixture"]["wins"],1)
         self.assertEqual(result["drivers"]["fixture"]["podiums"],2)
-        self.assertEqual(result["drivers"]["fixture"]["poles"],1)
+        self.assertEqual(result["drivers"]["fixture"]["grid_p1_starts"],1)
         self.assertEqual(result["progression"][-1]["points"]["fixture"],51)
         self.assertEqual(h.summarize(races,[sprint],[],1)["progression"][-1]["points"]["fixture"],25)
+
+    def test_grid_p1_start_is_not_qualifying_p1(self):
+        result=h.summarize([Race.model_validate(race(grid="1"))],[],[],None,"unavailable","unavailable")
+        driver=result["drivers"]["fixture"]
+        self.assertEqual(driver["grid_p1_starts"],1)
+        self.assertIsNone(driver["qualifying_p1"])
+        self.assertEqual(result["metric_coverage"]["qualifying_p1"],"unavailable")
+        dns=h.summarize([Race.model_validate(race(grid="1",status="Did not start"))],[],[],None,"unavailable","unavailable")
+        self.assertEqual(dns["drivers"]["fixture"]["grid_p1_starts"],0)
+
+    def test_qualifying_classification_p1_counts_qualifying_p1(self):
+        qualifying=Race.model_validate(race(grid=None,position="1",session="QualifyingResults"))
+        result=h.summarize([],[],[qualifying],None,"complete","unavailable")
+        self.assertEqual(result["drivers"]["fixture"]["qualifying_p1"],1)
+        self.assertEqual(result["constructors"]["alpha"]["qualifying_p1"],1)
+
+    def test_qualifying_p1_uses_constructor_for_that_event(self):
+        race_result=Race.model_validate(race(team="alpha",grid="1"))
+        qualifying=Race.model_validate(race(team="beta",grid=None,position="1",session="QualifyingResults"))
+        result=h.summarize([race_result],[],[qualifying],None,"complete","unavailable")
+        self.assertEqual(result["drivers"]["fixture"]["qualifying_p1"],1)
+        self.assertEqual(result["constructors"]["alpha"]["qualifying_p1"],0)
+        self.assertEqual(result["constructors"]["beta"]["qualifying_p1"],1)
+
+    def test_sprint_p1_does_not_increment_qualifying_statistics(self):
+        sprint=Race.model_validate(race(grid="1",position="1",session="SprintResults"))
+        result=h.summarize([], [sprint], [], None, "unavailable", "unavailable")
+        self.assertIsNone(result["drivers"]["fixture"]["qualifying_p1"])
+        self.assertEqual(result["drivers"]["fixture"]["grid_p1_starts"],0)
+
+    def test_missing_qualifying_data_is_explicit_and_not_a_zero(self):
+        result=h.summarize([Race.model_validate(race())],[],[],None,"unavailable","unavailable")
+        self.assertIsNone(result["drivers"]["fixture"]["qualifying_p1"])
+        self.assertIsNone(result["constructors"]["alpha"]["qualifying_p1"])
+
+    def test_missing_fastest_lap_coverage_is_not_reported_as_zero(self):
+        result=h.summarize([Race.model_validate(race())],[],[],None,"unavailable","unavailable")
+        self.assertIsNone(result["drivers"]["fixture"]["fastest_laps"])
+        self.assertEqual(result["metric_coverage"]["fastest_laps"],"unavailable")
 
     def test_historical_points_not_recalculated_and_disqualified(self):
         data=h.summarize([Race.model_validate(race(year=1950,points="4.5")),Race.model_validate(race(2,year=1950,points="0",position="2",status="Disqualified"))],[],[],None)
@@ -54,6 +106,21 @@ class PlatformTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(j,"collect",AsyncMock(return_value=[invalid])):
             with self.assertRaises(j.ProviderError): await h.races(2024,"results")
 
+    async def test_paginated_classifications_reject_duplicate_events_and_rows(self):
+        event=race()
+        with patch.object(j,"collect",AsyncMock(return_value=[event,event])):
+            with self.assertRaises(j.ProviderError): await h.races(2024,"results")
+        duplicate=race()
+        duplicate["Results"].append(dict(duplicate["Results"][0]))
+        with patch.object(j,"collect",AsyncMock(return_value=[duplicate])):
+            with self.assertRaises(j.ProviderError): await h.races(2024,"results")
+
+    async def test_pagination_rejects_offsets_that_exceed_total(self):
+        payload={"total":"1","RaceTable":{"Races":[race(),race(2)]}}
+        with patch.object(j,"page",AsyncMock(return_value=payload)):
+            with self.assertRaises(j.ProviderError):
+                await j.collect("oversized","RaceTable","Races")
+
     async def test_round_standings_keep_official_deductions(self):
         group={"season":"2024","round":"2","DriverStandings":[{"position":"1","points":"10","wins":"1","Driver":race()["Results"][0]["Driver"],"Constructors":[]}]}
         with patch.object(j,"collect",AsyncMock(return_value=[group])):
@@ -65,6 +132,16 @@ class PlatformTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await h.season(2024))["status"],"partial")
         with patch.object(h,"races",AsyncMock(side_effect=j.ProviderError())),patch.object(h,"standings",AsyncMock(side_effect=j.ProviderError())):
             with self.assertRaises(j.ProviderError): await h.season(2024)
+
+    async def test_latest_driver_and_constructor_standings_must_share_round(self):
+        async def standings(year,round_number,kind):
+            actual_round=2 if kind == "drivers" else 1
+            return {"round":actual_round,"rows":[]}
+        with patch.object(h,"races",AsyncMock(return_value=[])),patch.object(h,"standings",side_effect=standings):
+            data=await h.season(2024)
+        self.assertEqual(data["status"],"partial")
+        self.assertEqual(data["errors"]["constructor_standings"],"round_mismatch")
+        self.assertIsNone(data["constructor_standings"])
 
     async def test_rate_limit_is_explicit(self):
         with patch("httpx.AsyncClient.get",AsyncMock(return_value=httpx.Response(429,request=httpx.Request("GET","https://example.test")))):
@@ -111,6 +188,35 @@ class PlatformTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(career["season_records"]),1)
         self.assertEqual(career["titles"],0)
 
+    async def test_career_counts_only_a_verified_final_round_title(self):
+        standings=[{"season":"2025","round":"3","DriverStandings":[{"position":"1","points":"100","wins":"4","Driver":race()["Results"][0]["Driver"],"Constructors":[]}]}]
+        schedule=[{"season":"2025","round":str(round_number)} for round_number in range(1,4)]
+        async def collect(path,table,collection,nested=None):
+            return standings if path == "drivers/fixture/driverStandings" else schedule
+        with patch.object(j,"collect",side_effect=collect):
+            career=await h.career("fixture")
+        self.assertEqual(career["titles"],1)
+        self.assertEqual(career["title_coverage"],"complete")
+
+    async def test_career_excludes_an_in_progress_season_title(self):
+        standings=[{"season":"2026","round":"1","DriverStandings":[{"position":"1","points":"25","wins":"1","Driver":race()["Results"][0]["Driver"],"Constructors":[]}]}]
+        schedule=[{"season":"2026","round":"1"},{"season":"2026","round":"2"}]
+        async def collect(path,table,collection,nested=None):
+            return standings if path == "drivers/fixture/driverStandings" else schedule
+        with patch.object(j,"collect",side_effect=collect):
+            career=await h.career("fixture")
+        self.assertEqual(career["titles"],0)
+
+    async def test_career_title_unavailable_when_finality_cannot_be_verified(self):
+        standings=[{"season":"2025","round":"3","DriverStandings":[{"position":"1","points":"100","wins":"4","Driver":race()["Results"][0]["Driver"],"Constructors":[]}]}]
+        async def collect(path,table,collection,nested=None):
+            if path == "drivers/fixture/driverStandings": return standings
+            raise j.ProviderError("unavailable")
+        with patch.object(j,"collect",side_effect=collect):
+            career=await h.career("fixture")
+        self.assertIsNone(career["titles"])
+        self.assertEqual(career["title_coverage"],"partial")
+
     async def test_media_disabled_and_wrong_year(self):
         from app.services import media_service as m
         with patch.object(m.settings,"OPENF1_IMAGES_ENABLED",False),patch.object(o,"_get",AsyncMock()) as fetch:
@@ -118,11 +224,14 @@ class PlatformTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(result["url"])
             fetch.assert_not_awaited()
 
-    async def test_http_validation(self):
+    def test_http_validation_and_lifespan_cleanup(self):
         from fastapi.testclient import TestClient
         from app.main import app
-        client=TestClient(app)
-        self.assertEqual(client.get("/api/history/season?year=1949").status_code,422)
-        self.assertEqual(client.get("/api/history/season?year=2024&round=0").status_code,422)
-        with patch.object(h,"season",AsyncMock(side_effect=j.ProviderError())):
-            self.assertEqual(client.get("/api/history/season?year=2024").status_code,503)
+        with patch("app.main.start_live_service") as start,patch("app.main.stop_live_service") as stop:
+            with TestClient(app) as client:
+                self.assertEqual(client.get("/api/history/season?year=1949").status_code,422)
+                self.assertEqual(client.get("/api/history/season?year=2024&round=0").status_code,422)
+                with patch.object(h,"season",AsyncMock(side_effect=j.ProviderError())):
+                    self.assertEqual(client.get("/api/history/season?year=2024").status_code,503)
+            start.assert_called_once()
+            stop.assert_called_once()

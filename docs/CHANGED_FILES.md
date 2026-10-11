@@ -36,3 +36,20 @@ Implementation changes relative to the verified remediation commit. See PLATFORM
 - `frontend/src/routes/standings.tsx`
 - `frontend/src/routes/teams.$constructorId.tsx`
 - `frontend/tests/integrity.test.ts`
+
+## Historical statistics integrity follow-up from `1709ecdb4e49e2c9a79eca6f869e758a8b66e9f0`
+
+- `backend/app/services/f1_service.py`
+- `backend/app/services/history_service.py`
+- `backend/app/services/jolpica.py`
+- `backend/tests/test_platform.py`
+- `docs/CHANGED_FILES.md`
+- `docs/FORENSIC_AUDIT.md`
+- `docs/PLATFORM_ARCHITECTURE.md`
+- `docs/REMEDIATION_PLAN.md`
+- `docs/VALIDATION.md`
+- `frontend/src/lib/api/history.ts`
+- `frontend/src/components/SeasonData.tsx`
+- `frontend/src/routes/standings.tsx`
+- `frontend/src/routes/drivers.$driverId.tsx`
+- `frontend/src/routes/teams.$constructorId.tsx`

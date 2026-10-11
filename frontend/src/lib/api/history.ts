@@ -17,7 +17,8 @@ const constructor = z.object({
 const metrics = {
   wins: z.number(),
   podiums: z.number(),
-  poles: z.number(),
+  qualifying_p1: z.number().nullable(),
+  grid_p1_starts: z.number(),
   race_points: z.number(),
   sprint_points: z.number(),
 };
@@ -87,15 +88,25 @@ export const seasonSchema = z.object({
   ),
   driver_standings: standings,
   constructor_standings: standings,
+  metric_coverage: z.object({
+    qualifying_p1: z.enum(["complete", "partial", "unavailable"]),
+    fastest_laps: z.enum(["complete", "partial", "unavailable"]),
+  }),
   drivers: z.record(
     driver.extend({
       ...metrics,
-      fastest_laps: z.number(),
+      fastest_laps: z.number().nullable(),
       teams: z.record(z.string()),
       numbers: z.array(z.string()),
     }),
   ),
-  constructors: z.record(constructor.extend({ ...metrics, contributions: z.record(z.number()) })),
+  constructors: z.record(
+    constructor.extend({
+      ...metrics,
+      fastest_laps: z.number().nullable(),
+      contributions: z.record(z.number()),
+    }),
+  ),
   results: z.array(result),
   progression: z.array(z.object({ round: z.number(), points: z.record(z.number()) })),
 });
@@ -117,7 +128,8 @@ const careerSchema = z.object({
   fetched_at: z.string(),
   wins: z.number(),
   championship_points: z.number(),
-  titles: z.number(),
+  titles: z.number().nullable(),
+  title_coverage: z.enum(["complete", "partial"]),
   records: z.array(standing.omit({ id: true }).extend({ year: z.number(), round: z.number() })),
   season_records: z.array(
     standing.omit({ id: true }).extend({ year: z.number(), round: z.number() }),

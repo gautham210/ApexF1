@@ -60,11 +60,13 @@ export function SeasonControls({
 export function DataNotice({
   pending,
   error,
+  refreshing,
   data,
   retry,
 }: {
   pending: boolean;
   error: boolean;
+  refreshing: boolean;
   data?: Season;
   retry: () => void;
 }) {
@@ -89,6 +91,7 @@ export function DataNotice({
         {data.status === "partial"
           ? `Partial coverage: ${Object.keys(data.errors).join(", ")} unavailable. `
           : ""}
+        {refreshing ? "Refreshing; the previous snapshot remains visible. " : ""}
         Jolpica · standings after round {data.driver_standings?.round ?? "unavailable"}. Event
         totals can differ from championship points because of deductions or historical scoring
         rules.

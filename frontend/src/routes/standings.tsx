@@ -26,7 +26,7 @@ function StandingsPage() {
     if (year !== selectedYear) setSelectedYear(year);
   }, [year, selectedYear, setSelectedYear]);
   const query = useSeason(year, round),
-    data = query.data;
+    data = query.isError ? undefined : query.data;
   const [tab, setTab] = useState<"drivers" | "constructors" | "engines">("drivers");
   const [session, setSession] = useState("Race");
   const engines = useQuery({
@@ -70,6 +70,7 @@ function StandingsPage() {
         <DataNotice
           pending={query.isPending}
           error={query.isError}
+          refreshing={query.isFetching}
           data={data}
           retry={() => void query.refetch()}
         />
@@ -124,7 +125,8 @@ function StandingsPage() {
                     "Points",
                     "Wins",
                     "Podiums",
-                    "Grid poles",
+                    "Qualifying P1",
+                    "Race starts from grid P1",
                   ].map((h) => (
                     <th key={h} className="p-4 font-normal text-muted-foreground">
                       {h}
@@ -171,7 +173,12 @@ function StandingsPage() {
                         {data?.errors.races ? "Unavailable" : (metric?.podiums ?? "—")}
                       </td>
                       <td className="p-4">
-                        {data?.errors.races ? "Unavailable" : (metric?.poles ?? "—")}
+                        {data?.metric_coverage.qualifying_p1 === "unavailable"
+                          ? "Unavailable"
+                          : (metric?.qualifying_p1 ?? "—")}
+                      </td>
+                      <td className="p-4">
+                        {data?.errors.races ? "Unavailable" : (metric?.grid_p1_starts ?? "—")}
                       </td>
                     </tr>
                   );
@@ -244,8 +251,10 @@ function StandingsPage() {
             </section>
             <p className="text-xs text-muted-foreground mt-5">
               Wins and podiums use official Grand Prix finishing classifications. Sprints are
-              separate. Grid poles count race grid position 1; qualifying rank is shown
-              independently. Fastest-lap coverage varies by era.
+              separate. Qualifying P1 counts the classified qualifying result; it is not an all-era
+              official pole tally. Race starts from grid P1 are tracked separately. Qualifying
+              coverage is {data.metric_coverage.qualifying_p1}; fastest-lap coverage is{" "}
+              {data.metric_coverage.fastest_laps} and can be unavailable or incomplete by era.
             </p>
           </>
         )}

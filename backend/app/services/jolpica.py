@@ -60,9 +60,11 @@ async def collect(path, table, collection, nested=None):
                 count = sum(len(row[nested]) for row in batch) if nested else len(batch)
                 rows.extend(batch)
                 offset += count
-                if offset >= total:
+                if offset == total:
                     cache[key] = rows
                     return rows
+                if offset > total:
+                    raise ValueError("Pagination exceeded provider total")
                 if count == 0:
                     raise ValueError("Incomplete pagination")
             except (KeyError, TypeError, ValueError) as exc:

@@ -705,7 +705,7 @@ async def get_insights(year: int) -> Dict[str, Any]:
         
     insights = {
         "driver_in_form": {"name": "—", "stat": "TBD"},
-        "fastest_qualifier": {"name": "—", "stat": "TBD"},
+        "qualifying_p1_leader": {"name": "—", "stat": "Unavailable"},
         "biggest_gainer": {"name": "—", "stat": "TBD"},
         "recent_winner": {"name": "—", "stat": "TBD"},
         "constructor_leader": {"name": "—", "stat": "TBD"},
@@ -758,27 +758,26 @@ async def get_insights(year: int) -> Dict[str, Any]:
                             if max_gained > 0:
                                 insights["biggest_gainer"] = {"name": gainer_name, "stat": f"+{max_gained} Positions"}
                                 
-            # Fetch ALL qualifying results for the season to count poles
+            # Qualifying P1 classification is not an all-era official pole tally.
             url_qual = f"{_JOLPICA_BASE}/{year}/qualifying/1.json?limit=100"
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(url_qual)
                 if resp.status_code == 200:
                     data = resp.json()
                     races = data["MRData"]["RaceTable"]["Races"]
-                    pole_counts: Dict[str, int] = {}
+                    qualifying_p1_counts: Dict[str, int] = {}
                     for r in races:
                         try:
                             qual_results = r.get("QualifyingResults", [])
-                            if qual_results:
-                                # position "1" is pole — sort by position
-                                sorted_q = sorted(qual_results, key=lambda x: int(x.get("position", 99)))
-                                driver = sorted_q[0]["Driver"]
+                            first = next((row for row in qual_results if str(row.get("position")) == "1"), None)
+                            if first and first.get("status", "").casefold() not in {"disqualified", "did not start", "excluded"}:
+                                driver = first["Driver"]
                                 name = f"{driver['givenName']} {driver['familyName']}"
-                                pole_counts[name] = pole_counts.get(name, 0) + 1
+                                qualifying_p1_counts[name] = qualifying_p1_counts.get(name, 0) + 1
                         except Exception as _e: logger.warning(f"insights sub-fetch error: {_e}")
-                    if pole_counts:
-                        fastest = max(pole_counts.items(), key=lambda x: x[1])
-                        insights["fastest_qualifier"] = {"name": fastest[0], "stat": f"{fastest[1]} Pole{'s' if fastest[1] > 1 else ''} This Season"}
+                    if qualifying_p1_counts:
+                        leader = max(qualifying_p1_counts.items(), key=lambda x: x[1])
+                        insights["qualifying_p1_leader"] = {"name": leader[0], "stat": f"{leader[1]} Qualifying P1 Classification{'s' if leader[1] > 1 else ''} This Season"}
 
         _data_cache[cache_key] = insights
     except Exception as e:

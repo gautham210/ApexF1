@@ -17,7 +17,7 @@ function TeamProfile() {
   const year = search.year ?? selectedYear,
     round = search.round,
     query = useSeason(year, round),
-    data = query.data,
+    data = query.isError ? undefined : query.data,
     team = data?.constructors[constructorId],
     official = data?.constructor_standings?.rows.find((t) => t.id === constructorId);
   const powerUnit = useQuery({
@@ -58,6 +58,7 @@ function TeamProfile() {
       <DataNotice
         pending={query.isPending}
         error={query.isError}
+        refreshing={query.isFetching}
         data={data}
         retry={() => void query.refetch()}
       />
@@ -69,8 +70,29 @@ function TeamProfile() {
               ["Official constructor points", official?.points ?? "—"],
               ["Grand Prix wins", official?.wins ?? "—"],
               ["Car podium finishes", data.errors.races ? "Unavailable" : (team?.podiums ?? "—")],
+              [
+                "Qualifying P1",
+                data.metric_coverage.qualifying_p1 === "unavailable"
+                  ? "Unavailable"
+                  : (team?.qualifying_p1 ?? "—"),
+              ],
+              [
+                "Race starts from grid P1",
+                data.errors.races ? "Unavailable" : (team?.grid_p1_starts ?? "—"),
+              ],
+              [
+                "Fastest laps",
+                data.errors.races || data.metric_coverage.fastest_laps === "unavailable"
+                  ? "Unavailable"
+                  : (team?.fastest_laps ?? "—"),
+              ],
             ]}
           />
+          <p className="text-sm text-muted-foreground -mt-4 mb-6">
+            Qualifying P1 coverage: {data.metric_coverage.qualifying_p1}; fastest-lap coverage:{" "}
+            {data.metric_coverage.fastest_laps}. Qualifying P1 is an event classification statistic,
+            not an all-era official pole tally.
+          </p>
           <h2 className="font-display text-3xl my-6">Driver contributions</h2>
           <p className="text-sm text-muted-foreground mb-5">
             Season power unit:{" "}

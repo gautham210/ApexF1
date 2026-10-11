@@ -28,7 +28,7 @@ function DriverProfile() {
   const year = search.year ?? selectedYear,
     round = search.round;
   const query = useSeason(year, round),
-    data = query.data,
+    data = query.isError ? undefined : query.data,
     driver = data?.drivers[driverId];
   const [careerEnabled, setCareerEnabled] = useState(false);
   const career = useQuery({
@@ -117,6 +117,7 @@ function DriverProfile() {
       <DataNotice
         pending={query.isPending}
         error={query.isError}
+        refreshing={query.isFetching}
         data={data}
         retry={() => void query.refetch()}
       />
@@ -144,9 +145,18 @@ function DriverProfile() {
             ))}
           </div>
           <p className="text-sm text-muted-foreground mt-5">
-            Grid poles: {data.errors.races ? "unavailable" : (driver?.poles ?? "—")} · Recorded
-            fastest laps: {data.errors.races ? "unavailable" : (driver?.fastest_laps ?? "—")}.
-            Fastest-lap records are incomplete in some historical seasons.
+            Qualifying P1 classifications:{" "}
+            {data.metric_coverage.qualifying_p1 === "unavailable"
+              ? "unavailable"
+              : (driver?.qualifying_p1 ?? "—")}{" "}
+            ({data.metric_coverage.qualifying_p1} coverage) · Race starts from grid P1:{" "}
+            {data.errors.races ? "unavailable" : (driver?.grid_p1_starts ?? "—")}
+            {" · "}Fastest laps:{" "}
+            {data.errors.races || data.metric_coverage.fastest_laps === "unavailable"
+              ? "unavailable"
+              : (driver?.fastest_laps ?? "—")}{" "}
+            ({data.metric_coverage.fastest_laps} coverage). Qualifying P1 is not an all-era official
+            pole tally.
           </p>
           <Progression data={data} driverId={driverId} />
           <h2 className="font-display text-3xl my-6">Season results & qualifying</h2>
@@ -184,9 +194,14 @@ function DriverProfile() {
                 ["Seasons recorded", career.data.season_records.length],
                 ["Grand Prix wins", career.data.wins],
                 ["Championship points", career.data.championship_points],
-                ["Titles", career.data.titles],
+                ["Titles", career.data.titles ?? "Unavailable"],
               ]}
             />
+            <p className="text-sm text-muted-foreground mb-5">
+              Titles count only when the driver leads the final-round standings. An in-progress
+              season is excluded; a title is unavailable when the provider schedule cannot verify
+              the final round.
+            </p>
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">
                 <thead>

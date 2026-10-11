@@ -1,21 +1,22 @@
 # Validation record
 
-Continuation from remediation commit `2e986227434bde44196e1d1b19c1557f1b4e1a69`, 2026-10-11. Node 22.18; Python 3.13.5 on Windows.
+2026-10-11 follow-up to commit `1709ecdb4e49e2c9a79eca6f869e758a8b66e9f0`, branch `codex/apexf1-forensic-remediation`. Windows; Python 3.13.5, Node 22.18.0, npm 10.9.3. The isolated clone is the Git checkout; the supplied workspace root has no `.git` directory. Existing unstaged mirror/config/UI changes in the clone were preserved and excluded from this commit.
 
-| Check | Result | Scope |
+| Check | Result | Evidence / limits |
 |---|---|---|
-| Backend unittest suite | PASS, 24 tests on the preceding remediation state; current suite 25 tests NOT VERIFIED | New season calculations, pagination, OAuth renewal, RSS safety and transfer tests were added; rerunning Python tests in this sandbox hangs at the first async test. The prior passing suite included 12 backend tests from that previous commit plus 12 new platform tests before the career snapshot regression was added. |
-| Frontend npm test | PASS, 4 tests | Driver season numbers, UTC ICS, exact live session identity, safe image URL handling |
-| TypeScript `tsc --noEmit` | PASS after Home News search-state correction | Full frontend project, including generated file routes |
-| ESLint | PASS, zero errors and 8 Fast Refresh warnings | Full frontend; final Home edit is formatted; warnings identify component files with shared non-component exports |
-| Vite production build | BLOCKED in this continuation | Sandbox returned Windows `EPERM` from `realpath` at `frontend/index.html`; prior remediation commit build passed before these added routes |
-| Real Jolpica season/career smoke | BLOCKED | Auto-approval service hit the account usage limit before the request was executed |
-| Real RSS provider smoke | BLOCKED | Same approval-service limit; deterministic parsing, URL, deduplication and XML security tests passed in the earlier run |
-| Live OpenF1 | NOT VERIFIED | This environment has no authorized provider credentials; mock tests cover token renewal and conservative status transitions |
-| Desktop UI route review | PASS, limited | Standings unavailable state, News page, driver profile and accessible portrait fallback rendered in local browser |
-| Tablet/mobile browser matrix | NOT VERIFIED | Browser viewport connection dropped; no responsive dimensions were claimed |
-| Historical dependency scans | Existing remediation baseline | Previous resolved npm audit: zero advisories; backend scan covered declared pins only and did not certify transitive dependencies |
+| Backend full suite | PASS, 37 tests, twice | From `backend`: `python -X utf8 -m unittest discover -s tests -v`; both final full-suite runs passed all 37 tests. |
+| Async test hang diagnosis | PASS, environmental root cause isolated | The first reported case was `test_career_uses_final_snapshot_per_season`; faulthandler showed `IsolatedAsyncioTestCase` blocked before `setUp` or the test body in Python 3.13 `ProactorEventLoop._make_self_pipe` → `socket._fallback_socketpair` → `socket.accept`. The same full suite passed outside the sandbox. Tests reset loop-bound module locks per isolated loop, assert no pending Jolpica tasks survive, use HTTP responses with `request` metadata, and exercise FastAPI lifespan start/stop under `TestClient`. No application workaround was needed. |
+| Backend async/test warnings | PASS with warning | Python emitted slow-task diagnostics for a few synchronous `TestClient`/mock operations; no test failures or leaked Jolpica tasks. One existing NumPy `Timedelta` deprecation warning remains in `test_integrity.py`. |
+| Frontend tests | PASS, 4 tests | `npm test`; four Node tests passed. |
+| TypeScript | PASS | `npm run typecheck` (`tsc --noEmit`). |
+| ESLint | PASS, 0 errors, 8 warnings | `npm run lint`; the eight existing Fast Refresh export warnings remain in shared component files. The new route edits add no lint errors. |
+| Vite build in sandbox | BLOCKED | `npm run build` fails before module transformation because Node's own `fs.realpathSync.native('index.html')` returns Windows `EPERM` in the sandbox. `Get-Item` and `Resolve-Path` resolve the file, separating this from a missing/stale path. |
+| Vite production build | PASS outside sandbox | `npm run build` completed after running outside the filesystem restriction: 3,003 modules transformed, 15.98 s. Main entry chunk: 479.85 kB / 149.94 kB gzip; lazy Race Center chunk: 421.28 kB / 116.73 kB gzip. No Vite config or application workaround was added. |
+| Browser route/responsive review | BLOCKED | Vite server started at `127.0.0.1:3001`, but the in-app browser could not connect (`ERR_CONNECTION_TIMED_OUT`). No desktop/tablet/mobile dimensions or UI pass are claimed in this follow-up. |
+| Jolpica qualifying provider smoke | PASS, one completed season endpoint | `history_service.races(2025, "qualifying")` read public provider data through the existing adapter: Australian GP, 20 qualifying rows, classified P1 identity `norris` / `mclaren`. This verifies the response shape and one event only, not full historical coverage or every statistic. |
+| RSS/OpenF1 provider smoke | NOT VERIFIED | This validation used deterministic mocks for these providers. OpenF1 still requires deployment credentials; portrait lookup remains disabled pending rights review. |
+| Dependency/security scans | NOT RUN in this follow-up | See the earlier forensic audit for the limited direct-pin and resolved npm audit results; they are not renewed by this pass. |
 
-Commands: `python -X utf8 -m unittest discover -s tests -v` with patched local dependencies in `PYTHONPATH`; frontend `npm test`, `npm run typecheck`, `npm run lint`, and `npm run build`. Frontend tests, typecheck and lint passed; lint reports eight Fast Refresh warnings. Production build was attempted and hit the sandbox filesystem error.
+The qualifying regressions cover grid P1 without qualifying P1, classified qualifying P1, event-specific constructor attribution across a transfer, sprint isolation, missing qualifying/fastest-lap coverage, and unchanged wins/podiums/points/transfer totals. Pagination tests cover duplicate events/rows, unchanged totals, exact offsets, and offsets exceeding provider totals. Career tests verify final-round titles, in-progress exclusion and unavailable finality.
 
-This pass adds domain/provider tests that could not be rerun after the environment limit. Do not treat the changed Python suite or final Vite bundle as verified. See [remaining work](REMEDIATION_PLAN.md) and [architecture limits](PLATFORM_ARCHITECTURE.md).
+This is not a full production-readiness certification. Viewport review and RSS/authenticated OpenF1 smoke tests remain outstanding. See [architecture limits](PLATFORM_ARCHITECTURE.md), [remaining work](REMEDIATION_PLAN.md) and [audit](FORENSIC_AUDIT.md).
