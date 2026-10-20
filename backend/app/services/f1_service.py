@@ -174,17 +174,41 @@ async def get_schedule(year: int) -> List[ScheduleEvent]:
     try:
         schedule = await asyncio.to_thread(fastf1.get_event_schedule, year, include_testing=False)
         now = pd.Timestamp.now(tz="UTC")
+
+        # Attempt to fetch Jolpica schedule for canonical event reconciliation
+        jolpica_by_round: Dict[int, Dict[str, Any]] = {}
+        try:
+            from app.services import history_service
+            jolpica_races = await asyncio.wait_for(history_service.races(year, ""), timeout=5.0)
+            jolpica_by_round = {r.round: r.model_dump() for r in (jolpica_races or [])}
+        except Exception as j_err:
+            logger.debug(f"Jolpica schedule reconciliation unavailable for {year}: {j_err}")
+
+        from app.services.event_identity import reconcile_event
+
         events = []
         for _, row in schedule.iterrows():
             s5_date = _session_date(row, 5)
             is_completed = s5_date is not None and s5_date + pd.Timedelta(hours=4) <= now
             event_date = row.get("EventDate")
+            round_num = int(row.get("RoundNumber", 0))
+
+            f1_dict = {
+                "round_number": round_num,
+                "country": str(row.get("Country", "")),
+                "location": str(row.get("Location", "")),
+                "event_name": str(row.get("EventName", "")),
+                "event_date": str(event_date) if pd.notna(event_date) else None,
+            }
+            j_dict = jolpica_by_round.get(round_num)
+            reconciled = reconcile_event(year, round_num, f1_dict, j_dict)
+
             events.append(ScheduleEvent(
-                round_number=int(row.get("RoundNumber", 0)),
-                country=str(row.get("Country", "")),
-                location=str(row.get("Location", "")),
-                event_name=str(row.get("EventName", "")),
-                event_date=str(event_date) if pd.notna(event_date) else None,
+                round_number=round_num,
+                country=reconciled.country,
+                location=reconciled.location,
+                event_name=reconciled.event_name,
+                event_date=reconciled.event_date,
                 session1=str(row.get("Session1", "")) or None,
                 session1_date=_session_date(row, 1).isoformat() if _session_date(row, 1) is not None else None,
                 session2=str(row.get("Session2", "")) or None,
@@ -197,6 +221,10 @@ async def get_schedule(year: int) -> List[ScheduleEvent]:
                 session5_date=_session_date(row, 5).isoformat() if _session_date(row, 5) is not None else None,
                 is_completed=is_completed,
                 is_upcoming=not is_completed,
+                circuit_name=reconciled.circuit_name,
+                circuit_id=reconciled.circuit_id,
+                has_conflict=reconciled.has_conflict,
+                conflict=reconciled.conflict.model_dump() if reconciled.conflict else None,
             ))
         _data_cache[cache_key] = events
         return events

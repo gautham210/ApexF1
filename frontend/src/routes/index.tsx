@@ -179,10 +179,10 @@ function Dashboard() {
       ? live.weather
       : null;
   const nextSession = currentRace
-    ? [1, 2, 3, 4, 5]
+    ? ([1, 2, 3, 4, 5] as const)
         .map((i) => ({
-          name: currentRace[`session${i}` as keyof typeof currentRace],
-          date: currentRace[`session${i}_date` as keyof typeof currentRace],
+          name: currentRace[`session${i}` as `session${1 | 2 | 3 | 4 | 5}`],
+          date: currentRace[`session${i}_date` as `session${1 | 2 | 3 | 4 | 5}_date`],
         }))
         .filter((s) => typeof s.date === "string" && Date.parse(s.date) > Date.now())
         .sort((a, b) => Date.parse(String(a.date)) - Date.parse(String(b.date)))[0]

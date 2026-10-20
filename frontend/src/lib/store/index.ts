@@ -106,6 +106,16 @@ export interface ScheduleEvent {
   session5_date?: string;
   is_completed: boolean;
   is_upcoming: boolean;
+  circuit_name?: string;
+  circuit_id?: string;
+  has_conflict?: boolean;
+  conflict?: {
+    has_conflict: boolean;
+    conflicting_fields: string[];
+    fastf1?: Record<string, unknown>;
+    jolpica?: Record<string, unknown>;
+    description?: string;
+  };
 }
 
 // ─── Driver Database (Year-Aware) ────────────────────────────────────────────

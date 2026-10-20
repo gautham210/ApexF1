@@ -1,6 +1,11 @@
 import { LiveProviderNotice } from "@/components/LiveProviderNotice";
 import { matchesSession } from "@/lib/session";
-import type { LeaderboardEntry, TelemetryPoint } from "@/lib/store";
+import type { LeaderboardEntry, TelemetryPoint, ScheduleEvent } from "@/lib/store";
+import {
+  parseRaceCenterSearch,
+  getVerifiedEventLabel,
+  type RaceCenterSearch,
+} from "@/lib/event-identity";
 import type { WeatherReading, RaceControlMsg } from "@/hooks/useLiveSession";
 import { createFileRoute } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
@@ -53,36 +58,8 @@ export const Route = createFileRoute("/race-center")({
       },
     ],
   }),
-  validateSearch: (
-    search: Record<string, unknown>,
-  ): { mode?: string; year?: number; round?: number; session?: string } => ({
-    mode: search.mode === "replay" ? "replay" : undefined,
-    year:
-      Number.isInteger(Number(search.year)) &&
-      Number(search.year) >= 2018 &&
-      Number(search.year) <= new Date().getFullYear() + 1
-        ? Number(search.year)
-        : undefined,
-    round:
-      Number.isInteger(Number(search.round)) &&
-      Number(search.round) >= 1 &&
-      Number(search.round) <= 24
-        ? Number(search.round)
-        : undefined,
-    session:
-      typeof search.session === "string" &&
-      [
-        "Race",
-        "Qualifying",
-        "Sprint",
-        "Sprint Qualifying",
-        "Practice 1",
-        "Practice 2",
-        "Practice 3",
-      ].includes(search.session)
-        ? search.session
-        : undefined,
-  }),
+  validateSearch: (search: Record<string, unknown>): RaceCenterSearch =>
+    parseRaceCenterSearch(search),
   component: RaceCenter,
 });
 
@@ -569,16 +546,65 @@ function RaceCenter() {
   const live = useLiveSession();
   const search = Route.useSearch();
   const context = useSessionContext();
-  const { setSelectedSession, selectedLap, setSelectedRound } = context;
+  const { selectedLap } = context;
   const season = search.year ?? context.season;
   const selectedRound = search.round ?? context.selectedRound;
   const selectedSession = search.session ?? context.selectedSession;
-  const event =
-    context.season === season
-      ? context.schedule.find((e) => e.round_number === selectedRound)
-      : undefined;
-  const raceLabel = event?.event_name ?? `${season} Round ${selectedRound}`;
+
+  // Cross-year event resolution: query schedule for the requested season if different from context
+  const [resolvedSchedule, setResolvedSchedule] = useState<ScheduleEvent[] | null>(
+    context.season === season && context.schedule.length > 0 ? context.schedule : null,
+  );
+  const [scheduleLoading, setScheduleLoading] = useState<boolean>(
+    context.season !== season || context.schedule.length === 0,
+  );
+
+  useEffect(() => {
+    if (context.season === season && context.schedule.length > 0) {
+      setResolvedSchedule(context.schedule);
+      setScheduleLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setScheduleLoading(true);
+
+    f1Api
+      .getSchedule(season)
+      .then((res) => {
+        if (cancelled) return;
+        setResolvedSchedule(res.data || []);
+        setScheduleLoading(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setResolvedSchedule([]);
+        setScheduleLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [season, context.season, context.schedule]);
+
+  const activeSchedule =
+    context.season === season && context.schedule.length > 0
+      ? context.schedule
+      : resolvedSchedule || [];
+
+  const event = activeSchedule.find((e) => e.round_number === selectedRound);
+  const eventLabelInfo = getVerifiedEventLabel(event, scheduleLoading);
+  const raceLabel = eventLabelInfo.label;
+
+  const isArchiveSession =
+    search.mode === "archive" ||
+    search.mode === "replay" ||
+    Boolean(event?.is_completed) ||
+    season < new Date().getFullYear();
+
   const showLive =
+    !isArchiveSession &&
+    search.mode !== "archive" &&
     search.mode !== "replay" &&
     live.is_live &&
     live.session_info?.year === season &&
@@ -840,7 +866,74 @@ function RaceCenter() {
     </div>
   );
 
-  if (search.mode !== "replay" && !event && (live.state === "UNKNOWN" || live.is_waking)) {
+  if (search.error) {
+    return (
+      <div className="min-h-screen px-6 pb-32 pt-12 lg:px-12 flex items-center justify-center">
+        <GlassPanel className="p-8 max-w-lg text-center space-y-4 border border-rose-500/30">
+          <div className="w-12 h-12 rounded-full bg-rose-500/10 border border-rose-500/20 flex items-center justify-center mx-auto text-rose-500">
+            <AlertTriangle className="w-6 h-6" />
+          </div>
+          <h2 className="font-display text-2xl text-foreground">Invalid Race Center Link</h2>
+          <p className="text-xs font-mono text-muted-foreground leading-relaxed">{search.error}</p>
+          <div className="pt-4 flex flex-wrap items-center justify-center gap-3">
+            <a
+              href="/race-center"
+              className="px-4 py-2 rounded-full bg-foreground text-background text-xs font-bold transition hover:bg-foreground/90"
+            >
+              Current Session
+            </a>
+            <a
+              href={`/race-center?year=${context.season}&round=${context.selectedRound}&session=Race`}
+              className="px-4 py-2 rounded-full glass text-xs font-bold transition hover:bg-white/10"
+            >
+              {context.season} Round {context.selectedRound}
+            </a>
+          </div>
+        </GlassPanel>
+      </div>
+    );
+  }
+
+  if (scheduleLoading && !event) {
+    return (
+      <div className="min-h-screen px-6 pb-32 pt-12 lg:px-12 flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <RefreshCw className="w-10 h-10 text-muted-foreground/30 animate-spin mx-auto" />
+          <div className="font-display text-2xl">Resolving Race Schedule</div>
+          <p className="text-xs text-muted-foreground uppercase font-mono tracking-widest">
+            Loading {season} Round {selectedRound}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!scheduleLoading && !event && activeSchedule.length > 0) {
+    return (
+      <div className="min-h-screen px-6 pb-32 pt-12 lg:px-12 flex items-center justify-center">
+        <GlassPanel className="p-8 max-w-lg text-center space-y-4 border border-amber-500/30">
+          <div className="w-12 h-12 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mx-auto text-amber-500">
+            <AlertTriangle className="w-6 h-6" />
+          </div>
+          <h2 className="font-display text-2xl text-foreground">Round Unavailable</h2>
+          <p className="text-xs font-mono text-muted-foreground leading-relaxed">
+            Round {selectedRound} was not found in the {season} Formula 1 calendar (
+            {activeSchedule.length} rounds total).
+          </p>
+          <div className="pt-4 flex items-center justify-center gap-3">
+            <a
+              href={`/race-center?year=${season}&round=1&session=Race&mode=archive`}
+              className="px-4 py-2 rounded-full bg-foreground text-background text-xs font-bold transition hover:bg-foreground/90"
+            >
+              View {season} Round 1
+            </a>
+          </div>
+        </GlassPanel>
+      </div>
+    );
+  }
+
+  if (!isArchiveSession && !event && (live.state === "UNKNOWN" || live.is_waking)) {
     return (
       <div className="min-h-screen px-6 pb-32 pt-12 lg:px-12 flex items-center justify-center">
         <div className="text-center space-y-4">
@@ -857,6 +950,26 @@ function RaceCenter() {
   return (
     <div className="min-h-screen px-6 pb-32 pt-12 lg:px-12 space-y-6">
       <LiveProviderNotice />
+      {event?.has_conflict && event.conflict && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex items-start gap-3 text-xs font-mono text-amber-200/90">
+          <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
+          <div className="space-y-1">
+            <div className="font-bold uppercase tracking-wider text-amber-400 text-[10px]">
+              Event Identity Disagreement
+            </div>
+            <div>{event.conflict.description}</div>
+            <div className="text-[10px] text-muted-foreground">
+              FastF1: {String(event.conflict.fastf1?.event_name || "")} (
+              {String(event.conflict.fastf1?.country || "")},{" "}
+              {String(event.conflict.fastf1?.location || "")}) · Jolpica:{" "}
+              {String(event.conflict.jolpica?.event_name || "")} (
+              {String(event.conflict.jolpica?.country || "")},{" "}
+              {String(event.conflict.jolpica?.location || "")},{" "}
+              {String(event.conflict.jolpica?.circuit_name || "")})
+            </div>
+          </div>
+        </div>
+      )}
       {/* 1. BROADCAST PANEL */}
       <div className="flex flex-wrap items-center justify-between gap-6 border-b border-border/40 pb-6 z-10 relative">
         <div>
@@ -930,7 +1043,7 @@ function RaceCenter() {
                 setExpanded={setExpandedRow}
               />
             </div>
-          ) : search.mode === "replay" || event?.is_completed ? (
+          ) : isArchiveSession ? (
             <ArchiveLeaderboard
               year={season}
               round={selectedRound}

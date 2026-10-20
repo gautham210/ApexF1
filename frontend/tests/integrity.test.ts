@@ -6,6 +6,12 @@ import { createCalendar } from "../src/lib/calendar";
 import { safeImageUrl } from "../src/lib/media";
 import { dashboardResponseSchema } from "../src/lib/api/client";
 import { z } from "zod";
+import {
+  parseRaceCenterSearch,
+  formatRaceCenterSearch,
+  getVerifiedEventLabel,
+  MIN_SUPPORTED_YEAR,
+} from "../src/lib/event-identity";
 test("season-aware driver numbers never prefer global aliases", () => {
   for (const [name, number] of [
     ["Max Verstappen", "3"],
@@ -199,4 +205,158 @@ test("F-01 regression: dashboard schema accepts error:null from real API respons
   assert.equal(fixedErrorSchema.safeParse(null).success, true);
   assert.equal(fixedErrorSchema.safeParse(undefined).success, true);
   assert.equal(fixedErrorSchema.safeParse("some error").success, true);
+});
+
+test("M-04 regression: Race Center preserves mode=archive and mode=replay", () => {
+  // 1. mode=archive must NOT be dropped (F-02 defect)
+  const archiveResult = parseRaceCenterSearch({
+    mode: "archive",
+    year: "2025",
+    round: "5",
+    session: "Race",
+  });
+  assert.equal(archiveResult.mode, "archive", "mode=archive must be preserved");
+  assert.equal(archiveResult.year, 2025);
+  assert.equal(archiveResult.round, 5);
+  assert.equal(archiveResult.session, "Race");
+  assert.equal(archiveResult.error, undefined);
+
+  // 2. mode=replay must be preserved
+  const replayResult = parseRaceCenterSearch({
+    mode: "replay",
+    year: "2026",
+    round: "1",
+    session: "Qualifying",
+  });
+  assert.equal(replayResult.mode, "replay");
+  assert.equal(replayResult.year, 2026);
+  assert.equal(replayResult.round, 1);
+  assert.equal(replayResult.session, "Qualifying");
+  assert.equal(replayResult.error, undefined);
+
+  // 3. Invalid mode must produce an explicit error instead of silent corruption
+  const invalidModeResult = parseRaceCenterSearch({
+    mode: "unknown_mode",
+  });
+  assert.ok(invalidModeResult.error);
+  assert.match(invalidModeResult.error, /Unsupported mode/);
+});
+
+test("M-04 regression: Race Center rejects pre-2018 years with explicit error rather than silently defaulting", () => {
+  // year=2017 must NOT silently become 2026 (F-02 defect)
+  const pre2018 = parseRaceCenterSearch({
+    year: "2017",
+    round: "5",
+    session: "Race",
+  });
+  assert.ok(pre2018.error, "pre-2018 year must produce an explicit error");
+  assert.match(pre2018.error, /Unsupported season: 2017/);
+  assert.match(pre2018.error, /2018/);
+
+  // Non-integer year must produce an explicit error
+  const nonIntYear = parseRaceCenterSearch({
+    year: "invalid_year",
+  });
+  assert.ok(nonIntYear.error);
+  assert.match(nonIntYear.error, /Invalid year/);
+});
+
+test("M-04 regression: Race Center deep links validate round and session explicitly", () => {
+  // Out-of-bounds round (> 24) must produce explicit error
+  const outOfBoundsRound = parseRaceCenterSearch({
+    round: "99",
+  });
+  assert.ok(outOfBoundsRound.error);
+  assert.match(outOfBoundsRound.error, /Invalid round/);
+
+  // Round 0 must produce explicit error
+  const zeroRound = parseRaceCenterSearch({
+    round: "0",
+  });
+  assert.ok(zeroRound.error);
+  assert.match(zeroRound.error, /Invalid round/);
+
+  // Invalid session string must produce explicit error
+  const invalidSession = parseRaceCenterSearch({
+    session: "WarmupSession",
+  });
+  assert.ok(invalidSession.error);
+  assert.match(invalidSession.error, /Invalid session/);
+
+  // Valid sessions must pass without error
+  for (const validSession of [
+    "Race",
+    "Qualifying",
+    "Sprint",
+    "Sprint Qualifying",
+    "Practice 1",
+    "Practice 2",
+    "Practice 3",
+  ]) {
+    const res = parseRaceCenterSearch({ session: validSession });
+    assert.equal(res.session, validSession);
+    assert.equal(res.error, undefined);
+  }
+});
+
+test("M-04 regression: Race Center search params round-trip through serialize and parse", () => {
+  const original = {
+    mode: "archive" as const,
+    year: 2025,
+    round: 12,
+    session: "Qualifying",
+  };
+  const formatted = formatRaceCenterSearch(original);
+  const parsed = parseRaceCenterSearch(formatted);
+
+  assert.equal(parsed.mode, original.mode);
+  assert.equal(parsed.year, original.year);
+  assert.equal(parsed.round, original.round);
+  assert.equal(parsed.session, original.session);
+  assert.equal(parsed.error, undefined);
+});
+
+test("M-03 regression: Truthful event labeling distinguishes verified, resolving, and provider conflict states", () => {
+  // 1. Resolving state never claims verified Grand Prix name
+  const resolving = getVerifiedEventLabel(undefined, true);
+  assert.equal(resolving.isVerified, false);
+  assert.equal(resolving.label, "Resolving event...");
+
+  // 2. Missing/unresolved event never invents a placeholder
+  const missing = getVerifiedEventLabel(null, false);
+  assert.equal(missing.isVerified, false);
+  assert.equal(missing.label, "Event details unavailable");
+
+  // 3. Normal verified event
+  const verified = getVerifiedEventLabel({
+    round_number: 1,
+    country: "Australia",
+    location: "Melbourne",
+    event_name: "Australian Grand Prix",
+    is_completed: true,
+    is_upcoming: false,
+  });
+  assert.equal(verified.isVerified, true);
+  assert.equal(verified.isConflict, false);
+  assert.equal(verified.label, "Australian Grand Prix");
+
+  // 4. Provider conflict event visibly flags disagreement
+  const conflictEvent = {
+    round_number: 16,
+    country: "Conflict: Bahrain (FastF1) vs Malaysia (Jolpica)",
+    location: "Kuala Lumpur",
+    event_name: "Bahrain Grand Prix [Provider Conflict]",
+    is_completed: true,
+    is_upcoming: false,
+    has_conflict: true,
+    conflict: {
+      has_conflict: true,
+      conflicting_fields: ["country", "event_name"],
+      description: "Provider conflict",
+    },
+  };
+  const conflictLabel = getVerifiedEventLabel(conflictEvent);
+  assert.equal(conflictLabel.isVerified, false);
+  assert.equal(conflictLabel.isConflict, true);
+  assert.match(conflictLabel.label, /Provider Conflict/);
 });

@@ -127,6 +127,10 @@ class ScheduleEvent(BaseModel):
     session5_date: Optional[str] = None
     is_completed: bool = False
     is_upcoming: bool = False
+    circuit_name: Optional[str] = None
+    circuit_id: Optional[str] = None
+    has_conflict: bool = False
+    conflict: Optional[Dict[str, Any]] = None
 
 
 class StandingsEntry(BaseModel):

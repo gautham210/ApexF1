@@ -288,7 +288,14 @@ async def season(year, round_number=None):
         data["races"] or [], data["sprints"] or [], data["qualifying"] or [], stats_through,
         qualifying_coverage, fastest_lap_coverage,
     )
-    schedule = {r.round: r.model_dump(exclude={"Results", "SprintResults", "QualifyingResults"}) for r in data["schedule"] or []}
+    from app.services.event_identity import reconcile_jolpica_schedule_entry
+    schedule = {
+        r.round: reconcile_jolpica_schedule_entry(
+            year,
+            r.model_dump(exclude={"Results", "SprintResults", "QualifyingResults"}),
+        )
+        for r in data["schedule"] or []
+    }
     return {"year": year, "selected_round": round_number, "status": "partial" if errors else "success", "source": "Jolpica", "fetched_at": now(), "cache_seconds": 900, "errors": errors, "schedule": list(schedule.values()), "driver_standings": data["driver_standings"], "constructor_standings": data["constructor_standings"], **stats}
 
 
