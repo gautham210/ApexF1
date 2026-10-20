@@ -13,7 +13,7 @@ export interface APIResponse<T> {
   success: boolean;
   data: T;
   timestamp: string;
-  error?: string;
+  error?: string | null;
 }
 export interface NewsItem {
   title: string;
@@ -59,7 +59,7 @@ const scheduleEventSchema = z
 export const dashboardResponseSchema = z.object({
   success: z.literal(true),
   timestamp: z.string(),
-  error: z.string().optional(),
+  error: z.string().nullable().optional(),
   data: z
     .object({
       season_context: z
