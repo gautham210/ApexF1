@@ -57,7 +57,7 @@ function getFlagEmoji(country: string): string {
   return "🏳️";
 }
 
-function getCircuitKey(country: string, location: string): CircuitKey {
+function getCircuitKey(country: string, location: string): CircuitKey | null {
   const norm = (country || location || "").toLowerCase();
   if (norm.includes("belgium") || norm.includes("spa")) return "spa";
   if (norm.includes("monaco")) return "monaco";
@@ -65,7 +65,7 @@ function getCircuitKey(country: string, location: string): CircuitKey {
   if (norm.includes("britain") || norm.includes("silverstone")) return "silverstone";
   if (norm.includes("italy") || norm.includes("monza")) return "monza";
   if (norm.includes("singapore") || norm.includes("marina")) return "marina-bay";
-  return "spa";
+  return null;
 }
 
 function getSessionDuration(name: string): string {
@@ -84,7 +84,7 @@ function SessionsPage() {
   }, [schedule, selectedRound]);
 
   const activeCircuit = useMemo(() => {
-    if (!selected) return { key: "spa" as CircuitKey, name: "Grand Prix Circuit" };
+    if (!selected) return { key: null, name: "Grand Prix Circuit" };
     return {
       key: getCircuitKey(selected.country, selected.location),
       name: selected.location || selected.country,
@@ -215,8 +215,16 @@ function SessionsPage() {
                       {selected.event_name}
                     </h2>
                   </div>
-                  <div className="absolute right-8 top-8 h-32 w-48 opacity-80 max-sm:hidden">
-                    <CircuitOutline circuit={activeCircuit.key} className="h-full w-full" />
+                  <div className="absolute right-8 top-8 opacity-80 max-sm:hidden">
+                    {activeCircuit.key ? (
+                      <div className="h-32 w-48">
+                        <CircuitOutline circuit={activeCircuit.key} className="h-full w-full" />
+                      </div>
+                    ) : (
+                      <div className="rounded-2xl glass-strong border border-border/40 px-3.5 py-1.5 text-[9px] font-mono text-muted-foreground uppercase tracking-widest font-bold">
+                        Circuit outline unavailable
+                      </div>
+                    )}
                   </div>
                 </div>
 

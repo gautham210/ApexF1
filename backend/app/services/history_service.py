@@ -299,8 +299,26 @@ async def season(year, round_number=None):
     return {"year": year, "selected_round": round_number, "status": "partial" if errors else "success", "source": "Jolpica", "fetched_at": now(), "cache_seconds": 900, "errors": errors, "schedule": list(schedule.values()), "driver_standings": data["driver_standings"], "constructor_standings": data["constructor_standings"], **stats}
 
 
-async def career(driver_id):
-    groups = await jolpica.collect(f"drivers/{driver_id}/driverStandings", "StandingsTable", "StandingsLists", "DriverStandings")
+async def career(driver_id: str, year: int | None = None):
+    if year is not None:
+        groups = await jolpica.collect(f"{year}/drivers/{driver_id}/driverStandings", "StandingsTable", "StandingsLists", "DriverStandings")
+    else:
+        try:
+            groups = await jolpica.collect(f"drivers/{driver_id}/driverStandings", "StandingsTable", "StandingsLists", "DriverStandings")
+        except jolpica.ProviderError:
+            seasons_data = await jolpica.collect(f"drivers/{driver_id}/seasons", "SeasonTable", "Seasons")
+            if not seasons_data:
+                raise jolpica.ProviderError("round_not_found")
+            years = sorted({int(s["season"]) for s in seasons_data if "season" in s and str(s["season"]).isdigit()}, reverse=True)
+            async def fetch_season(y):
+                try:
+                    return await jolpica.collect(f"{y}/drivers/{driver_id}/driverStandings", "StandingsTable", "StandingsLists", "DriverStandings")
+                except jolpica.ProviderError:
+                    return []
+            batches = await asyncio.gather(*(fetch_season(y) for y in years))
+            groups = [item for batch in batches for item in batch]
+            if not groups:
+                raise jolpica.ProviderError("unavailable")
     records = []
     try:
         snapshot_ids = set()

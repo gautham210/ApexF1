@@ -329,12 +329,17 @@ function LeaderboardTable({
     );
   }
 
-  const COLS = "32px 1fr 100px 38px 70px 70px 32px";
+  const COLS = "28px minmax(64px, 1fr) minmax(60px, 90px) 30px 58px 62px 28px";
 
   return (
-    <div className="overflow-x-auto scrollbar-none">
+    <div
+      className="overflow-x-auto focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40 rounded-b-2xl scrollbar-thin"
+      tabIndex={0}
+      role="region"
+      aria-label="Timing Tower Leaderboard"
+    >
       <div
-        className="grid items-center px-5 py-3 border-b border-border/40 bg-white/[0.005] min-w-[550px] text-[8px] font-mono text-muted-foreground tracking-widest uppercase font-bold"
+        className="grid items-center px-4 py-3 border-b border-border/40 bg-white/[0.005] min-w-[340px] text-[8px] font-mono text-muted-foreground tracking-widest uppercase font-bold"
         style={{ gridTemplateColumns: COLS }}
       >
         <span>Pos</span>
@@ -359,10 +364,10 @@ function LeaderboardTable({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: Math.min(i * 0.012, 0.3) }}
-              className="border-b border-border/20 last:border-0 min-w-[550px]"
+              className="border-b border-border/20 last:border-0 min-w-[340px]"
             >
               <div
-                className="grid items-center px-5 py-3.5 cursor-pointer hover:bg-foreground/[0.015] transition-colors"
+                className="grid items-center px-4 py-3.5 cursor-pointer hover:bg-foreground/[0.015] transition-colors"
                 style={{
                   gridTemplateColumns: COLS,
                   borderLeft: `3px solid ${isTop3 ? teamCol : "transparent"}`,
@@ -383,22 +388,22 @@ function LeaderboardTable({
                   className="font-mono text-xs font-bold"
                   style={{ color: i === 0 ? "var(--primary)" : "var(--muted-foreground)" }}
                 >
-                  {entry.position || "Unclassified"}
+                  {entry.position || "—"}
                 </span>
 
                 {/* Driver */}
-                <div className="flex items-center gap-3 min-w-0">
+                <div className="flex items-center gap-2.5 min-w-0">
                   <span className="font-display text-base font-bold text-foreground">
                     {entry.abbreviation}
                   </span>
-                  <span className="font-mono text-[9px] text-muted-foreground font-bold hidden lg:block truncate">
+                  <span className="font-mono text-[9px] text-muted-foreground font-bold hidden md:block truncate">
                     {entry.driver_name}
                   </span>
                 </div>
 
                 {/* Team */}
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className="h-3 w-1 rounded" style={{ backgroundColor: teamCol }} />
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <div className="h-3 w-1 shrink-0 rounded" style={{ backgroundColor: teamCol }} />
                   <span className="font-mono text-[10px] text-muted-foreground truncate">
                     {entry.team}
                   </span>
@@ -410,14 +415,14 @@ function LeaderboardTable({
                 </div>
 
                 {/* Gap */}
-                <div className="text-right">
+                <div className="text-right truncate">
                   <span className="font-mono text-[10px] font-semibold text-muted-foreground">
                     {i === 0 ? "LEADER" : entry.gap_to_leader || "—"}
                   </span>
                 </div>
 
                 {/* Last lap */}
-                <div className="text-right">
+                <div className="text-right truncate">
                   <span className="font-mono text-[10px] font-semibold text-foreground/80">
                     {entry.last_lap || "—"}
                   </span>
@@ -426,7 +431,7 @@ function LeaderboardTable({
                 {/* Pits */}
                 <div className="text-center">
                   <span className="font-mono text-muted-foreground text-[10px]">
-                    {entry.pits ?? "Unavailable"}
+                    {entry.pits ?? "—"}
                   </span>
                 </div>
               </div>
@@ -503,10 +508,12 @@ function ArchiveLeaderboard({
 }) {
   const [data, setData] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setError(null);
     setData([]);
     f1Api
       .getLeaderboard(year, round, session)
@@ -515,7 +522,15 @@ function ArchiveLeaderboard({
         const d = Array.isArray(res) ? res : (res?.data ?? []);
         setData(d);
       })
-      .catch(() => {})
+      .catch((err) => {
+        if (!cancelled) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Official archive classification is unavailable for this session.",
+          );
+        }
+      })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
@@ -532,12 +547,19 @@ function ArchiveLeaderboard({
         </span>
         {loading && <RefreshCw className="w-3.5 h-3.5 text-muted-foreground animate-spin" />}
       </div>
-      <LeaderboardTable
-        rows={data}
-        loading={loading}
-        expanded={expanded}
-        setExpanded={setExpanded}
-      />
+      {error ? (
+        <div className="p-6 text-center space-y-2">
+          <AlertTriangle className="w-5 h-5 text-amber-500 mx-auto" />
+          <p className="text-xs font-mono text-muted-foreground">{error}</p>
+        </div>
+      ) : (
+        <LeaderboardTable
+          rows={data}
+          loading={loading}
+          expanded={expanded}
+          setExpanded={setExpanded}
+        />
+      )}
     </div>
   );
 }
@@ -1012,7 +1034,7 @@ function RaceCenter() {
               )}
             </div>
           )}
-          {live.last_update && (
+          {showLive && live.last_update && (
             <span className="text-muted-foreground/60 text-[9px] uppercase tracking-widest font-semibold">
               Updated {new Date(live.last_update).toLocaleTimeString()}
             </span>
@@ -1027,7 +1049,7 @@ function RaceCenter() {
       {/* 3. CORE TWO-COLUMN BROADCAST VIEW */}
       <div className="grid gap-6 xl:grid-cols-3">
         {/* LEFT COLUMN: Timing Tower */}
-        <div className="xl:col-span-1 space-y-4">
+        <div className="xl:col-span-1 min-w-0 space-y-4">
           <div className="flex justify-between items-center px-1">
             <span className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase flex items-center gap-2">
               <CalendarDays className="w-4 h-4 text-muted-foreground/45" /> Timing Tower
@@ -1066,7 +1088,7 @@ function RaceCenter() {
         </div>
 
         {/* RIGHT COLUMN: Interactive Telemetry Compare / Circuit Vector */}
-        <div className="xl:col-span-2 space-y-4">
+        <div className="xl:col-span-2 min-w-0 space-y-4">
           {/* Segmented controls tabs */}
           <div className="flex items-center gap-1 bg-white/5 p-1 rounded-2xl border border-border/40 self-start backdrop-blur-md max-w-max">
             {[
@@ -1282,8 +1304,11 @@ function RaceCenter() {
                                 Top Speed
                               </div>
                               <div className="font-display text-2xl mt-1.5">
-                                {activePt1?.speed || 0}
+                                {telemetryAnalysis.d1MaxSpeed || activePt1?.speed || 0}
                                 <span className="text-xs text-muted-foreground"> km/h</span>
+                              </div>
+                              <div className="text-[8px] font-mono text-muted-foreground mt-0.5">
+                                Cursor: {activePt1?.speed || 0} km/h
                               </div>
                               <div className="text-[8px] font-mono text-primary font-bold uppercase tracking-wider mt-1">
                                 {d1Meta.abbr}
@@ -1294,8 +1319,11 @@ function RaceCenter() {
                                 Top Speed
                               </div>
                               <div className="font-display text-2xl mt-1.5">
-                                {activePt2?.speed || 0}
+                                {telemetryAnalysis.d2MaxSpeed || activePt2?.speed || 0}
                                 <span className="text-xs text-muted-foreground"> km/h</span>
+                              </div>
+                              <div className="text-[8px] font-mono text-muted-foreground mt-0.5">
+                                Cursor: {activePt2?.speed || 0} km/h
                               </div>
                               <div
                                 className="text-[8px] font-mono text-primary font-bold uppercase tracking-wider mt-1"

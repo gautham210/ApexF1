@@ -310,6 +310,42 @@ class PlatformTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(result["url"])
             fetch.assert_not_awaited()
 
+    async def test_career_aggregated_across_seasons_when_season_less(self):
+        def season_standing(year, points, wins, pos):
+            return [{"season": str(year), "round": "20", "DriverStandings": [{"position": str(pos), "points": str(points), "wins": str(wins), "Driver": race()["Results"][0]["Driver"], "Constructors": []}]}]
+        async def mock_collect(path, table, collection, nested=None):
+            if path == "drivers/fixture/driverStandings":
+                raise j.ProviderError("invalid_payload")
+            if path == "drivers/fixture/seasons":
+                return [{"season": "2023"}, {"season": "2024"}]
+            if path == "2023/drivers/fixture/driverStandings":
+                return season_standing(2023, 200, 5, 2)
+            if path == "2024/drivers/fixture/driverStandings":
+                return season_standing(2024, 300, 8, 1)
+            if path in ("2023", "2024"):
+                return [{"season": path, "round": str(r)} for r in range(1, 21)]
+            raise j.ProviderError("not_found")
+        with patch.object(j, "collect", side_effect=mock_collect):
+            career = await h.career("fixture")
+        self.assertEqual(career["driver_id"], "fixture")
+        self.assertEqual(career["wins"], 13)
+        self.assertEqual(career["championship_points"], 500)
+        self.assertEqual(len(career["season_records"]), 2)
+        self.assertEqual(career["titles"], 1)
+
+    async def test_career_season_scoped_query(self):
+        standings = [{"season": "2024", "round": "24", "DriverStandings": [{"position": "1", "points": "400", "wins": "10", "Driver": race()["Results"][0]["Driver"], "Constructors": []}]}]
+        async def mock_collect(path, table, collection, nested=None):
+            if path == "2024/drivers/fixture/driverStandings":
+                return standings
+            return [{"season": "2024", "round": str(r)} for r in range(1, 25)]
+        with patch.object(j, "collect", side_effect=mock_collect):
+            career = await h.career("fixture", year=2024)
+        self.assertEqual(career["wins"], 10)
+        self.assertEqual(career["championship_points"], 400)
+        self.assertEqual(len(career["season_records"]), 1)
+        self.assertEqual(career["titles"], 1)
+
     def test_http_validation_and_lifespan_cleanup(self):
         from fastapi.testclient import TestClient
         from app.main import app
@@ -319,5 +355,13 @@ class PlatformTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(client.get("/api/history/season?year=2024&round=0").status_code,422)
                 with patch.object(h,"season",AsyncMock(side_effect=j.ProviderError())):
                     self.assertEqual(client.get("/api/history/season?year=2024").status_code,503)
+                # Career endpoint validation
+                self.assertEqual(client.get("/api/history/drivers/invalid!id/career").status_code, 422)
+                self.assertEqual(client.get("/api/history/drivers/verstappen/career?year=1949").status_code, 422)
+                self.assertEqual(client.get("/api/history/drivers/verstappen/career?year=2099").status_code, 422)
+                with patch.object(h, "career", AsyncMock(side_effect=j.ProviderError("round_not_found"))):
+                    self.assertEqual(client.get("/api/history/drivers/unknown/career").status_code, 404)
+                with patch.object(h, "career", AsyncMock(side_effect=j.ProviderError("unavailable"))):
+                    self.assertEqual(client.get("/api/history/drivers/verstappen/career").status_code, 503)
             start.assert_called_once()
             stop.assert_called_once()

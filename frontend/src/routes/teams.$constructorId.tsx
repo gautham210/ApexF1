@@ -27,7 +27,7 @@ function TeamProfile() {
     staleTime: 900000,
   });
   return (
-    <main className="max-w-[1300px] mx-auto px-5 lg:px-12 pt-10 pb-32">
+    <div className="max-w-[1300px] mx-auto px-5 lg:px-12 pt-10 pb-32">
       <Link
         to="/standings"
         search={{ year, round }}
@@ -135,6 +135,6 @@ function TeamProfile() {
           </p>
         </>
       )}
-    </main>
+    </div>
   );
 }

@@ -164,14 +164,14 @@ function ReplayPage() {
                       search={{ mode: "replay", year: season, round: e.round, session: "Race" }}
                       className="inline-flex items-center justify-center gap-2 rounded-xl bg-foreground text-background py-2 text-xs font-bold transition hover:bg-foreground/90"
                     >
-                      <Play className="h-3.5 w-3.5 fill-current" /> View Results
+                      <Play className="h-3.5 w-3.5 fill-current" /> Race Replay
                     </Link>
                     <Link
                       to="/race-center"
-                      search={{ mode: "replay", year: season, round: e.round, session: "Race" }}
+                      search={{ mode: "archive", year: season, round: e.round, session: "Race" }}
                       className="inline-flex items-center justify-center gap-1.5 rounded-xl glass py-2 text-xs font-bold transition hover:bg-white/10 text-muted-foreground hover:text-foreground"
                     >
-                      <Radio className="h-3.5 w-3.5" /> Race Archive
+                      <Radio className="h-3.5 w-3.5" /> Archive Results
                     </Link>
                   </div>
                 </div>

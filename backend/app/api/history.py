@@ -18,11 +18,11 @@ async def season(year: int = Query(ge=1950, le=datetime.now().year + 1), round: 
 
 
 @router.get("/history/drivers/{driver_id}/career")
-async def career(driver_id: str):
+async def career(driver_id: str, year: int | None = Query(None, ge=1950, le=datetime.now().year + 1)):
     import re
     if not re.fullmatch(r"[a-zA-Z0-9_-]{1,80}", driver_id):
         raise HTTPException(422, detail="Invalid driver identity")
-    return await guarded(history_service.career(driver_id))
+    return await guarded(history_service.career(driver_id, year))
 
 
 @router.get("/news/feed")

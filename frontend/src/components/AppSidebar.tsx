@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   LayoutGrid,
@@ -9,6 +10,8 @@ import {
   CalendarPlus,
   Film,
   Newspaper,
+  MoreHorizontal,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -24,6 +27,23 @@ const primary = [
 const secondary = [
   { to: "/notifications", label: "Alerts", icon: Bell },
   { to: "/calendar", label: "Calendar", icon: CalendarPlus },
+  { to: "/profile", label: "Profile", icon: User },
+] as const;
+
+// 4 high-frequency destinations for mobile dock
+const mobilePrimary = [
+  { to: "/", label: "Today", icon: LayoutGrid },
+  { to: "/sessions", label: "Sessions", icon: CalendarRange },
+  { to: "/race-center", label: "Race Center", icon: Radio },
+  { to: "/standings", label: "Standings", icon: Trophy },
+] as const;
+
+// Overflow destinations presented in the accessible More sheet
+const mobileOverflow = [
+  { to: "/replay", label: "Replays", icon: Film },
+  { to: "/news", label: "News", icon: Newspaper },
+  { to: "/calendar", label: "Calendar", icon: CalendarPlus },
+  { to: "/notifications", label: "Alerts", icon: Bell },
   { to: "/profile", label: "Profile", icon: User },
 ] as const;
 
@@ -92,27 +112,116 @@ function DockLink({
 
 export function MobileNav() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  // Show Today, Sessions, Race Center, Standings, Profile
-  const items = [...primary, ...secondary];
+  const [moreOpen, setMoreOpen] = useState(false);
+
+  // Close sheet on route transition
+  useEffect(() => {
+    setMoreOpen(false);
+  }, [pathname]);
+
+  const isOverflowActive = mobileOverflow.some((item) => pathname === item.to);
+
   return (
-    <nav className="fixed bottom-4 left-1/2 z-40 flex max-w-[calc(100vw-24px)] -translate-x-1/2 gap-1 overflow-x-auto rounded-full glass-strong p-1.5 lg:hidden">
-      {items.map((item) => {
-        const active = pathname === item.to;
-        const Icon = item.icon;
-        return (
-          <Link
-            key={item.to}
-            to={item.to}
-            className={cn(
-              "grid h-11 w-11 shrink-0 place-items-center rounded-full transition-colors",
-              active ? "bg-foreground/10 text-foreground" : "text-muted-foreground",
-            )}
-            aria-label={item.label}
-          >
-            <Icon className="h-[18px] w-[18px]" strokeWidth={1.5} />
-          </Link>
-        );
-      })}
-    </nav>
+    <>
+      {/* Backdrop for More sheet */}
+      {moreOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm lg:hidden"
+          onClick={() => setMoreOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* More Overflow Menu Sheet */}
+      {moreOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Additional navigation destinations"
+          className="fixed bottom-20 left-1/2 z-50 w-[calc(100vw-32px)] max-w-xs -translate-x-1/2 rounded-3xl glass-strong p-4 border border-border/40 shadow-2xl lg:hidden animate-in fade-in zoom-in-95 duration-200"
+        >
+          <div className="flex items-center justify-between border-b border-border/30 pb-3 mb-2 px-1">
+            <span className="text-[10px] font-mono font-bold tracking-widest text-muted-foreground uppercase">
+              More Features
+            </span>
+            <button
+              onClick={() => setMoreOpen(false)}
+              className="grid h-7 w-7 place-items-center rounded-full text-muted-foreground hover:text-foreground hover:bg-foreground/10"
+              aria-label="Close more menu"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            {mobileOverflow.map((item) => {
+              const active = pathname === item.to;
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  className={cn(
+                    "flex items-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary",
+                    active
+                      ? "bg-foreground/10 text-foreground font-bold"
+                      : "text-muted-foreground hover:text-foreground hover:bg-foreground/5",
+                  )}
+                  onClick={() => setMoreOpen(false)}
+                >
+                  <Icon className="h-4 w-4 shrink-0" strokeWidth={1.5} />
+                  <span>{item.label}</span>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Fixed bottom navigation pill */}
+      <nav
+        aria-label="Mobile navigation"
+        className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] left-1/2 z-40 flex -translate-x-1/2 items-center gap-1.5 rounded-full glass-strong p-1.5 border border-border/40 shadow-2xl lg:hidden"
+      >
+        {mobilePrimary.map((item) => {
+          const active = pathname === item.to;
+          const Icon = item.icon;
+          return (
+            <Link
+              key={item.to}
+              to={item.to}
+              className={cn(
+                "grid h-11 w-11 shrink-0 place-items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+                active
+                  ? "bg-foreground/10 text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              aria-label={item.label}
+            >
+              <Icon className="h-[18px] w-[18px]" strokeWidth={1.5} />
+            </Link>
+          );
+        })}
+
+        {/* More trigger button */}
+        <button
+          onClick={() => setMoreOpen((v) => !v)}
+          className={cn(
+            "relative grid h-11 w-11 shrink-0 place-items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+            moreOpen || isOverflowActive
+              ? "bg-foreground/10 text-foreground"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+          aria-label="More navigation destinations"
+          aria-expanded={moreOpen}
+          aria-haspopup="dialog"
+        >
+          <MoreHorizontal className="h-[18px] w-[18px]" strokeWidth={1.5} />
+          {isOverflowActive && !moreOpen && (
+            <span className="absolute top-2 right-2 h-1.5 w-1.5 rounded-full bg-primary" />
+          )}
+        </button>
+      </nav>
+    </>
   );
 }

@@ -18,13 +18,16 @@ const PATHS: Record<CircuitKey, string> = {
 };
 
 interface Props {
-  circuit?: CircuitKey;
+  circuit?: CircuitKey | null;
   className?: string;
   animated?: boolean;
 }
 
-export function CircuitOutline({ circuit = "spa", className, animated = false }: Props) {
-  const d = PATHS[circuit] ?? PATHS.spa;
+export function CircuitOutline({ circuit, className, animated = false }: Props) {
+  if (!circuit || !PATHS[circuit]) {
+    return null;
+  }
+  const d = PATHS[circuit];
   return (
     <svg viewBox="0 0 480 300" className={className} fill="none" xmlns="http://www.w3.org/2000/svg">
       <defs>

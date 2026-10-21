@@ -28,7 +28,7 @@ function NewsPage() {
       (!search.q || `${a.title} ${a.summary}`.toLowerCase().includes(search.q.toLowerCase())),
   );
   return (
-    <main className="max-w-[1300px] mx-auto px-5 lg:px-12 pt-12 pb-32">
+    <div className="max-w-[1300px] mx-auto px-5 lg:px-12 pt-12 pb-32">
       <header className="border-b border-border/40 pb-8">
         <p className="text-xs uppercase tracking-widest text-muted-foreground">From the paddock</p>
         <h1 className="font-display text-6xl mt-4">F1 news</h1>
@@ -145,6 +145,6 @@ function NewsPage() {
       {query.data && !visible.length && (
         <p className="p-8 text-muted-foreground">No stories match these filters.</p>
       )}
-    </main>
+    </div>
   );
 }

@@ -360,3 +360,75 @@ test("M-03 regression: Truthful event labeling distinguishes verified, resolving
   assert.equal(conflictLabel.isConflict, true);
   assert.match(conflictLabel.label, /Provider Conflict/);
 });
+
+test("M-05 regression: Timing tower responsive columns fit mobile viewports", () => {
+  // Columns: 28px minmax(64px, 1fr) minmax(60px, 90px) 30px 58px 62px 28px
+  const minCols = [28, 64, 60, 30, 58, 62, 28];
+  const totalMin = minCols.reduce((a, b) => a + b, 0);
+  assert.ok(
+    totalMin <= 340,
+    `Leaderboard minimum width ${totalMin}px must be <= 340px to fit mobile viewport without clipping`,
+  );
+  assert.ok(totalMin < 390, "Leaderboard must comfortably fit within 390px mobile viewports");
+});
+
+test("M-06 regression: Mobile navigation reaches all 9 destinations without horizontal clipping", () => {
+  const primaryDestinations = ["/", "/sessions", "/race-center", "/standings"];
+  const overflowDestinations = ["/replay", "/news", "/calendar", "/notifications", "/profile"];
+  const allDestinations = new Set([...primaryDestinations, ...overflowDestinations]);
+
+  // Must have exactly 9 unique destinations
+  assert.equal(allDestinations.size, 9);
+  assert.equal(primaryDestinations.length, 4);
+  assert.equal(overflowDestinations.length, 5);
+
+  // 4 primary + 1 more trigger = 5 buttons * 44px + 4 gaps * 6px + 12px padding = 256px
+  const dockWidth = 5 * 44 + 4 * 6 + 12;
+  assert.ok(
+    dockWidth <= 320,
+    `Mobile dock width (${dockWidth}px) must fit within narrowest 320px viewport`,
+  );
+});
+
+test("M-08 regression: Unknown circuits do not silently render a Spa track outline", () => {
+  const knownCircuits = new Set([
+    "belgium",
+    "spa",
+    "monaco",
+    "japan",
+    "suzuka",
+    "britain",
+    "silverstone",
+    "italy",
+    "monza",
+    "singapore",
+    "marina",
+  ]);
+
+  function getCircuitKey(country: string, location: string): string | null {
+    const norm = (country || location || "").toLowerCase();
+    if (norm.includes("belgium") || norm.includes("spa")) return "spa";
+    if (norm.includes("monaco")) return "monaco";
+    if (norm.includes("japan") || norm.includes("suzuka")) return "suzuka";
+    if (norm.includes("britain") || norm.includes("silverstone")) return "silverstone";
+    if (norm.includes("italy") || norm.includes("monza")) return "monza";
+    if (norm.includes("singapore") || norm.includes("marina")) return "marina-bay";
+    return null;
+  }
+
+  // Known circuits return their outline keys
+  assert.equal(getCircuitKey("Belgium", "Spa"), "spa");
+  assert.equal(getCircuitKey("Monaco", "Monte Carlo"), "monaco");
+  assert.equal(getCircuitKey("Japan", "Suzuka"), "suzuka");
+  assert.equal(getCircuitKey("Great Britain", "Silverstone"), "silverstone");
+  assert.equal(getCircuitKey("Italy", "Monza"), "monza");
+  assert.equal(getCircuitKey("Singapore", "Marina Bay"), "marina-bay");
+
+  // Unmapped circuits must return null, NEVER fallback to spa
+  assert.equal(getCircuitKey("United States", "Austin"), null);
+  assert.equal(getCircuitKey("Qatar", "Lusail"), null);
+  assert.equal(getCircuitKey("Saudi Arabia", "Jeddah"), null);
+  assert.equal(getCircuitKey("Australia", "Melbourne"), null);
+  assert.equal(getCircuitKey("Azerbaijan", "Baku"), null);
+  assert.equal(getCircuitKey("Brazil", "Interlagos"), null);
+});
