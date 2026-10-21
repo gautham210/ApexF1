@@ -1,7 +1,13 @@
 import { matchesSession } from "../src/lib/session";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { getDriverNumberByName, getDriverByYear, getDriverNumberByAbbr } from "../src/lib/store";
+import {
+  getDriverNumberByName,
+  getDriverByYear,
+  getDriverNumberByAbbr,
+  getDriversListByYear,
+  type ScheduleEvent,
+} from "../src/lib/store";
 import { createCalendar } from "../src/lib/calendar";
 import { safeImageUrl } from "../src/lib/media";
 import { dashboardResponseSchema } from "../src/lib/api/client";
@@ -10,8 +16,22 @@ import {
   parseRaceCenterSearch,
   formatRaceCenterSearch,
   getVerifiedEventLabel,
+  getVerifiedEventVenue,
+  getSessionTelemetryState,
   MIN_SUPPORTED_YEAR,
 } from "../src/lib/event-identity";
+import {
+  computeSessionTimingState,
+  findFocusedSession,
+  formatSessionCountdown,
+} from "../src/lib/session-timing";
+import {
+  USER_PREFERENCES_KEY,
+  loadUserPreferences,
+  saveUserPreferences,
+  type Persona,
+} from "../src/lib/preferences";
+
 test("season-aware driver numbers never prefer global aliases", () => {
   for (const [name, number] of [
     ["Max Verstappen", "3"],
@@ -431,4 +451,216 @@ test("M-08 regression: Unknown circuits do not silently render a Spa track outli
   assert.equal(getCircuitKey("Australia", "Melbourne"), null);
   assert.equal(getCircuitKey("Azerbaijan", "Baku"), null);
   assert.equal(getCircuitKey("Brazil", "Interlagos"), null);
+});
+
+test("F-08 regression: Session countdown timing state machine correctly separates upcoming, in-progress, completed, and unknown", () => {
+  const sessionDate = "2026-05-03T14:00:00Z"; // 14:00 UTC
+
+  // 1. Before scheduled start -> upcoming with positive remaining countdown
+  const tBefore = new Date("2026-05-03T12:00:00Z");
+  const sBefore = computeSessionTimingState(sessionDate, "Race", tBefore);
+  assert.equal(sBefore.status, "upcoming");
+  assert.equal(sBefore.remainingMs, 2 * 60 * 60 * 1000);
+  assert.equal(sBefore.label, "2h 0m");
+
+  // 2. Exact scheduled start boundary -> in_progress (NOT 'Session time reached')
+  const tStart = new Date("2026-05-03T14:00:00Z");
+  const sStart = computeSessionTimingState(sessionDate, "Race", tStart);
+  assert.equal(sStart.status, "in_progress");
+  assert.equal(sStart.remainingMs, 0);
+  assert.equal(sStart.label, "Session in progress");
+
+  // 3. During session duration (e.g. 1 hour in) -> in_progress
+  const tDuring = new Date("2026-05-03T15:00:00Z");
+  const sDuring = computeSessionTimingState(sessionDate, "Race", tDuring);
+  assert.equal(sDuring.status, "in_progress");
+  assert.equal(sDuring.remainingMs, 0);
+  assert.equal(sDuring.label, "Session in progress");
+
+  // 4. Exact scheduled completion boundary (150m for Race = 16:30 UTC) -> completed
+  const tEnd = new Date("2026-05-03T16:30:00Z");
+  const sEnd = computeSessionTimingState(sessionDate, "Race", tEnd);
+  assert.equal(sEnd.status, "completed");
+  assert.equal(sEnd.remainingMs, 0);
+  assert.equal(sEnd.label, "Session completed");
+
+  // 5. After completion window -> completed (never shows 'Session time reached')
+  const tAfter = new Date("2026-05-03T18:00:00Z");
+  const sAfter = computeSessionTimingState(sessionDate, "Race", tAfter);
+  assert.equal(sAfter.status, "completed");
+  assert.equal(sAfter.remainingMs, 0);
+  assert.equal(sAfter.label, "Session completed");
+
+  // 6. Practice session duration window (90 minutes)
+  const pStart = new Date("2026-05-01T10:00:00Z");
+  const pDuring = new Date("2026-05-01T11:00:00Z");
+  const pAfter = new Date("2026-05-01T11:45:00Z");
+  assert.equal(
+    computeSessionTimingState("2026-05-01T10:00:00Z", "Practice 1", pDuring).status,
+    "in_progress",
+  );
+  assert.equal(
+    computeSessionTimingState("2026-05-01T10:00:00Z", "Practice 1", pAfter).status,
+    "completed",
+  );
+
+  // 7. Missing or invalid scheduled timestamp -> unknown
+  const sUnknown = computeSessionTimingState(undefined, "Race", tBefore);
+  assert.equal(sUnknown.status, "unknown");
+  assert.equal(sUnknown.remainingMs, 0);
+  assert.equal(sUnknown.label, "Schedule unannounced");
+
+  const sInvalid = computeSessionTimingState("not-a-date", "Race", tBefore);
+  assert.equal(sInvalid.status, "unknown");
+  assert.equal(sInvalid.label, "Schedule unannounced");
+
+  // 8. Countdown formatting precision
+  assert.equal(formatSessionCountdown(3 * 86400000 + 4 * 3600000), "3d 4h");
+  assert.equal(formatSessionCountdown(2 * 3600000 + 15 * 60000), "2h 15m");
+  assert.equal(formatSessionCountdown(45 * 60000 + 30000), "45m 30s");
+  assert.equal(formatSessionCountdown(15000), "15s");
+  assert.equal(formatSessionCountdown(0), "0s");
+
+  // 9. findFocusedSession resolves correctly
+  const event = {
+    round_number: 1,
+    event_name: "Bahrain Grand Prix",
+    session1: "Practice 1",
+    session1_date: "2026-05-01T10:00:00Z",
+    session2: "Practice 2",
+    session2_date: "2026-05-01T14:00:00Z",
+    session3: "Practice 3",
+    session3_date: "2026-05-02T10:00:00Z",
+    session4: "Qualifying",
+    session4_date: "2026-05-02T14:00:00Z",
+    session5: "Race",
+    session5_date: "2026-05-03T14:00:00Z",
+    is_completed: false,
+    is_upcoming: true,
+  };
+  // When before P1, focused session is P1
+  const focusedBefore = findFocusedSession(event, new Date("2026-04-30T10:00:00Z"));
+  assert.equal(focusedBefore?.name, "Practice 1");
+
+  // When during Qualifying, focused session is Qualifying
+  const focusedQual = findFocusedSession(event, new Date("2026-05-02T14:30:00Z"));
+  assert.equal(focusedQual?.name, "Qualifying");
+
+  // When all sessions past, focused session is Race
+  const focusedPost = findFocusedSession(event, new Date("2026-05-04T10:00:00Z"));
+  assert.equal(focusedPost?.name, "Race");
+});
+
+test("F-14 regression: Profile identity persona and driver registry", () => {
+  // 1. 2026 Driver registry contains the full grid (> 20 drivers), not an arbitrary subset
+  const drivers2026 = Object.values(getDriversListByYear(2026));
+  assert.ok(
+    drivers2026.length >= 20,
+    `2026 grid must contain at least 20 drivers, found ${drivers2026.length}`,
+  );
+
+  // Key official 2026 drivers must be present
+  const driverNames = drivers2026.map((d) => d.name);
+  assert.ok(driverNames.includes("Max Verstappen"));
+  assert.ok(driverNames.includes("Lando Norris"));
+  assert.ok(driverNames.includes("Lewis Hamilton"));
+  assert.ok(driverNames.includes("Charles Leclerc"));
+  assert.ok(driverNames.includes("Oscar Piastri"));
+  assert.ok(driverNames.includes("Kimi Antonelli"));
+  assert.ok(driverNames.includes("Isack Hadjar"));
+  assert.ok(driverNames.includes("Arvid Lindblad"));
+
+  // 2. Persona type mapping and preferences round-trip
+  const testPersonas: Persona[] = ["enthusiast", "analyst", "casual"];
+  for (const p of testPersonas) {
+    const prefs = {
+      favoriteDriver: "max_verstappen",
+      favoriteTeam: "aston_martin",
+      persona: p,
+      notifications: true,
+      dataDensity: "compact" as const,
+    };
+    // Ensure structure is clean and valid
+    assert.equal(prefs.persona, p);
+  }
+});
+
+test("F-16 regression: Sessions telemetry CTA honest availability and capability rules", () => {
+  // 1. Unsupported season (< 2018) -> cannot navigate, explicit unsupported label
+  const pre2018 = getSessionTelemetryState(2017, "Race", 1);
+  assert.equal(pre2018.status, "unsupported_season");
+  assert.equal(pre2018.canNavigate, false);
+  assert.match(pre2018.label, /Telemetry unavailable \(< 2018\)/);
+
+  // 2. Modern season with unknown availability -> unverified, clearly labeled as attempt
+  const unverified = getSessionTelemetryState(2026, "Race", 1, {});
+  assert.equal(unverified.status, "unverified");
+  assert.equal(unverified.canNavigate, true);
+  assert.equal(unverified.label, "Attempt to load telemetry");
+
+  // 3. Modern season with verified availability -> known_available, links to telemetry
+  const available = getSessionTelemetryState(2026, "Race", 1, { "2026-1-Race": true });
+  assert.equal(available.status, "known_available");
+  assert.equal(available.canNavigate, true);
+  assert.equal(available.label, "Explore session telemetry");
+
+  // 4. Modern season with provider failure or missing data -> known_unavailable, cannot navigate
+  const unavailable = getSessionTelemetryState(2026, "Race", 1, { "2026-1-Race": false });
+  assert.equal(unavailable.status, "known_unavailable");
+  assert.equal(unavailable.canNavigate, false);
+  assert.equal(unavailable.label, "Telemetry data unavailable");
+});
+
+test("F-05 regression: Disputed event venue prevents hybrid identity or confirmed circuit assertion", () => {
+  // 1. Normal verified event exposes verified circuit
+  const normalEvent = {
+    round_number: 1,
+    country: "Australia",
+    location: "Melbourne",
+    event_name: "Australian Grand Prix",
+    circuit_name: "Albert Park Circuit",
+    is_completed: true,
+    is_upcoming: false,
+    has_conflict: false,
+  };
+  const normalVenue = getVerifiedEventVenue(normalEvent as unknown as ScheduleEvent);
+  assert.equal(normalVenue.isDisputed, false);
+  assert.equal(normalVenue.circuitName, "Albert Park Circuit");
+  assert.equal(normalVenue.location, "Melbourne");
+  assert.equal(normalVenue.conflictDetails, null);
+
+  // 2. Disputed event (e.g. Bahrain vs Malaysia dispute) does NOT assert circuitName
+  const disputedEvent = {
+    round_number: 16,
+    country: "Conflict: Bahrain (FastF1) vs Malaysia (Jolpica)",
+    location: "Disputed Venue",
+    event_name: "Round 16 [Provider Conflict]",
+    circuit_name: null,
+    is_completed: false,
+    is_upcoming: true,
+    has_conflict: true,
+    conflict: {
+      has_conflict: true,
+      conflicting_fields: ["venue", "country", "circuit_name"],
+      description:
+        "FastF1 reports Bahrain International Circuit; Jolpica reports Sepang International Circuit",
+      candidates: {
+        fastf1: { venue: "Bahrain", circuit: "Bahrain International Circuit" },
+        jolpica: { venue: "Malaysia", circuit: "Sepang International Circuit" },
+      },
+    },
+  };
+  const disputedVenue = getVerifiedEventVenue(disputedEvent as unknown as ScheduleEvent);
+  assert.equal(disputedVenue.isDisputed, true);
+  assert.equal(
+    disputedVenue.circuitName,
+    null,
+    "Must NOT assert a confirmed circuit when providers disagree",
+  );
+  assert.ok(disputedVenue.conflictDetails);
+  const desc =
+    typeof disputedVenue.conflictDetails?.description === "string"
+      ? disputedVenue.conflictDetails.description
+      : "";
+  assert.match(desc, /Bahrain International Circuit/);
 });

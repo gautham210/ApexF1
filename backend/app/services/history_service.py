@@ -205,11 +205,24 @@ def dashboard_insights(data):
         if gained > 0:
             name = " ".join(filter(None, [row["Driver"].get("givenName"), row["Driver"].get("familyName")]))
             gainers.append((gained, name))
-    biggest_gainer = value(
-        "races",
-        max(gainers, key=lambda item: (item[0], item[1]))[1] if gainers else None,
-        f"Gained {max(gainers, key=lambda item: (item[0], item[1]))[0]} places · Round {latest_round}" if gainers else None,
-    )
+    if latest_race_rows:
+        if gainers:
+            top_gainer = max(gainers, key=lambda item: (item[0], item[1]))
+            biggest_gainer = value(
+                "races",
+                top_gainer[1],
+                f"Gained {top_gainer[0]} places · Round {latest_round}",
+                status="available",
+            )
+        else:
+            biggest_gainer = value(
+                "races",
+                "None classified",
+                "No net positions gained across classified rounds",
+                status="available",
+            )
+    else:
+        biggest_gainer = value("races", status="unavailable")
 
     coverage = data.get("metric_coverage", {}).get("qualifying_p1", "unavailable")
     qualifying_leader = None
@@ -300,6 +313,7 @@ async def season(year, round_number=None):
 
 
 async def career(driver_id: str, year: int | None = None):
+    failed_seasons: list[int] = []
     if year is not None:
         groups = await jolpica.collect(f"{year}/drivers/{driver_id}/driverStandings", "StandingsTable", "StandingsLists", "DriverStandings")
     else:
@@ -310,14 +324,25 @@ async def career(driver_id: str, year: int | None = None):
             if not seasons_data:
                 raise jolpica.ProviderError("round_not_found")
             years = sorted({int(s["season"]) for s in seasons_data if "season" in s and str(s["season"]).isdigit()}, reverse=True)
+            semaphore = asyncio.Semaphore(5)
+
             async def fetch_season(y):
-                try:
-                    return await jolpica.collect(f"{y}/drivers/{driver_id}/driverStandings", "StandingsTable", "StandingsLists", "DriverStandings")
-                except jolpica.ProviderError:
-                    return []
+                async with semaphore:
+                    try:
+                        res = await jolpica.collect(f"{y}/drivers/{driver_id}/driverStandings", "StandingsTable", "StandingsLists", "DriverStandings")
+                        return y, res, None
+                    except jolpica.ProviderError as exc:
+                        return y, [], exc.reason
+
             batches = await asyncio.gather(*(fetch_season(y) for y in years))
-            groups = [item for batch in batches for item in batch]
-            if not groups:
+            groups = []
+            for y, batch, err in batches:
+                if err:
+                    failed_seasons.append(y)
+                else:
+                    groups.extend(batch)
+
+            if not groups and failed_seasons:
                 raise jolpica.ProviderError("unavailable")
     records = []
     try:
@@ -354,6 +379,8 @@ async def career(driver_id: str, year: int | None = None):
 
     final_rounds = dict(await asyncio.gather(*(final_round(record["year"]) for record in title_candidates)))
     titles_complete = all(final_rounds.get(record["year"]) is not None for record in title_candidates)
+    has_partial_seasons = bool(failed_seasons)
+    can_certify_titles = (not has_partial_seasons) and titles_complete
     title_count = sum(
         record["round"] == final_rounds.get(record["year"])
         for record in title_candidates
@@ -367,6 +394,8 @@ async def career(driver_id: str, year: int | None = None):
         "season_records": season_records,
         "wins": sum(r["wins"] for r in season_records),
         "championship_points": sum(r["points"] for r in season_records),
-        "titles": title_count if titles_complete else None,
-        "title_coverage": "complete" if titles_complete else ("partial" if title_candidates else "complete"),
+        "titles": title_count if can_certify_titles else None,
+        "title_coverage": "complete" if can_certify_titles else ("partial" if (title_candidates or has_partial_seasons) else "complete"),
+        "season_coverage": "partial" if has_partial_seasons else "complete",
+        "failed_seasons": sorted(failed_seasons),
     }

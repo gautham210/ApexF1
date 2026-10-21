@@ -1,9 +1,11 @@
+import logging
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 from app.services import f1_service, openf1_service
 from app.websockets.manager import manager
 from app.models.schemas import APIResponse
 from datetime import datetime
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _CURRENT_YEAR = datetime.now().year
@@ -322,10 +324,25 @@ async def websocket_live(ws: WebSocket):
     Frontend should reconnect automatically on disconnect.
     """
     from app.core.config import settings
+    # Origin validation against CSWSH:
+    # Browser clients always send Origin. Untrusted or malformed origins are rejected with code 1008.
+    # In production, missing Origin is rejected unless WS_ALLOW_NO_ORIGIN is enabled.
+    # Note: Origin validation prevents CSWSH; it is NOT client authentication.
     origin = ws.headers.get("origin")
-    if origin and origin not in settings.cors_origins_list:
-        await ws.close(code=1008)
-        return
+    allowed_origins = {o.rstrip("/") for o in settings.cors_origins_list if o}
+
+    if origin:
+        clean_origin = origin.strip().rstrip("/")
+        if clean_origin not in allowed_origins:
+            logger.warning(f"Rejected WS connection from untrusted origin: {origin}")
+            await ws.close(code=1008)
+            return
+    else:
+        if settings.APP_ENV == "production" and not settings.WS_ALLOW_NO_ORIGIN:
+            logger.warning("Rejected WS connection missing Origin header in production environment")
+            await ws.close(code=1008)
+            return
+
     await manager.connect(ws, channel="live")
     try:
         # Send immediate state snapshot on connect

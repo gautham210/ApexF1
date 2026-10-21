@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Outlet, Link, createRootRouteWithContext, useRouter } from "@tanstack/react-router";
+import { MotionConfig } from "framer-motion";
 import { AppSidebar, MobileNav } from "@/components/AppSidebar";
 import { AmbientBackdrop } from "@/components/AmbientBackdrop";
 import { GlobalContextInit } from "@/components/GlobalContextInit";
@@ -55,15 +56,17 @@ function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   return (
     <QueryClientProvider client={queryClient}>
-      <GlobalContextInit />
-      <div className="min-h-screen">
-        <AmbientBackdrop />
-        <AppSidebar />
-        <MobileNav />
-        <main className="lg:pl-[84px]">
-          <Outlet />
-        </main>
-      </div>
+      <MotionConfig reducedMotion="user">
+        <GlobalContextInit />
+        <div className="min-h-screen">
+          <AmbientBackdrop />
+          <AppSidebar />
+          <MobileNav />
+          <main className="lg:pl-[84px]">
+            <Outlet />
+          </main>
+        </div>
+      </MotionConfig>
     </QueryClientProvider>
   );
 }

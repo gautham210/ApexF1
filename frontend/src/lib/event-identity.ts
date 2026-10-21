@@ -145,3 +145,100 @@ export function getVerifiedEventLabel(
   }
   return { label: event.event_name, isVerified: true, isConflict: false };
 }
+
+/**
+ * Return truthful venue information for an event.
+ * If there is a venue conflict, never asserts one provider's circuit or location
+ * as confirmed truth. Exposes explicit conflict status and raw candidate venues.
+ */
+export function getVerifiedEventVenue(event?: ScheduleEvent | null): {
+  circuitName: string | null;
+  location: string | null;
+  isDisputed: boolean;
+  conflictDetails?: Record<string, unknown> | null;
+} {
+  if (!event) {
+    return {
+      circuitName: null,
+      location: null,
+      isDisputed: false,
+      conflictDetails: null,
+    };
+  }
+  if (event.has_conflict && event.conflict) {
+    return {
+      circuitName: null, // Do not declare a confirmed circuit when providers dispute venue
+      location: event.location || "Disputed Venue",
+      isDisputed: true,
+      conflictDetails: event.conflict as Record<string, unknown>,
+    };
+  }
+  return {
+    circuitName: event.circuit_name || null,
+    location: event.location || null,
+    isDisputed: false,
+    conflictDetails: null,
+  };
+}
+
+export type TelemetryAvailabilityStatus =
+  | "unsupported_season"
+  | "known_available"
+  | "known_unavailable"
+  | "unverified";
+
+export interface SessionTelemetryState {
+  status: TelemetryAvailabilityStatus;
+  label: string;
+  canNavigate: boolean;
+  reason?: string;
+}
+
+/**
+ * Deterministically evaluate telemetry availability for a session.
+ * Prevents presenting telemetry comparison as available solely because
+ * a session is in the past.
+ */
+export function getSessionTelemetryState(
+  year: number | undefined,
+  sessionName: string,
+  roundNumber: number,
+  telemetryAvailability: Record<string, boolean> = {},
+): SessionTelemetryState {
+  if (!year || year < MIN_SUPPORTED_YEAR) {
+    return {
+      status: "unsupported_season",
+      label: `Telemetry unavailable (< ${MIN_SUPPORTED_YEAR})`,
+      canNavigate: false,
+      reason: `Historical telemetry data is only supported from ${MIN_SUPPORTED_YEAR} to ${new Date().getFullYear() + 1}.`,
+    };
+  }
+
+  const sessionKey = `${year}-${roundNumber}-${sessionName}`;
+  const known = telemetryAvailability[sessionKey];
+
+  if (known === false) {
+    return {
+      status: "known_unavailable",
+      label: "Telemetry data unavailable",
+      canNavigate: false,
+      reason: "No telemetry recorded or provider returned no data for this session.",
+    };
+  }
+
+  if (known === true) {
+    return {
+      status: "known_available",
+      label: "Explore session telemetry",
+      canNavigate: true,
+      reason: "Telemetry data verified and available.",
+    };
+  }
+
+  return {
+    status: "unverified",
+    label: "Attempt to load telemetry",
+    canNavigate: true,
+    reason: "Telemetry availability unverified until requested.",
+  };
+}

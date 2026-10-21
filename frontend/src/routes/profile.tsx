@@ -7,6 +7,7 @@ import heroGarage from "@/assets/hero-garage.jpg";
 import heroCircuit from "@/assets/hero-circuit.jpg";
 import { GlassPanel } from "@/components/GlassPanel";
 import { usePreferences, TEAMS, type TeamKey } from "@/lib/preferences";
+import { getDriversListByYear, getDriverNumberByName } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/profile")({
@@ -19,16 +20,9 @@ export const Route = createFileRoute("/profile")({
   component: ProfilePage,
 });
 
-const drivers = [
-  "Max Verstappen",
-  "Lando Norris",
-  "Charles Leclerc",
-  "Oscar Piastri",
-  "Lewis Hamilton",
-  "George Russell",
-  "Carlos Sainz",
-  "Fernando Alonso",
-];
+const DRIVERS_2026 = Object.values(getDriversListByYear(2026)).sort((a, b) =>
+  a.name.localeCompare(b.name),
+);
 
 const circuits = [
   { key: "spa", name: "Spa-Francorchamps", sub: "Belgian Ardennes" },
@@ -83,15 +77,26 @@ function ProfilePage() {
                   { k: "Lifelong", desc: "I’ve watched for years." },
                   { k: "New here", desc: "Drawn in by the documentary." },
                   { k: "Just curious", desc: "Show me the best of it." },
-                ].map((c) => (
-                  <button
-                    key={c.k}
-                    className="rounded-2xl glass p-5 text-left transition hover:bg-foreground/[0.05]"
-                  >
-                    <div className="font-display text-2xl">{c.k}</div>
-                    <div className="mt-1 text-xs text-muted-foreground">{c.desc}</div>
-                  </button>
-                ))}
+                ].map((c) => {
+                  const selected = prefs.persona === c.k;
+                  return (
+                    <button
+                      key={c.k}
+                      type="button"
+                      onClick={() => {
+                        update({ persona: c.k });
+                        setStep("driver");
+                      }}
+                      className={cn(
+                        "rounded-2xl glass p-5 text-left transition hover:bg-foreground/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+                        selected && "ring-1 ring-primary bg-foreground/[0.04]",
+                      )}
+                    >
+                      <div className="font-display text-2xl">{c.k}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">{c.desc}</div>
+                    </button>
+                  );
+                })}
               </div>
             </Step>
           )}
@@ -104,14 +109,15 @@ function ProfilePage() {
               subtitle="Their stories rise to the top of your weekend."
             >
               <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
-                {drivers.map((d) => {
-                  const selected = prefs.driver === d;
+                {DRIVERS_2026.map((d) => {
+                  const selected = prefs.driver === d.name;
                   return (
                     <button
-                      key={d}
-                      onClick={() => update({ driver: d })}
+                      key={d.name}
+                      type="button"
+                      onClick={() => update({ driver: d.name })}
                       className={cn(
-                        "group relative aspect-[3/4] overflow-hidden rounded-2xl text-left transition",
+                        "group relative aspect-[3/4] overflow-hidden rounded-2xl text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
                         selected && "ring-1 ring-primary",
                       )}
                     >
@@ -122,7 +128,13 @@ function ProfilePage() {
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent" />
                       <div className="absolute inset-x-0 bottom-0 p-4">
-                        <div className="font-display text-xl leading-tight">{d}</div>
+                        <div
+                          className="font-mono text-[9px] uppercase tracking-wider font-bold"
+                          style={{ color: d.color }}
+                        >
+                          {d.team}
+                        </div>
+                        <div className="font-display text-xl leading-tight mt-0.5">{d.name}</div>
                       </div>
                       {selected && (
                         <div className="absolute right-3 top-3 grid h-6 w-6 place-items-center rounded-full bg-primary text-primary-foreground">

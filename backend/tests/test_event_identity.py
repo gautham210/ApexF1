@@ -143,9 +143,10 @@ class EventIdentityTests(unittest.TestCase):
         self.assertIn("Provider Conflict", reconciled.event_name)
 
         # FastF1 and Jolpica breakdown preserved in conflict metadata
-        self.assertEqual(reconciled.conflict.fastf1.get("country"), "Bahrain")
-        self.assertEqual(reconciled.conflict.jolpica.get("country"), "Malaysia")
-        self.assertEqual(reconciled.circuit_name, "Sepang International Circuit")
+        # Top-level circuit metadata must NOT claim Sepang is confirmed for a FastF1 Bahrain date
+        self.assertIsNone(reconciled.circuit_name)
+        self.assertIsNone(reconciled.circuit_id)
+        self.assertEqual(reconciled.conflict.jolpica.get("circuit_name"), "Sepang International Circuit")
 
     def test_all_2026_rounds_reconciliation_fixture(self):
         fixture_path = os.path.join(os.path.dirname(__file__), "fixtures_2026_events.json")

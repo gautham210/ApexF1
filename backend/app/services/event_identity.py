@@ -249,9 +249,9 @@ def reconcile_event(
             # Explicitly mark conflict state in display name and country so UI does not fabricate
             event_name=f"{f1_name} [Provider Conflict]",
             country=f"Conflict: {f1_country} (FastF1) vs {j_country} (Jolpica)",
-            location=f1_loc or j_loc,
-            circuit_name=j_circuit_name,
-            circuit_id=j_circuit_id,
+            location=f"Disputed ({f1_loc} vs {j_loc})" if (f1_loc and j_loc and f1_loc.casefold() != j_loc.casefold()) else (f1_loc or j_loc),
+            circuit_name=None,
+            circuit_id=None,
             event_date=str(f1_date) if f1_date else j_date,
             has_conflict=True,
             conflict=conflict,

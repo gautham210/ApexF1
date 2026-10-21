@@ -110,6 +110,21 @@ class PlatformTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(insights["recent_winner"]["status"], "unavailable")
         self.assertEqual(insights["qualifying_p1_leader"]["status"], "unavailable")
 
+    def test_dashboard_insights_distinguish_zero_gainers_from_unavailable(self):
+        # Case 1: Classified races exist, but all drivers held or lost position (0 net gainers)
+        r = Race.model_validate(race(grid="1", position="1"))
+        summary = h.summarize([r], [], [], None)
+        insights = h.dashboard_insights(summary)
+        self.assertEqual(insights["biggest_gainer"]["status"], "available")
+        self.assertEqual(insights["biggest_gainer"]["name"], "None classified")
+        self.assertEqual(insights["biggest_gainer"]["stat"], "No net positions gained across classified rounds")
+
+        # Case 2: No classified races exist at all (e.g. pre-season)
+        empty_summary = {"results": [], "driver_standings": None, "constructor_standings": None, "metric_coverage": {}}
+        empty_insights = h.dashboard_insights(empty_summary)
+        self.assertEqual(empty_insights["biggest_gainer"]["status"], "unavailable")
+        self.assertEqual(empty_insights["biggest_gainer"]["stat"], "Races unavailable")
+
     def test_historical_points_not_recalculated_and_disqualified(self):
         data=h.summarize([Race.model_validate(race(year=1950,points="4.5")),Race.model_validate(race(2,year=1950,points="0",position="2",status="Disqualified"))],[],[],None)
         self.assertEqual(data["drivers"]["fixture"]["race_points"],4.5)
@@ -345,6 +360,31 @@ class PlatformTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(career["championship_points"], 400)
         self.assertEqual(len(career["season_records"]), 1)
         self.assertEqual(career["titles"], 1)
+
+    async def test_career_partial_season_failure_indicates_partial_coverage(self):
+        def season_standing(year, pts, wins, pos):
+            return [{"season": str(year), "round": "20", "DriverStandings": [{"position": str(pos), "points": str(pts), "wins": str(wins), "Driver": race()["Results"][0]["Driver"], "Constructors": []}]}]
+        async def mock_collect(path, table, collection, nested=None):
+            if path == "drivers/fixture/driverStandings":
+                raise j.ProviderError("invalid_or_unavailable")
+            if path == "drivers/fixture/seasons":
+                return [{"season": "2023"}, {"season": "2024"}]
+            if path == "2023/drivers/fixture/driverStandings":
+                raise j.ProviderError("timeout")
+            if path == "2024/drivers/fixture/driverStandings":
+                return season_standing(2024, 300, 8, 1)
+            if path in ("2023", "2024"):
+                return [{"season": path, "round": str(r)} for r in range(1, 21)]
+            raise j.ProviderError("not_found")
+        with patch.object(j, "collect", side_effect=mock_collect):
+            career = await h.career("fixture")
+        self.assertEqual(career["season_coverage"], "partial")
+        self.assertEqual(career["failed_seasons"], [2023])
+        self.assertIsNone(career["titles"])
+        self.assertEqual(career["title_coverage"], "partial")
+        self.assertEqual(career["wins"], 8)
+        self.assertEqual(career["championship_points"], 300)
+        self.assertEqual(len(career["season_records"]), 1)
 
     def test_http_validation_and_lifespan_cleanup(self):
         from fastapi.testclient import TestClient

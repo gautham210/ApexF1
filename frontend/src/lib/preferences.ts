@@ -44,6 +44,7 @@ export const TEAMS: Record<TeamKey, TeamMeta> = {
 };
 
 export interface Preferences {
+  persona?: string;
   driver?: string;
   team?: TeamKey;
   circuit?: string;

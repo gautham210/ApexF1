@@ -4,6 +4,8 @@ import { useState, useMemo } from "react";
 import { Cloud, Sun, CloudRain, Play, Clock, ChevronRight, Compass } from "lucide-react";
 import { useSessionContext } from "@/hooks/useSessionContext";
 import { useLiveSession } from "@/hooks/useLiveSession";
+import { useCanonicalStore } from "@/lib/store";
+import { getSessionTelemetryState } from "@/lib/event-identity";
 import { GlassPanel } from "@/components/GlassPanel";
 import { CircuitOutline, type CircuitKey } from "@/components/CircuitOutline";
 import { cn } from "@/lib/utils";
@@ -78,6 +80,7 @@ function getSessionDuration(name: string): string {
 function SessionsPage() {
   const { schedule, season, selectedRound, setSelectedRound } = useSessionContext();
   const live = useLiveSession();
+  const { telemetryAvailability } = useCanonicalStore();
 
   const selected = useMemo(() => {
     return schedule.find((e) => e.round_number === selectedRound) || schedule[0] || null;
@@ -278,20 +281,42 @@ function SessionsPage() {
                                 </span>
                                 <span>{s.duration}</span>
                               </div>
-                              {s.isPast && (
-                                <Link
-                                  to="/race-center"
-                                  search={{
-                                    mode: "replay",
-                                    year: season,
-                                    round: selected.round_number,
-                                    session: s.name,
-                                  }}
-                                  className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full glass-strong py-2 text-xs transition hover:bg-foreground/10"
-                                >
-                                  <Play className="h-3 w-3 fill-current" /> Telemetry comparison
-                                </Link>
-                              )}
+                              {s.isPast &&
+                                (() => {
+                                  const telState = getSessionTelemetryState(
+                                    season,
+                                    s.name,
+                                    selected.round_number,
+                                    telemetryAvailability,
+                                  );
+
+                                  if (!telState.canNavigate) {
+                                    return (
+                                      <div
+                                        className="mt-4 flex w-full items-center justify-center gap-2 rounded-full border border-border/30 bg-muted/20 py-2 text-xs font-mono text-muted-foreground"
+                                        title={telState.reason}
+                                      >
+                                        <span>{telState.label}</span>
+                                      </div>
+                                    );
+                                  }
+
+                                  return (
+                                    <Link
+                                      to="/race-center"
+                                      search={{
+                                        mode: "replay",
+                                        year: season,
+                                        round: selected.round_number,
+                                        session: s.name,
+                                      }}
+                                      title={telState.reason}
+                                      className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full glass-strong py-2 text-xs transition hover:bg-foreground/10"
+                                    >
+                                      <Play className="h-3 w-3 fill-current" /> {telState.label}
+                                    </Link>
+                                  );
+                                })()}
                             </div>
                           </div>
                         </motion.article>

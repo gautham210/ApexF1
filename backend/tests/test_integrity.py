@@ -129,6 +129,49 @@ class IntegrityTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(f,"get_season_results",AsyncMock(return_value={"unavailable":True})):
             self.assertEqual(client.get("/api/results?year=2026").status_code,503)
 
+    def test_websocket_origin_enforcement(self):
+        from starlette.websockets import WebSocketDisconnect
+        from fastapi.testclient import TestClient
+        from app.main import app
+        from app.core.config import settings
+
+        client = TestClient(app)
+
+        # 1. Allowed origin connects and receives initial state
+        with client.websocket_connect("/api/ws/live", headers={"Origin": "http://localhost:5173"}) as ws:
+            data = ws.receive_json()
+            self.assertIn("type", data)
+
+        # 2. Allowed origin with 3000 connects
+        with client.websocket_connect("/api/ws/live", headers={"Origin": "http://localhost:3000"}) as ws:
+            data = ws.receive_json()
+            self.assertIn("type", data)
+
+        # 3. Disallowed origin is closed with 1008
+        with self.assertRaises(WebSocketDisconnect) as cm:
+            with client.websocket_connect("/api/ws/live", headers={"Origin": "http://untrusted-site.com"}):
+                pass
+        self.assertEqual(cm.exception.code, 1008)
+
+        # 4. Malformed origin is closed with 1008
+        with self.assertRaises(WebSocketDisconnect) as cm:
+            with client.websocket_connect("/api/ws/live", headers={"Origin": "javascript:alert(1)"}):
+                pass
+        self.assertEqual(cm.exception.code, 1008)
+
+        # 5. Missing origin in development is accepted
+        with patch.object(settings, "APP_ENV", "development"):
+            with client.websocket_connect("/api/ws/live") as ws:
+                data = ws.receive_json()
+                self.assertIn("type", data)
+
+        # 6. Missing origin in production without override is rejected with 1008
+        with patch.object(settings, "APP_ENV", "production"), patch.object(settings, "WS_ALLOW_NO_ORIGIN", False):
+            with self.assertRaises(WebSocketDisconnect) as cm:
+                with client.websocket_connect("/api/ws/live"):
+                    pass
+            self.assertEqual(cm.exception.code, 1008)
+
     def test_historical_constructor_identity(self):
         self.assertEqual(f.normalize_constructor("Alfa Romeo", 2023), "Alfa Romeo")
         self.assertEqual(f.normalize_constructor("Kick Sauber", 2025), "Kick Sauber")

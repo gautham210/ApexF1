@@ -23,7 +23,12 @@ import {
 import { f1Api } from "@/lib/api/client";
 import { useLiveSession, type SessionState } from "@/hooks/useLiveSession";
 import { useSessionContext } from "@/hooks/useSessionContext";
-import { useTelemetryStore, getDriversListByYear, getDriverByYear } from "@/lib/store";
+import {
+  useTelemetryStore,
+  useCanonicalStore,
+  getDriversListByYear,
+  getDriverByYear,
+} from "@/lib/store";
 import {
   Radio,
   Archive,
@@ -766,10 +771,17 @@ function RaceCenter() {
         ),
       ]);
       if (request !== telemetryRequest.current) return;
-      if (r1.status === "fulfilled") setDriver1Data(r1.value.data || []);
-      if (r2.status === "fulfilled") setDriver2Data(r2.value.data || []);
+      const d1 = r1.status === "fulfilled" ? r1.value.data || [] : [];
+      const d2 = r2.status === "fulfilled" ? r2.value.data || [] : [];
+      setDriver1Data(d1);
+      setDriver2Data(d2);
+      const sessionKey = `${season}-${selectedRound}-${selectedSession}`;
+      const hasPoints = d1.length > 0 || d2.length > 0;
+      useCanonicalStore.getState().setTelemetryAvailability(sessionKey, hasPoints);
     } catch (e) {
       console.error("[Telemetry] load failed:", e);
+      const sessionKey = `${season}-${selectedRound}-${selectedSession}`;
+      useCanonicalStore.getState().setTelemetryAvailability(sessionKey, false);
     } finally {
       if (request === telemetryRequest.current) setTelemetryLoading(false);
     }

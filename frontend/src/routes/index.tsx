@@ -24,6 +24,11 @@ import { useLiveSession } from "@/hooks/useLiveSession";
 import { usePreferences, TEAMS } from "@/lib/preferences";
 import { useCanonicalStore } from "@/lib/store";
 import { getNewsFeed } from "@/lib/api/news";
+import {
+  computeSessionTiming,
+  resolveEventSessionFocus,
+  type SessionTimingState,
+} from "@/lib/session-timing";
 
 import heroRace from "@/assets/hero-race.jpg";
 import heroPit from "@/assets/hero-pit.jpg";
@@ -50,39 +55,46 @@ export const Route = createFileRoute("/")({
   component: Dashboard,
 });
 
-function CountdownTimer({ targetDate }: { targetDate: string }) {
-  const [timeLeft, setTimeLeft] = useState<{
-    days: number;
-    hours: number;
-    minutes: number;
-    seconds: number;
-  } | null>(null);
+function CountdownTimer({
+  targetDate,
+  sessionName,
+}: {
+  targetDate?: string | null;
+  sessionName?: string;
+}) {
+  const [timing, setTiming] = useState<SessionTimingState>(() =>
+    computeSessionTiming(targetDate, sessionName),
+  );
 
   useEffect(() => {
-    if (!targetDate) return;
-    const target = new Date(targetDate).getTime();
-    const tick = () => {
-      const difference = target - Date.now();
-      if (difference <= 0) {
-        setTimeLeft(null);
-      } else {
-        setTimeLeft({
-          days: Math.floor(difference / 86_400_000),
-          hours: Math.floor((difference % 86_400_000) / 3_600_000),
-          minutes: Math.floor((difference % 3_600_000) / 60_000),
-          seconds: Math.floor((difference % 60_000) / 1000),
-        });
-      }
-    };
-    tick();
-    const interval = setInterval(tick, 1000);
+    setTiming(computeSessionTiming(targetDate, sessionName));
+    const interval = setInterval(() => {
+      setTiming(computeSessionTiming(targetDate, sessionName));
+    }, 1000);
     return () => clearInterval(interval);
-  }, [targetDate]);
+  }, [targetDate, sessionName]);
 
-  if (!timeLeft) {
+  if (timing.state === "in_progress") {
     return (
-      <span className="font-mono text-xs text-primary/80 uppercase tracking-widest animate-pulse">
-        Session time reached
+      <span className="inline-flex items-center gap-2 font-mono text-xs text-amber-400 font-bold uppercase tracking-wider">
+        <span className="h-2 w-2 rounded-full bg-amber-400 animate-ping" />
+        Session in progress
+      </span>
+    );
+  }
+
+  if (timing.state === "completed") {
+    return (
+      <span className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
+        Session completed
+      </span>
+    );
+  }
+
+  if (timing.state === "unknown") {
+    return (
+      <span className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
+        Schedule unavailable
       </span>
     );
   }
@@ -90,9 +102,9 @@ function CountdownTimer({ targetDate }: { targetDate: string }) {
   return (
     <div className="flex gap-3">
       {[
-        { value: timeLeft.days, label: "d" },
-        { value: timeLeft.hours, label: "h" },
-        { value: timeLeft.minutes, label: "m" },
+        { value: timing.days, label: "d" },
+        { value: timing.hours, label: "h" },
+        { value: timing.minutes, label: "m" },
       ].map((t, idx) => (
         <div key={idx} className="flex items-baseline gap-0.5">
           <span className="font-display text-2xl md:text-3xl font-medium leading-none text-foreground">
@@ -178,15 +190,22 @@ function Dashboard() {
     )
       ? live.weather
       : null;
-  const nextSession = currentRace
-    ? ([1, 2, 3, 4, 5] as const)
-        .map((i) => ({
-          name: currentRace[`session${i}` as `session${1 | 2 | 3 | 4 | 5}`],
-          date: currentRace[`session${i}_date` as `session${1 | 2 | 3 | 4 | 5}_date`],
-        }))
-        .filter((s) => typeof s.date === "string" && Date.parse(s.date) > Date.now())
-        .sort((a, b) => Date.parse(String(a.date)) - Date.parse(String(b.date)))[0]
-    : null;
+  const raceSessions = useMemo(() => {
+    if (!currentRace) return [];
+    return ([1, 2, 3, 4, 5] as const)
+      .map((i) => ({
+        key: `session${i}`,
+        name: currentRace[`session${i}` as `session${1 | 2 | 3 | 4 | 5}`] || `Session ${i}`,
+        date: currentRace[`session${i}_date` as `session${1 | 2 | 3 | 4 | 5}_date`] || "",
+      }))
+      .filter((s) => Boolean(s.date));
+  }, [currentRace]);
+
+  const focusedSession = useMemo(() => {
+    return resolveEventSessionFocus(raceSessions);
+  }, [raceSessions]);
+
+  const nextSession = focusedSession.session;
 
   // Restrained, beautiful dynamic backdrop imagery
   const heroImage = useMemo(() => {
@@ -296,7 +315,7 @@ function Dashboard() {
               </div>
               <div className="mt-2">
                 {nextSession ? (
-                  <CountdownTimer targetDate={String(nextSession.date)} />
+                  <CountdownTimer targetDate={nextSession.date} sessionName={nextSession.name} />
                 ) : (
                   <span className="font-display text-2xl text-muted-foreground">Unavailable</span>
                 )}

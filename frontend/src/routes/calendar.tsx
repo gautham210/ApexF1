@@ -13,10 +13,11 @@ import heroCircuit from "@/assets/hero-circuit.jpg";
 export const Route = createFileRoute("/calendar")({
   head: () => ({
     meta: [
-      { title: "ApexF1 — Sync race calendar" },
+      { title: "ApexF1 — Export race calendar" },
       {
         name: "description",
-        content: "Sync the complete Formula 1 race calendar directly with Google or Apple.",
+        content:
+          "Export standard .ics calendar schedules to import Formula 1 session timetables into your calendar app.",
       },
     ],
   }),
@@ -91,12 +92,12 @@ function CalendarPage() {
         <div className="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-background/40" />
         <div className="relative z-10 mx-auto flex h-full max-w-[1200px] flex-col justify-end px-6 pb-12 lg:px-12">
           <div className="text-[10px] font-mono tracking-[0.2em] text-muted-foreground">
-            CALENDAR INBOX
+            CALENDAR EXPORT
           </div>
-          <h1 className="mt-3 font-display text-5xl md:text-7xl leading-none">Sync the season</h1>
+          <h1 className="mt-3 font-display text-5xl md:text-7xl leading-none">Export calendar</h1>
           <p className="mt-3 max-w-lg text-muted-foreground text-sm leading-relaxed">
-            Quiet calendar schedules. Push every session directly to the daily calendar you already
-            live in.
+            Standard .ics calendar files. Export session timetables directly into your daily
+            calendar app or add individual sessions to Google Calendar.
           </p>
         </div>
       </section>
