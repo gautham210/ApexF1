@@ -189,6 +189,13 @@ function DriverProfile() {
         {career.isError && <p role="alert">Career records unavailable.</p>}
         {career.data && (
           <>
+            {career.data.season_coverage === "partial" && (
+              <p role="status" className="my-4 text-sm text-amber-400">
+                Incomplete career history. Unavailable seasons:{" "}
+                {career.data.failed_seasons.join(", ")}. Wins and points below are totals from
+                available seasons only.
+              </p>
+            )}
             <Stats
               items={[
                 ["Seasons recorded", career.data.season_records.length],

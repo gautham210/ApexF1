@@ -125,3 +125,24 @@ This findings ledger reconciles all 27 forensic audit findings (F-01 through F-2
 ## 2026-10-23 F-23 evidence correction
 
 The prior entry claimed a hostname allowlist/DNS protection that was absent from source: `safe_url` only checked literal addresses and RSS followed redirects. This pass adds the connection boundary described in PLATFORM_ARCHITECTURE.md and test_news_security.py. Backend suite passes 58 tests. F-23 is verified for deterministic denial/pinning and one real TLS hop, with full publisher-feed retrieval still unverified. Other finding statuses above describe previous work; this pass does not independently certify every finding or production readiness.
+
+## 2026-10-23 continuation — evidence overrides earlier closure claims
+
+Starting HEAD d8a03d8996794da67c14b016444a59957bcd64f8. The following statuses supersede optimistic prior entries:
+
+| Finding | Current evidence and status |
+|---|---|
+| F-23 | Deterministic DNS/IP pinning and redirect regressions pass. Previous BBC TLS hop returned 302; full feed retrieval remains NOT VERIFIED. No security-source changes this increment. |
+| F-24 | Production rejects missing Origin unless explicitly configured otherwise; present origins must match configured origins. Development permits missing Origin. Tests pass; this is origin policy, not authentication. Runtime deployment policy NOT VERIFIED. |
+| F-04 | Backend partial-season aggregation passes tests; frontend previously stripped coverage fields. Schema and driver profile now retain/display failed seasons and qualify aggregate wins/points. Contract regression passes; rendered UI NOT VERIFIED. |
+| F-05 | Backend reconciliation and frontend resolver tests pass. Every route/provider consumer has not been exhaustively exercised; PARTIALLY VERIFIED, not globally closed. |
+| F-16 | Capability tests distinguish unsupported, unverified, available and unavailable. Real provider/session availability NOT VERIFIED. |
+| F-21 | Prior fixed claim was incorrect: Dockerfile still used Vite preview. Replaced with static Nginx plus API/WebSocket proxy and explicit build-time API override. Production bundle builds; Docker execution BLOCKED (tool unavailable). Split hosting must supply VITE_API_URL; no deployment changed. |
+| F-22 | Workflow has backend and frontend jobs with actual scripts. Local suites pass; remote CI and clean Linux dependency installation NOT VERIFIED. |
+| F-08 | Prior duration windows fabricated live/terminal states. Removed them from Home countdown: elapsed start is now explicitly unverified, no inferred end instant. Focus selects next future scheduled session. Existing backend schedule completion estimates remain OPEN. |
+| F-14 | Persona controls are wired and tested, but driver selection remains a static 2026 registry, not provider-backed current roster. PARTIAL; future-season/transfer freshness OPEN. |
+| F-25 | Existing deterministic tests cover valid zero-gainer versus unavailable classifications. No change; browser presentation NOT VERIFIED. |
+| F-26 | Root MotionConfig and reduced-motion CSS present; no real OS/browser preference check performed. PARTIALLY VERIFIED. |
+| F-13 | Standard ICS download/Google link copy inspected; notification/synchronization capability is not claimed. Browser calendar import NOT VERIFIED. |
+
+Phase A remains partial. This increment deliberately closes three concrete source defects before offline caching. Phase B PWA, Phase C widgets/timezone hub, D timeline, E simulator, F museum and G live enhancements remain unimplemented by this continuation.

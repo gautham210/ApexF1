@@ -453,7 +453,7 @@ test("M-08 regression: Unknown circuits do not silently render a Spa track outli
   assert.equal(getCircuitKey("Brazil", "Interlagos"), null);
 });
 
-test("F-08 regression: Session countdown timing state machine correctly separates upcoming, in-progress, completed, and unknown", () => {
+test("F-08 regression: Session countdown timing state machine correctly never infers live or terminal status from a schedule", () => {
   const sessionDate = "2026-05-03T14:00:00Z"; // 14:00 UTC
 
   // 1. Before scheduled start -> upcoming with positive remaining countdown
@@ -463,45 +463,44 @@ test("F-08 regression: Session countdown timing state machine correctly separate
   assert.equal(sBefore.remainingMs, 2 * 60 * 60 * 1000);
   assert.equal(sBefore.label, "2h 0m");
 
-  // 2. Exact scheduled start boundary -> in_progress (NOT 'Session time reached')
+  // The scheduled start does not prove the session started.
   const tStart = new Date("2026-05-03T14:00:00Z");
   const sStart = computeSessionTimingState(sessionDate, "Race", tStart);
-  assert.equal(sStart.status, "in_progress");
+  assert.equal(sStart.status, "start_passed");
   assert.equal(sStart.remainingMs, 0);
-  assert.equal(sStart.label, "Session in progress");
+  assert.equal(sStart.label, "Scheduled start passed · status unverified");
 
-  // 3. During session duration (e.g. 1 hour in) -> in_progress
+  // Delays and cancellations cannot be inferred from a clock.
   const tDuring = new Date("2026-05-03T15:00:00Z");
   const sDuring = computeSessionTimingState(sessionDate, "Race", tDuring);
-  assert.equal(sDuring.status, "in_progress");
+  assert.equal(sDuring.status, "start_passed");
   assert.equal(sDuring.remainingMs, 0);
-  assert.equal(sDuring.label, "Session in progress");
+  assert.equal(sDuring.label, "Scheduled start passed · status unverified");
 
-  // 4. Exact scheduled completion boundary (150m for Race = 16:30 UTC) -> completed
+  // An assumed duration cannot prove completion.
   const tEnd = new Date("2026-05-03T16:30:00Z");
   const sEnd = computeSessionTimingState(sessionDate, "Race", tEnd);
-  assert.equal(sEnd.status, "completed");
+  assert.equal(sEnd.status, "start_passed");
   assert.equal(sEnd.remainingMs, 0);
-  assert.equal(sEnd.label, "Session completed");
+  assert.equal(sEnd.label, "Scheduled start passed · status unverified");
 
-  // 5. After completion window -> completed (never shows 'Session time reached')
+  // Hours later, terminal status still needs provider evidence.
   const tAfter = new Date("2026-05-03T18:00:00Z");
   const sAfter = computeSessionTimingState(sessionDate, "Race", tAfter);
-  assert.equal(sAfter.status, "completed");
+  assert.equal(sAfter.status, "start_passed");
   assert.equal(sAfter.remainingMs, 0);
-  assert.equal(sAfter.label, "Session completed");
+  assert.equal(sAfter.label, "Scheduled start passed · status unverified");
 
-  // 6. Practice session duration window (90 minutes)
-  const pStart = new Date("2026-05-01T10:00:00Z");
+  // Practice has the same evidence requirement.
   const pDuring = new Date("2026-05-01T11:00:00Z");
   const pAfter = new Date("2026-05-01T11:45:00Z");
   assert.equal(
     computeSessionTimingState("2026-05-01T10:00:00Z", "Practice 1", pDuring).status,
-    "in_progress",
+    "start_passed",
   );
   assert.equal(
     computeSessionTimingState("2026-05-01T10:00:00Z", "Practice 1", pAfter).status,
-    "completed",
+    "start_passed",
   );
 
   // 7. Missing or invalid scheduled timestamp -> unknown
@@ -542,9 +541,9 @@ test("F-08 regression: Session countdown timing state machine correctly separate
   const focusedBefore = findFocusedSession(event, new Date("2026-04-30T10:00:00Z"));
   assert.equal(focusedBefore?.name, "Practice 1");
 
-  // When during Qualifying, focused session is Qualifying
+  // After qualifying scheduled start, focus the next upcoming start.
   const focusedQual = findFocusedSession(event, new Date("2026-05-02T14:30:00Z"));
-  assert.equal(focusedQual?.name, "Qualifying");
+  assert.equal(focusedQual?.name, "Race");
 
   // When all sessions past, focused session is Race
   const focusedPost = findFocusedSession(event, new Date("2026-05-04T10:00:00Z"));
@@ -663,4 +662,24 @@ test("F-05 regression: Disputed event venue prevents hybrid identity or confirme
       ? disputedVenue.conflictDetails.description
       : "";
   assert.match(desc, /Bahrain International Circuit/);
+});
+
+test("F-04 career schema retains incomplete-season disclosure", async () => {
+  const { careerSchema } = await import("../src/lib/api/history");
+  const career = careerSchema.parse({
+    driver_id: "fixture",
+    source: "Jolpica",
+    fetched_at: "2026-01-01T00:00:00Z",
+    wins: 2,
+    championship_points: 30,
+    titles: null,
+    title_coverage: "partial",
+    season_coverage: "partial",
+    failed_seasons: [2024],
+    records: [],
+    season_records: [],
+  });
+  assert.equal(career.season_coverage, "partial");
+  assert.deepEqual(career.failed_seasons, [2024]);
+  assert.equal(career.titles, null);
 });

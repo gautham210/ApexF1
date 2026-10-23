@@ -172,12 +172,15 @@ const getBaseUrl = () => {
   }
 
   // 4. Localhost fallback only during development
-  if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+  if (
+    import.meta.env.DEV &&
+    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+  ) {
     return "http://localhost:8000";
   }
 
-  // 5. Default production backend Render fallback
-  return "https://apexf1-api.onrender.com";
+  // Production defaults to the same-origin reverse proxy. Split hosting requires VITE_API_URL.
+  return window.location.origin;
 };
 
 const BASE_URL = getBaseUrl();

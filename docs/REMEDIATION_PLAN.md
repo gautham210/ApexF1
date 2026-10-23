@@ -35,3 +35,7 @@ No production deployment, database mutations, force push or PR creation is part 
 Milestone 1 increment: fix F-23 RSS DNS rebinding and redirect-to-private-network exposure with validated IP pinning, publisher TLS/Host preservation, proxy bypass prevention and five deterministic tests. Local backend/frontend suites, typecheck, lint and build pass; see VALIDATION.md. Other findings retain their previous evidence only and are not newly certified by this pass.
 
 Next: finish integrity acceptance review, then Milestone 2 PWA foundation before timezone hub, championship timeline, restricted deterministic simulator and model-manifest museum. Native widgets require a separate native companion; none is claimed. No new product pages or asset placeholders were introduced in this security increment. No remote operations are authorized for this assignment.
+
+## Continuation from d8a03d8
+
+Phase A checkpoint: correct unsupported Home duration-based status, preserve partial career coverage through frontend schema/UI, and replace production Vite preview with static serving and same-origin proxy configuration. Findings ledger now distinguishes source/test evidence from runtime verification. Remaining Phase A includes backend schedule status estimates, provider-backed profile registry and full consumer acceptance review. Phase B PWA is the next product milestone after those gates; no installation, native widget, offline cache or push capability is claimed. Later phases C–G remain deferred to subsequent coherent increments.

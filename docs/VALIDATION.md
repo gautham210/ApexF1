@@ -1,5 +1,24 @@
 # Validation record
 
+## 2026-10-23 — continuation from d8a03d8 (Phase A checkpoint)
+
+Branch: codex/apexf1-overnight-remediation. Starting HEAD: d8a03d8996794da67c14b016444a59957bcd64f8. Python 3.13.5, Node 22.18.0, npm 10.9.3.
+
+| Check | Actual outcome |
+|---|---|
+| Backend | PASS: `cd backend; python -X utf8 -m unittest discover -s tests -v`, 58 tests, 2.050s outside sandbox. Existing deprecation/slow-task diagnostics remain. Includes security, origin, identity and partial-career tests. |
+| Frontend | PASS: `cd frontend; npm test`, 19 tests. Updated schedule boundaries assert unverified status rather than guessed live/completed states; new career contract test retains failed seasons and incomplete coverage. |
+| Typecheck | PASS: `npm run typecheck` after correcting an intermediate duplicate export/schema declaration. |
+| Lint | PASS: `npm run lint`, 0 errors, 8 existing warnings. Intermediate CRLF/format errors were corrected only in intended edited files with targeted Prettier. |
+| Build | PASS: `npm run build` outside sandbox, 3,005 modules, 9.23s; main 488.19 kB / 152.20 gzip; Race Center 426.25 kB / 117.77 gzip. First build caught duplicate export syntax; corrected build passed. Subsequent edits were formatting/comments only. |
+| Docker | BLOCKED: `docker --version` executable unavailable. Nginx routing, runtime config, container build and WebSocket proxy behavior NOT VERIFIED in container. |
+| Browser/devices | NOT VERIFIED: no visual/device automation run in this integrity checkpoint. Unit tests do not establish rendered accessibility or responsive behavior. |
+| Remote CI / deployment | NOT VERIFIED; no push or deployment performed. |
+| PWA / offline / installation | NOT IMPLEMENTED in this checkpoint. No claim of installation, cached data freshness or native widgets. |
+
+Source review corrected F-04 disclosure, F-08 schedule-only semantics, and F-21 static container configuration. See findings-ledger overrides for remaining partial/open findings. Phase A is not wholly closed; Phases B–G remain deferred. No broad audit/production-ready claim. All 69 original unstaged entries remain untouched and excluded from staging; no mirror synchronization, push, merge, PR or deployment.
+
+
 ## 2026-10-23 — Milestone 1 security increment
 
 Starting HEAD: `ee9eb603dfc3e6f898d03005c6edf6e093cb15dd`; branch `codex/apexf1-overnight-remediation`. Python 3.13.5, Node 22.18.0. Scope: RSS outbound DNS/redirect security; no frontend behavior changes.

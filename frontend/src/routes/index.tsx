@@ -74,21 +74,8 @@ function CountdownTimer({
     return () => clearInterval(interval);
   }, [targetDate, sessionName]);
 
-  if (timing.state === "in_progress") {
-    return (
-      <span className="inline-flex items-center gap-2 font-mono text-xs text-amber-400 font-bold uppercase tracking-wider">
-        <span className="h-2 w-2 rounded-full bg-amber-400 animate-ping" />
-        Session in progress
-      </span>
-    );
-  }
-
-  if (timing.state === "completed") {
-    return (
-      <span className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
-        Session completed
-      </span>
-    );
+  if (timing.state === "start_passed") {
+    return <span className="font-mono text-xs text-muted-foreground">{timing.label}</span>;
   }
 
   if (timing.state === "unknown") {

@@ -123,7 +123,9 @@ export async function getSeason(year: number, round?: number, signal?: AbortSign
     throw new Error("Season identity mismatch");
   return payload;
 }
-const careerSchema = z.object({
+export const careerSchema = z.object({
+  season_coverage: z.enum(["complete", "partial"]),
+  failed_seasons: z.array(z.number().int()),
   driver_id: z.string(),
   source: z.string(),
   fetched_at: z.string(),
