@@ -29,3 +29,9 @@
 - P3: Forecast notifications require a forecast provider and delivery infrastructure. Preferences currently do not send alerts.
 
 No production deployment, database mutations, force push or PR creation is part of this delivery. Current working source snapshot remains preserved separately from the isolated Git checkout.
+
+## 2026-10-23 product assignment checkpoint
+
+Milestone 1 increment: fix F-23 RSS DNS rebinding and redirect-to-private-network exposure with validated IP pinning, publisher TLS/Host preservation, proxy bypass prevention and five deterministic tests. Local backend/frontend suites, typecheck, lint and build pass; see VALIDATION.md. Other findings retain their previous evidence only and are not newly certified by this pass.
+
+Next: finish integrity acceptance review, then Milestone 2 PWA foundation before timezone hub, championship timeline, restricted deterministic simulator and model-manifest museum. Native widgets require a separate native companion; none is claimed. No new product pages or asset placeholders were introduced in this security increment. No remote operations are authorized for this assignment.

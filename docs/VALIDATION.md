@@ -1,5 +1,26 @@
 # Validation record
 
+## 2026-10-23 — Milestone 1 security increment
+
+Starting HEAD: `ee9eb603dfc3e6f898d03005c6edf6e093cb15dd`; branch `codex/apexf1-overnight-remediation`. Python 3.13.5, Node 22.18.0. Scope: RSS outbound DNS/redirect security; no frontend behavior changes.
+
+| Check | Outcome | Evidence |
+|---|---|---|
+| Backend | PASS | From backend: `python -X utf8 -m unittest discover -s tests -v`; 58 tests, 2.833s, including five new DNS/security tests and existing WebSocket origin tests. Run outside sandbox due previously established loop restriction. Existing NumPy deprecation and asyncio slow-task diagnostics remain. |
+| Frontend | PASS | From frontend: `npm test`; 18 tests. |
+| TypeScript | PASS | `npm run typecheck` |
+| Lint | PASS with warnings | `npm run lint`; 0 errors, 8 existing Fast Refresh warnings. |
+| Production build | PASS | `npm run build` outside sandbox; 3,005 modules, 15.64s; main 488.23 kB / 152.23 gzip; Race Center 426.25 kB / 117.77 gzip. |
+| Public RSS connection | PASS, limited | BBC configured RSS URL resolved and connected to pinned IP with original Host/SNI and default certificate verification; HTTP 302. Full redirect chain/feed availability not verified. First attempted smoke command had a quoting SyntaxError; corrected stdin command exited 0. |
+| Browser | NOT VERIFIED | No visual or device checks performed for this backend-only increment. |
+| Docker | BLOCKED | `docker --version`: executable unavailable. |
+| Remote CI | NOT VERIFIED | No push or remote run performed. |
+
+New tests cover private, empty, mixed public/private and IPv4-mapped IPv6 DNS answers; public IPv4/IPv6 pinning; DNS failure/timeout; unsafe schemes/ports; and redirect DNS rejection before a second connection. MockTransport checks the actual outbound IP, Host header and SNI extension. Real TLS smoke verifies only one configured publisher connection.
+
+This is a coherent security increment within Milestone 1, not completion of the full product assignment or all forensic findings. Milestones 2–7 (PWA, timezone hub/widgets, timeline, simulator, museum and live polish) remain deferred. Existing tests were retained. No remote push, merge, PR or deployment. The 69 pre-existing CRLF-only entries remain untouched and excluded from staging.
+
+
 ## 2026-10-11 canonical pipeline migration (based on `8886239f9d2fdddcf58d9932a1bd2ca2dab641c0`)
 
 Windows, Python 3.13.5, Node 22.18.0, npm 10.9.3. Changes were validated in the Git checkout on `codex/apexf1-forensic-remediation`. The workspace-root source mirror and the pre-existing unstaged mirror/config/UI edits in the checkout were preserved.

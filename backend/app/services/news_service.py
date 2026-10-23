@@ -3,6 +3,7 @@ import asyncio
 import html
 import ipaddress
 import re
+import socket
 import time
 import xml.etree.ElementTree as ET
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode, urljoin
@@ -38,6 +39,37 @@ def safe_url(value):
 
 def plain(value):
     return html.unescape(re.sub(r"<[^>]*>", "", value or "")).strip()
+
+
+async def pinned_destination(value):
+    """Resolve once, reject mixed/private answers, and pin the outbound socket.
+
+    Keep Host and TLS verification bound to the publisher, not its IP address.
+    Validating DNS without pinning would leave a DNS-rebinding race.
+    """
+    normalized = safe_url(value)
+    if not normalized:
+        raise ValueError("Unsafe feed destination")
+    url = httpx.URL(normalized)
+    port = url.port or (443 if url.scheme == "https" else 80)
+    if port != (443 if url.scheme == "https" else 80):
+        raise ValueError("Nonstandard feed port")
+    try:
+        answers = await asyncio.wait_for(
+            asyncio.get_running_loop().getaddrinfo(
+                url.host, port, type=socket.SOCK_STREAM,
+            ), timeout=5,
+        )
+    except (OSError, asyncio.TimeoutError) as exc:
+        raise ValueError("Feed DNS unavailable") from exc
+    addresses = [ipaddress.ip_address(answer[4][0]) for answer in answers]
+    if not addresses or any(
+        not address.is_global or
+        (isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None)
+        for address in addresses
+    ):
+        raise ValueError("Unsafe feed DNS answer")
+    return url.copy_with(host=str(addresses[0])), url.host
 
 
 def parse_feed(body, publisher, source_url, ingested_at):
@@ -85,10 +117,11 @@ async def get_feed():
                 url = safe_url(url.strip())
                 if not url:
                     raise ValueError("Invalid source")
-                async with httpx.AsyncClient(timeout=8, headers={"User-Agent": "ApexF1/3.0"}) as client:
+                async with httpx.AsyncClient(timeout=8, trust_env=False, follow_redirects=False, headers={"User-Agent": "ApexF1/3.0"}) as client:
                     current_url = url
                     for redirect_count in range(4):
-                        async with client.stream("GET", current_url) as response:
+                        destination, hostname = await pinned_destination(current_url)
+                        async with client.stream("GET", destination, headers={"Host": hostname}, extensions={"sni_hostname": hostname}) as response:
                             if 300 <= response.status_code < 400:
                                 location = response.headers.get("location")
                                 current_url = safe_url(urljoin(current_url, location or ""))
