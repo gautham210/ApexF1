@@ -1,3 +1,7 @@
+/** Provider schedule strings must carry an explicit UTC offset. */
+function parseScheduledInstant(value?: string | null) {
+  return value && /T.*(?:Z|[+-]\d{2}:\d{2})$/.test(value) ? Date.parse(value) : NaN;
+}
 /** Schedule countdown only. A start instant cannot verify live or terminal status. */
 export type SessionState = "upcoming" | "start_passed" | "unknown";
 export interface SessionTimingState {
@@ -20,7 +24,7 @@ export function computeSessionTiming(
       ? targetDate.getTime()
       : typeof targetDate === "number"
         ? targetDate
-        : Date.parse(targetDate ?? "");
+        : parseScheduledInstant(targetDate);
   const now = nowInput instanceof Date ? nowInput.getTime() : (nowInput ?? Date.now());
   const valid = Number.isFinite(start) && Number.isFinite(now);
   const diff = valid ? Math.max(0, start - now) : 0;
@@ -60,10 +64,10 @@ export function resolveEventSessionFocus(
       : typeof nowInput === "number"
         ? nowInput
         : Date.now();
-  const valid = sessions.filter((s) => s.date && Number.isFinite(Date.parse(s.date)));
+  const valid = sessions.filter((s) => Number.isFinite(parseScheduledInstant(s.date)));
   if (valid.length === 0) {
     return {
-      session: sessions[0] || null,
+      session: null,
       timing: computeSessionTiming(null, undefined, now),
     };
   }

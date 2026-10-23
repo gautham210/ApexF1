@@ -142,3 +142,25 @@ export const timezones = [
   "Asia/Singapore",
   "Australia/Melbourne",
 ];
+
+/** Rank identities, not response order, determine the official leader gap. */
+export function championshipGap(rows: { position: number | null; points: number }[]) {
+  const leader = rows.find((r) => r.position === 1);
+  const runnerUp = rows.find((r) => r.position === 2);
+  return leader && runnerUp ? leader.points - runnerUp.points : null;
+}
+export function latestRaceWinner(results: Result[]) {
+  const races = results.filter((r) => r.session === "Race");
+  const latestRound = Math.max(...races.map((r) => r.round));
+  return races.find(
+    (r) =>
+      r.round === latestRound &&
+      r.position === 1 &&
+      !["disqualified", "did not start", "not classified", "excluded", "withdrawn"].includes(
+        (r.status ?? "").trim().toLowerCase(),
+      ) &&
+      !["D", "E", "W", "F", "R", "N", "NC", "EX"].includes(
+        (r.positionText ?? "").trim().toUpperCase(),
+      ),
+  );
+}

@@ -114,3 +114,55 @@ This is not a full production-readiness certification. Visual route/viewport tes
 The qualifying regressions cover grid P1 without qualifying P1, classified qualifying P1, event-specific constructor attribution across a transfer, sprint isolation, missing qualifying/fastest-lap coverage, and unchanged wins/podiums/points/transfer totals. Pagination tests cover duplicate events/rows, unchanged totals, exact offsets, and offsets exceeding provider totals. Career tests verify final-round titles, in-progress exclusion and unavailable finality.
 
 This is not a full production-readiness certification. Viewport review and RSS/authenticated OpenF1 smoke tests remain outstanding. See [architecture limits](PLATFORM_ARCHITECTURE.md), [remaining work](REMEDIATION_PLAN.md) and [audit](FORENSIC_AUDIT.md).
+
+
+## Independent acceptance — 2026-10-23
+
+Starting HEAD: dd3d6e9a5b5c95d795da57cb45908a1245f629b2, branch codex/apexf1-overnight-remediation (no configured upstream). Origin remains the requested GitHub repository. The starting commit contains 49 files; 69 pre-existing line-ending-only unstaged entries were inspected and preserved.
+
+Concrete defects fixed: ambiguous/date-only schedule strings no longer establish countdowns or focused sessions; failed race-control and stint channels retain unavailable rather than successful-empty semantics; season snapshot leader gap uses official ranks and latest winner excludes disqualified/unclassified records; model loading permits embedded GLTF buffers and same-origin blob textures while rejecting external resources; simulator baseline wording and standings link now reference its actual official round, rather than the first event frame.
+
+### Executed validation
+
+Python 3.13.5, Node 22.18.0, npm 10.9.3. Commands run in backend/frontend respectively. Windows sandbox limitations required approved execution outside the sandbox for Python async tests and Vite builds.
+
+| Check | Result |
+|---|---|
+| `python -X utf8 -m unittest discover -s tests -v` | PASS, exit 0, 64 tests, 6.003s. Existing NumPy deprecation/async slow-task diagnostics remain. |
+| `npm test` | PASS, exit 0, 32 tests, final 1.314s. Initial new countdown regression failed because invalid focus survived filtering; source corrected, assertion retained. GLTF synthetic fixture now uses the production URL boundary. |
+| `npm run typecheck` | PASS, exit 0. |
+| `npm run lint` | PASS, exit 0, zero errors; eight existing Fast Refresh warnings. |
+| `npm run build` | PASS, exit 0, 3022 modules. Main 492.85 kB / 153.78 gzip, Race Center 427.98 / 118.25, lazy Three 746.70 / 191.63. Companion about 31.7 kB. Large lazy Three chunk warning remains; excluded from precache. |
+| `npm run test:pwa` | PASS, exit 0, five final production-artifact tests, 0.690s. |
+| `npm audit --json` | PASS, exit 0, zero known vulnerabilities. |
+| temporary isolated `python -m pip_audit --no-deps --disable-pip -r requirements.txt` | PASS, exit 0, no known vulnerabilities in direct pins. Transitive clean Linux resolution is NOT VERIFIED by this scan. Application dependency environment unchanged. |
+| Public provider | PASS for sampled history and RSS. Round-one 1988/2009/2025 returned HTTP 200 success with 26/40/40 classification rows. One initial 2009 request timed out; bounded follow-up succeeded. Final season snapshots: Senna 1988 official 90 versus event-earned 94 (421 rows); Button 2009 95 versus 95 (680 rows); Norris 2025 423 versus 423 (1078 rows). No errors in those final responses. RSS returned success, 100 articles, no feed errors. |
+| Live authentication | UNVERIFIED: health HTTP 200 reports not_configured. Mocked failure/empty channels and lifecycle regressions pass; no authenticated live claim. |
+| Docker / remote CI | UNVERIFIED: Docker executable absent; no remote CI run triggered or claimed. Docker/Nginx/workflow source reviewed. |
+
+### Browser evidence and limits
+
+Actual in-app browser on the production preview: timezone hub rendered real Australian 2025 schedule with UTC, Kolkata, local and Tokyo columns. No page overflow at widths 320, 360, 390, 430, 768, 1024, 1440. Museum detail/comparison and 1988 round-one standings also fit 320 px. This is representative coverage, not every route at every width.
+
+Simulator: Max Verstappen +5 changed 421 to 426 against Norris 423; save, comparison, load, undo and baseline restore exercised. A separate saved scenario survived full reload; test scenarios removed. Final corrected baseline link verified as /standings?year=2025&round=24 with accurate explanatory text. Timeline event-point chart scrubbed to round 24; constructor switch and play/pause worked. Official snapshot loading was observed, but full official playback was not completed in this pass.
+
+Historical standings, Prost and McLaren profiles rendered year 1988/round 1, correct nine-point championship snapshot, and explicit unavailable qualifying/fastest-lap coverage. Museum M23/MP4/4 comparison, deep link and honest missing-model placeholder worked. Mobile More dialog Escape restored trigger focus.
+
+Final PWA build update action worked. Stopped only the verified task-owned preview, reloaded the MP4/4 deep link, and observed the rendered catalogue/detail plus offline/stale banner. Restored preview and reloaded; banner cleared. API responses are not persisted by the worker. Backend restarted to use current source.
+
+At the last browser inspection the tool reported local browser use disabled in Work settings. Further live-mode inspection and viewport reset could not execute; last applied width was 320 px. Prior completed checks above remain actual observations. Home/search/favorites full end-to-end reacceptance, comprehensive reduced-motion/assistive-technology coverage, full official timeline playback and authenticated live flow remain UNVERIFIED in this pass.
+
+### Area disposition and release decision
+
+- Security/data integrity: PASS for targeted source and deterministic tests; deployment policy remains UNVERIFIED.
+- PWA: PASS for desktop browser update/offline/recovery and artifact tests; physical installation UNVERIFIED.
+- Widgets/timezones: PASS for tested conversions, boundaries and responsive hub.
+- Championship timeline: PARTIAL; historical totals and event controls verified, full official snapshot playback matrix incomplete.
+- Simulator: PASS for explicit point adjustments/persistence; unsupported finishing-order and historical-rule resimulation remain disabled.
+- Museum: PASS for catalogue/comparison and loader boundary; authentic supplied-model rendering UNVERIFIED.
+- Live Race Center: PARTIAL; deterministic safety tests pass; authenticated provider behavior UNVERIFIED.
+- Search/profiles/favorites/navigation: PARTIAL; historical profiles and mobile dialog checked, exhaustive workflow matrix incomplete.
+- Responsive/accessibility: PARTIAL; specified widths checked on timezone hub; complete OS/assistive matrix UNVERIFIED.
+- Reliability/production: PARTIAL; local suites/build pass; Docker and remote CI UNVERIFIED.
+
+NOT READY — SPECIFIC BLOCKERS REMAIN for complete release acceptance: authenticated live-session end-to-end verification, container/clean Linux validation, and incomplete official-timeline/full-route acceptance. Physical Android/iOS installation and calendar import, supplied-model GPU/rendering checks, and notification delivery require their respective devices/assets/external environment. No push, PR, merge or deployment performed.

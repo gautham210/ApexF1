@@ -90,3 +90,8 @@ See VALIDATION.md for executed commands, browser operations and failures encount
 - `frontend/tests/integrity.test.ts`
 - `frontend/tests/pwa.test.mjs`
 - `frontend/vite.config.ts`
+
+
+## Independent acceptance fixes — 2026-10-23
+
+Countdowns now reject missing timezone offsets, live channel failures remain unavailable, season snapshot rankings/winners respect classification identity, embedded GLTF buffers and local blob textures pass the guarded resource loader, and simulator links/labels identify the actual official baseline round. Regression suites: 64 backend, 32 frontend and five PWA tests pass. See VALIDATION.md independent acceptance section for browser evidence, historical totals, dependency scan scope and remaining release gates. These bounded results supersede blanket closure claims; complete release acceptance remains partial.

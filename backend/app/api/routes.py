@@ -137,18 +137,18 @@ async def live_snapshot():
 async def live_race_control():
     state_info = await openf1_service.get_session_state()
     if not state_info.get("session_key"):
-        return APIResponse(success=True, data=[])
+        return APIResponse(success=False, data=None, error="Live session unavailable")
     data = await openf1_service.get_race_control_messages(state_info["session_key"])
-    return APIResponse(success=True, data=data)
+    return APIResponse(success=data is not None, data=data, error="Race control unavailable" if data is None else None)
 
 
 @router.get("/live/stints", response_model=APIResponse)
 async def live_stints():
     state_info = await openf1_service.get_session_state()
     if not state_info.get("session_key"):
-        return APIResponse(success=True, data={})
+        return APIResponse(success=False, data=None, error="Live session unavailable")
     data = await openf1_service.get_stints(state_info["session_key"])
-    return APIResponse(success=True, data=data)
+    return APIResponse(success=data is not None, data=data, error="Tyre stints unavailable" if data is None else None)
 
 
 # ─── Archive data (FastF1 only) ───────────────────────────────────────────────

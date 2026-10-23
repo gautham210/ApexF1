@@ -378,15 +378,15 @@ async def get_live_weather(session_key: int) -> Optional[Dict]:
     return result
 
 
-async def get_race_control_messages(session_key: int) -> List[Dict]:
+async def get_race_control_messages(session_key: int) -> Optional[List[Dict]]:
     """Get race control messages for the session."""
     cache_key = f"race_control_{session_key}"
     if cache_key in _medium_cache:
         return _medium_cache[cache_key]
 
     data = await _get("/race_control", {"session_key": session_key})
-    if not data or not isinstance(data, list):
-        return []
+    if data is None or not isinstance(data, list):
+        return None
 
     messages = []
     for msg in data[-20:]:  # last 20 messages
@@ -405,15 +405,15 @@ async def get_race_control_messages(session_key: int) -> List[Dict]:
     return result
 
 
-async def get_stints(session_key: int) -> Dict[str, List[Dict]]:
+async def get_stints(session_key: int) -> Optional[Dict[str, List[Dict]]]:
     """Get tyre stint data by driver."""
     cache_key = f"stints_{session_key}"
     if cache_key in _medium_cache:
         return _medium_cache[cache_key]
 
     data = await _get("/stints", {"session_key": session_key})
-    if not data or not isinstance(data, list):
-        return {}
+    if data is None or not isinstance(data, list):
+        return None
 
     result: Dict[str, List[Dict]] = {}
     for stint in data:

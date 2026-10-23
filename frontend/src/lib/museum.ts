@@ -94,3 +94,19 @@ export function validatedModel(model: CarEntry["model"]) {
     return null;
   return model;
 }
+
+/** Embedded GLTF buffers and loader-created blob textures are legitimate resources. */
+export function modelResourceUrl(url: string, origin: string) {
+  const u = new URL(url, origin);
+  if (
+    u.protocol === "data:" &&
+    /^data:(?:application\/(?:octet-stream|gltf-buffer)|image\/(?:png|jpeg|webp|ktx2));base64,/i.test(
+      url,
+    )
+  )
+    return url;
+  if (u.protocol === "blob:" && u.origin === origin) return url;
+  if (u.origin === origin && u.pathname.startsWith("/models/") && !u.search && !u.hash)
+    return u.href;
+  throw new Error("External model resource rejected");
+}

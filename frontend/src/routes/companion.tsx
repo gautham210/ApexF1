@@ -400,14 +400,20 @@ function Championship({ year, simulation }: { year: number; simulation: boolean 
             >
               {simulation ? "Back to timeline" : "Open what-if simulator"}
             </Link>
-            <Link to="/standings" search={{ year, round: frame?.round }} className={control}>
-              Official standings at selected round
+            <Link
+              to="/standings"
+              search={{ year, round: simulation ? (official?.round ?? undefined) : frame?.round }}
+              className={control}
+            >
+              {simulation ? "Official simulator baseline" : "Official standings at selected round"}
             </Link>
           </div>
           <p className="text-sm text-amber-300 my-4">
-            {officialMode && !perEvent && !simulation
-              ? "Published official standings snapshots, retaining historical scoring and adjustments. Gaps mean that a round snapshot is unavailable; they are never reconstructed."
-              : "Event-point accumulation from provider race and sprint points. Not official historical standings: dropped scores, deductions and exclusions may differ."}
+            {simulation
+              ? `Hypothetical adjustments to the published official standings after round ${official?.round ?? "unavailable"}. Event-point accumulation is not used as the baseline.`
+              : officialMode && !perEvent
+                ? "Published official standings snapshots, retaining historical scoring and adjustments. Gaps mean that a round snapshot is unavailable; they are never reconstructed."
+                : "Event-point accumulation from provider race and sprint points. Not official historical standings: dropped scores, deductions and exclusions may differ."}
           </p>
           {(data.errors.races || data.errors.sprints) && (
             <p role="alert">Partial result coverage — this progression is incomplete.</p>

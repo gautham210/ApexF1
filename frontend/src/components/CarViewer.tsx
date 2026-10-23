@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { CarEntry } from "@/lib/museum";
-import { validatedModel } from "@/lib/museum";
+import { validatedModel, modelResourceUrl } from "@/lib/museum";
 export default function CarViewer({ car }: { car: CarEntry }) {
   const container = useRef<HTMLDivElement>(null);
   const actions = useRef<{
@@ -92,17 +92,7 @@ export default function CarViewer({ car }: { car: CarEntry }) {
         offset += chunk.length;
       }
       const manager = new THREE.LoadingManager();
-      manager.setURLModifier((url) => {
-        const u = new URL(url, location.origin);
-        if (
-          u.origin !== location.origin ||
-          !u.pathname.startsWith("/models/") ||
-          u.search ||
-          u.hash
-        )
-          throw new Error("External model resource rejected");
-        return u.href;
-      });
+      manager.setURLModifier((url) => modelResourceUrl(url, location.origin));
       const loader = new GLTFLoader(manager);
       const gltf = await loader.parseAsync(
         buffer.buffer,

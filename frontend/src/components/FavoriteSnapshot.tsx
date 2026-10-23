@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useSeason, DataNotice } from "./SeasonData";
 import { usePreferences } from "@/lib/preferences";
-import { readLocal, writeLocal } from "@/lib/companion";
+import { readLocal, writeLocal, championshipGap, latestRaceWinner } from "@/lib/companion";
 export function FavoriteSnapshot({ year }: { year: number }) {
   const query = useSeason(year);
   const [prefs, update] = usePreferences();
@@ -11,9 +11,7 @@ export function FavoriteSnapshot({ year }: { year: number }) {
   const [team, setTeam] = useState(() => readLocal(`apexf1.favorite.team.${year}`, ""));
   const drivers = data?.driver_standings?.rows ?? [];
   const teams = data?.constructor_standings?.rows ?? [];
-  const winner = data?.results
-    .filter((r) => r.session === "Race" && r.position === 1)
-    .sort((a, b) => b.round - a.round)[0];
+  const winner = latestRaceWinner(data?.results ?? []);
   return (
     <section className="glass rounded-2xl p-6 my-6">
       <h2 className="font-display text-2xl">Season snapshot · {year}</h2>
@@ -89,7 +87,7 @@ export function FavoriteSnapshot({ year }: { year: number }) {
       <p>
         Championship leader:{" "}
         {drivers.find((r) => r.position === 1)?.Driver?.familyName ?? "Unavailable"} · gap{" "}
-        {drivers.length >= 2 ? drivers[0].points - drivers[1].points : "unavailable"} points
+        {championshipGap(drivers) ?? "unavailable"} points
       </p>
       <p className="mt-3">
         Latest confirmed race winner:{" "}

@@ -161,3 +161,8 @@ Phase A remains partial. This increment deliberately closes three concrete sourc
 - F-13: manual export wording retained; Google links use exact start markers instead of invented two-hour durations, and date-only timestamps are rejected. New calendar regression passes.
 
 Source and test evidence supports these bounded fixes, not blanket production-readiness or exhaustive provider validation. New product functionality, limits, source links and model configuration are described in COMPANION.md. Real offline browser failure was investigated and corrected before final acceptance; both versioned-shell and Origin-variant static cache regressions now pass.
+
+
+## Independent acceptance fixes — 2026-10-23
+
+Countdowns now reject missing timezone offsets, live channel failures remain unavailable, season snapshot rankings/winners respect classification identity, embedded GLTF buffers and local blob textures pass the guarded resource loader, and simulator links/labels identify the actual official baseline round. Regression suites: 64 backend, 32 frontend and five PWA tests pass. See VALIDATION.md independent acceptance section for browser evidence, historical totals, dependency scan scope and remaining release gates. These bounded results supersede blanket closure claims; complete release acceptance remains partial.

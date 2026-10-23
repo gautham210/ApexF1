@@ -871,7 +871,10 @@ test("GLTF viewer dependency parses a synthetic test triangle and rejects invali
       },
     ],
   };
-  const loader = new GLTFLoader();
+  const { LoadingManager } = await import("three");
+  const loader = new GLTFLoader(
+    new LoadingManager().setURLModifier((url) => modelResourceUrl(url, "https://apex.example")),
+  );
   // Node lacks the browser progress-event API used by Three's data-URI loader.
   const prior = globalThis.ProgressEvent;
   if (!prior)
@@ -922,4 +925,65 @@ test("widget season identity is independent of date rollover into the next calen
     raceWidgetData([event], Date.parse("2026-12-31T20:00:00Z"), 2026).nextRace?.year,
     2026,
   );
+});
+
+import { championshipGap, latestRaceWinner } from "../src/lib/companion";
+import { modelResourceUrl } from "../src/lib/museum";
+import type { Result } from "../src/lib/api/history";
+test("countdowns reject date-only and timezone-ambiguous provider schedules", () => {
+  for (const date of ["2026-04-01", "2026-04-01T12:00:00"])
+    assert.equal(computeSessionTimingState(date, "Race", 0).status, "unknown");
+  assert.equal(
+    findFocusedSession({ session1: "Race", session1_date: "2026-04-01T12:00:00" }, 0),
+    null,
+  );
+  assert.equal(
+    computeSessionTimingState("2026-04-01T12:00:00+05:30", "Race", 0).status,
+    "upcoming",
+  );
+});
+test("snapshot gap uses official ranks and winner excludes disqualified or missing latest winners", () => {
+  assert.equal(
+    championshipGap([
+      { position: 2, points: 90 },
+      { position: 1, points: 100 },
+    ]),
+    10,
+  );
+  assert.equal(
+    championshipGap([
+      { position: 1, points: 100 },
+      { position: 3, points: 80 },
+    ]),
+    null,
+  );
+  const earlier = {
+    session: "Race",
+    round: 1,
+    position: 1,
+    status: "Finished",
+    positionText: "1",
+  } as Result;
+  const excluded = { ...earlier, round: 2, status: "Disqualified" };
+  assert.equal(latestRaceWinner([earlier, excluded]), undefined);
+  assert.equal(latestRaceWinner([earlier, { ...earlier, session: "Sprint", round: 2 }]), earlier);
+});
+test("model resource boundary permits embedded buffers and local blobs but denies external assets", () => {
+  const origin = "https://apex.example";
+  assert.equal(
+    modelResourceUrl("data:application/octet-stream;base64,AAAA", origin),
+    "data:application/octet-stream;base64,AAAA",
+  );
+  assert.equal(
+    modelResourceUrl("blob:https://apex.example/test", origin),
+    "blob:https://apex.example/test",
+  );
+  assert.equal(modelResourceUrl("/models/texture.png", origin), origin + "/models/texture.png");
+  for (const url of [
+    "https://other.example/car.png",
+    "blob:https://other.example/test",
+    "data:text/html;base64,AAAA",
+    "/models/../secret",
+  ])
+    assert.throws(() => modelResourceUrl(url, origin));
 });

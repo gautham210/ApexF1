@@ -71,3 +71,21 @@ class CompanionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first,second)
         await asyncio.sleep(0)
         self.assertFalse(f._schedule_pending)
+
+    async def test_failed_live_channels_are_distinct_from_verified_empty_results(self):
+        from app.services import openf1_service as o
+        from app.api import routes
+        o._medium_cache.clear()
+        with patch.object(o, '_get', AsyncMock(return_value=None)):
+            self.assertIsNone(await o.get_race_control_messages(778))
+            self.assertIsNone(await o.get_stints(778))
+        with patch.object(o, 'get_live_timing', AsyncMock(return_value=[])), patch.object(o, 'get_live_weather', AsyncMock(return_value={})), patch.object(o, '_get', AsyncMock(return_value=None)):
+            snapshot = await o.get_live_snapshot(778)
+        self.assertEqual(snapshot['errors']['race_control'], 'unavailable')
+        with patch.object(o, '_get', AsyncMock(return_value=[])):
+            self.assertEqual(await o.get_race_control_messages(778), [])
+            self.assertEqual(await o.get_stints(778), {})
+        with patch.object(o, 'get_session_state', AsyncMock(return_value={'session_key': 779})), patch.object(o, 'get_stints', AsyncMock(return_value=None)):
+            self.assertFalse((await routes.live_stints()).success)
+        with patch.object(o, 'get_session_state', AsyncMock(return_value={})):
+            self.assertFalse((await routes.live_race_control()).success)
