@@ -39,3 +39,15 @@ Next: finish integrity acceptance review, then Milestone 2 PWA foundation before
 ## Continuation from d8a03d8
 
 Phase A checkpoint: correct unsupported Home duration-based status, preserve partial career coverage through frontend schema/UI, and replace production Vite preview with static serving and same-origin proxy configuration. Findings ledger now distinguishes source/test evidence from runtime verification. Remaining Phase A includes backend schedule status estimates, provider-backed profile registry and full consumer acceptance review. Phase B PWA is the next product milestone after those gates; no installation, native widget, offline cache or push capability is claimed. Later phases C–G remain deferred to subsequent coherent increments.
+
+## Integrated delivery from 6ee6d53 — supersedes prior product deferrals
+
+- Integrity: classification-backed completion, explicit failures, year-bound schedule single-flight, required WebSocket Origin unless overridden, conflict propagation, selected-season roster, truthful calendar markers, stale live clearing and partial channels.
+- PWA/mobile: manifest/icons, static versioned offline shell, safe update action, network warning, safe areas and keyboard-accessible More menu. Real browser offline reload and static artifact tests pass; physical installation remains unverified.
+- Timezone/widgets: provider timetable, IANA search/favorites/UTC/IST/local conversion, countdown widgets, copy/share, foreground reminders and shared versioned native-adapter contract.
+- History: official round snapshots plus separately labelled event-point accumulation, multi-competitor graph, scrub/play/step/reset, round classification links and season/kind isolation.
+- Simulator: explicit points adjustments, immutable official baseline, hypothetical provisional ranks, reason/round ledger, undo/reset, named local save/load/delete/compare. Unsupported finishing-order/rule reconstructions are disabled.
+- Museum: five sourced catalogue entries, filters/details/comparison and a local GLB/GLTF manifest/Three viewer framework with controls, error/fallback and cleanup. Authentic assets await owner supply; no fake car geometry is shipped.
+- Discovery/polish: season-aware driver/team/circuit/event search and profile links, favorites, reduced-motion inheritance, responsive overflow checks, lap/sector details and weather observation times in the existing Race Center.
+
+Remaining external acceptance: physical Android/iOS installs, real supplied-model WebGL/device performance, authenticated OpenF1 sessions/reconnects, Docker execution and remote CI. Native widgets/background push are separate platform integrations, not PWA claims. Exhaustive historical provider coverage and all route/assistive-technology combinations are not certified. See VALIDATION.md for exact completed checks and failures fixed during implementation.

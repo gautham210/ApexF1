@@ -7,7 +7,8 @@ import heroGarage from "@/assets/hero-garage.jpg";
 import heroCircuit from "@/assets/hero-circuit.jpg";
 import { GlassPanel } from "@/components/GlassPanel";
 import { usePreferences, TEAMS, type TeamKey } from "@/lib/preferences";
-import { getDriversListByYear, getDriverNumberByName } from "@/lib/store";
+import { useSettingsStore } from "@/lib/store";
+import { useSeason } from "@/components/SeasonData";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/profile")({
@@ -20,10 +21,6 @@ export const Route = createFileRoute("/profile")({
   component: ProfilePage,
 });
 
-const DRIVERS_2026 = Object.values(getDriversListByYear(2026)).sort((a, b) =>
-  a.name.localeCompare(b.name),
-);
-
 const circuits = [
   { key: "spa", name: "Spa-Francorchamps", sub: "Belgian Ardennes" },
   { key: "monaco", name: "Monaco", sub: "Monte-Carlo" },
@@ -34,6 +31,16 @@ const circuits = [
 ];
 
 function ProfilePage() {
+  const year = useSettingsStore((s) => s.selectedYear);
+  const roster = useSeason(year);
+  const drivers = Object.values(roster.data?.drivers ?? {})
+    .map((d) => ({
+      name: `${d.givenName} ${d.familyName}`,
+      team: Object.values(d.teams).join(" / "),
+      color: "currentColor",
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
   const [prefs, update] = usePreferences();
   const [step, setStep] = useState<"identity" | "driver" | "team" | "circuit" | "done">(
     prefs.onboarded ? "done" : "identity",
@@ -106,10 +113,19 @@ function ProfilePage() {
               key="driver"
               onNext={() => setStep("team")}
               title="Your driver"
-              subtitle="Their stories rise to the top of your weekend."
+              subtitle={`Choose from provider-recorded drivers in ${year}.`}
             >
+              <p role="status" className="text-sm text-muted-foreground mb-4">
+                {roster.isPending
+                  ? "Loading season driver registry…"
+                  : roster.isError
+                    ? "Driver registry unavailable. Try again when the provider recovers."
+                    : drivers.length
+                      ? `${year} provider roster`
+                      : "No driver entries available for this season."}
+              </p>
               <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
-                {DRIVERS_2026.map((d) => {
+                {drivers.map((d) => {
                   const selected = prefs.driver === d.name;
                   return (
                     <button
@@ -152,7 +168,7 @@ function ProfilePage() {
             <Step
               key="team"
               onNext={() => setStep("circuit")}
-              title="Your team"
+              title="Your color palette"
               subtitle="A whisper of your colors appears across the app."
             >
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -194,7 +210,7 @@ function ProfilePage() {
                 setStep("done");
               }}
               title="A circuit you love"
-              subtitle="We’ll surface its weekend with extra care."
+              subtitle="Save a circuit preference on this device."
               finalLabel="Enter ApexF1"
             >
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -242,7 +258,7 @@ function ProfilePage() {
               <GlassPanel variant="strong" className="grid gap-8 p-8 lg:grid-cols-3">
                 <ProfileFact label="Driver" value={prefs.driver ?? "—"} />
                 <ProfileFact
-                  label="Team"
+                  label="Palette"
                   value={prefs.team ? TEAMS[prefs.team].name : "—"}
                   accent={prefs.team ? TEAMS[prefs.team].accent : undefined}
                 />
@@ -268,17 +284,17 @@ function ProfilePage() {
                     {
                       key: "qualifying",
                       label: "Qualifying Alerts",
-                      desc: "Instantly notifies you when Q1 goes green.",
+                      desc: "Save a preference for qualifying updates; delivery unavailable.",
                     },
                     {
                       key: "formationLap",
                       label: "Race Reminders",
-                      desc: "Pushes formation lap warnings 10 minutes prior.",
+                      desc: "Save a race reminder preference; background delivery unavailable.",
                     },
                     {
                       key: "weather",
                       label: "Weather Warnings",
-                      desc: "Notifies you when rain sensors trigger on track.",
+                      desc: "Save a weather-alert preference; delivery unavailable.",
                     },
                     {
                       key: "replay",

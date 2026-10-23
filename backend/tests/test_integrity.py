@@ -89,7 +89,7 @@ class IntegrityTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_latest_intervals_include_lapped_drivers(self):
         async def provider(path, params):
-            return {"/intervals":[{"driver_number":1,"date":"2026-01-01","gap_to_leader":1},{"driver_number":1,"date":"2026-01-02","gap_to_leader":"+1 LAP","interval":"+1 LAP"}],"/drivers":[{"driver_number":1,"full_name":"Test"}],"/position":[{"driver_number":1,"position":2}],"/stints":[],"/pit":None}[path]
+            return {"/intervals":[{"driver_number":1,"date":"2026-01-01","gap_to_leader":1},{"driver_number":1,"date":"2026-01-02","gap_to_leader":"+1 LAP","interval":"+1 LAP"}],"/drivers":[{"driver_number":1,"full_name":"Test"}],"/position":[{"driver_number":1,"position":2}],"/stints":[],"/pit":None,"/laps":[]}[path]
         with patch.object(o, "_get", side_effect=provider):
             rows = await o.get_live_timing(123)
         self.assertEqual(rows[0]["gap_to_leader"], "+1 LAP")
@@ -159,11 +159,18 @@ class IntegrityTests(unittest.IsolatedAsyncioTestCase):
                 pass
         self.assertEqual(cm.exception.code, 1008)
 
-        # 5. Missing origin in development is accepted
-        with patch.object(settings, "APP_ENV", "development"):
+        # 5. Missing origin is accepted only with an explicit non-browser-client override
+        with patch.object(settings, "APP_ENV", "development"), patch.object(settings, "WS_ALLOW_NO_ORIGIN", True):
             with client.websocket_connect("/api/ws/live") as ws:
                 data = ws.receive_json()
                 self.assertIn("type", data)
+
+        # Default development policy also rejects absent Origin.
+        with patch.object(settings, "APP_ENV", "development"), patch.object(settings, "WS_ALLOW_NO_ORIGIN", False):
+            with self.assertRaises(WebSocketDisconnect) as cm:
+                with client.websocket_connect("/api/ws/live"):
+                    pass
+            self.assertEqual(cm.exception.code, 1008)
 
         # 6. Missing origin in production without override is rejected with 1008
         with patch.object(settings, "APP_ENV", "production"), patch.object(settings, "WS_ALLOW_NO_ORIGIN", False):

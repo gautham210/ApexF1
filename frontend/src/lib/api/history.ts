@@ -1,5 +1,6 @@
+import type { ScheduleEvent } from "../store";
 import { z } from "zod";
-import { api } from "./client";
+import { api, f1Api } from "./client";
 
 const driver = z.object({
   driverId: z.string(),
@@ -72,6 +73,8 @@ export const seasonSchema = z.object({
       season: z.number(),
       round: z.number(),
       raceName: z.string(),
+      has_conflict: z.boolean().optional(),
+      conflict: z.unknown().optional(),
       date: z.string(),
       time: z.string().nullable(),
       Circuit: z.object({
@@ -175,3 +178,80 @@ export function seasonSearch(input: Record<string, unknown>): { year?: number; r
     round: Number.isInteger(round) && round > 0 && round <= 30 ? round : undefined,
   };
 }
+
+export const progressionSchema = z.object({
+  year: z.number(),
+  kind: z.enum(["drivers", "constructors"]),
+  source: z.string(),
+  status: z.enum(["success", "partial"]),
+  fetched_at: z.string(),
+  cache_seconds: z.number(),
+  rounds: z.array(
+    z.object({
+      round: z.number(),
+      points: z.record(z.number()).nullable(),
+      positions: z.record(z.number().nullable()).nullable(),
+      error: z.string().nullable(),
+    }),
+  ),
+});
+export async function getOfficialProgression(
+  year: number,
+  kind: "drivers" | "constructors",
+  signal?: AbortSignal,
+) {
+  const response = await api.get<never, unknown>("/api/history/progression", {
+    params: { year, kind },
+    signal,
+    timeout: 90000,
+  });
+  const data = z.object({ success: z.literal(true), data: progressionSchema }).parse(response).data;
+  if (data.year !== year || data.kind !== kind) throw new Error("Progression identity mismatch");
+  return data;
+}
+export async function getHistoricalSchedule(
+  year: number,
+  signal?: AbortSignal,
+): Promise<{ success: boolean; data: ScheduleEvent[] }> {
+  const response = await api.get<never, unknown>("/api/history/schedule", {
+    params: { year },
+    signal,
+  });
+  const data = z
+    .object({
+      success: z.literal(true),
+      data: z.array(
+        z.object({
+          season: z.number(),
+          round: z.number(),
+          raceName: z.string(),
+          date: z.string(),
+          time: z.string().nullable(),
+          Circuit: z.object({
+            circuitId: z.string(),
+            circuitName: z.string(),
+            Location: z.object({ country: z.string(), locality: z.string() }),
+          }),
+        }),
+      ),
+    })
+    .parse(response).data;
+  if (data.some((r) => r.season !== year)) throw new Error("Schedule identity mismatch");
+  return {
+    success: true,
+    data: data.map((r) => ({
+      round_number: r.round,
+      country: r.Circuit.Location.country,
+      location: r.Circuit.Location.locality,
+      event_name: r.raceName,
+      circuit_name: r.Circuit.circuitName,
+      session5: "Race",
+      session5_date: r.time ? `${r.date}T${r.time}` : undefined,
+      is_completed: false,
+      is_upcoming: false,
+    })),
+  };
+}
+
+export const getScheduleForYear = (year: number, signal?: AbortSignal) =>
+  year < 2018 ? getHistoricalSchedule(year, signal) : f1Api.getSchedule(year, signal);

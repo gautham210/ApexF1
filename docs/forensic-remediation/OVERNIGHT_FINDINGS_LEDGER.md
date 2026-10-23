@@ -146,3 +146,18 @@ Starting HEAD d8a03d8996794da67c14b016444a59957bcd64f8. The following statuses s
 | F-13 | Standard ICS download/Google link copy inspected; notification/synchronization capability is not claimed. Browser calendar import NOT VERIFIED. |
 
 Phase A remains partial. This increment deliberately closes three concrete source defects before offline caching. Phase B PWA, Phase C widgets/timezone hub, D timeline, E simulator, F museum and G live enhancements remain unimplemented by this continuation.
+
+## Integrated acceptance evidence — 2026-10-23 (supersedes checkpoint product deferrals)
+
+- F-23: existing hostile DNS/redirect/TLS tests pass; full configured feed retrieval now succeeds (100 normalized articles, no feed errors).
+- F-24: absent Origin denied by default in development and production; explicit non-browser override remains. Tests cover both policies; preview WS origins are deliberately not silently trusted.
+- F-04: partial career metadata and notices preserved from prior fix; existing regression suite passes. No all-era completeness claim.
+- F-05: reconciliation uses current schedule cache key and retains stored disputes; canonical season schema retains conflict flags, Sessions suppresses disputed geometry, calendar markers expose unconfirmed venue. Conservative provider-name disagreements remain visible rather than guessed away.
+- F-08: four-hour completion rule removed; actual race classifications establish completion. Unknown status remains unverified, and provider failure is unavailable. Five new companion regressions include bounded/deduplicated schedule loads and historical official snapshots.
+- F-14: profile driver selection now uses selected-year provider entries; team appearance is labelled palette, independent of constructor identity. Favorites/discovery link to year-scoped profiles.
+- F-16/F-19: missing live positions no longer become 99; DRS and current tyre age remain unknown, starting age is distinct. Lap/sector channels, partial metadata, expiry/order guards, cleanup and no-data states are implemented and deterministically tested. Authenticated live evidence remains BLOCKED (`not_configured`).
+- F-21: source configuration preserved; real container test remains BLOCKED (Docker absent). F-22: updated workflow parses and runs production PWA artifact tests after build; remote run NOT VERIFIED.
+- F-25: existing no-gainer semantics tests pass. F-26: root MotionConfig retained; new chart playback is explicit user action, viewer rendering is demand-driven. Mobile menu Escape/focus tested; full OS reduced-motion/device matrix NOT VERIFIED.
+- F-13: manual export wording retained; Google links use exact start markers instead of invented two-hour durations, and date-only timestamps are rejected. New calendar regression passes.
+
+Source and test evidence supports these bounded fixes, not blanket production-readiness or exhaustive provider validation. New product functionality, limits, source links and model configuration are described in COMPANION.md. Real offline browser failure was investigated and corrected before final acceptance; both versioned-shell and Origin-variant static cache regressions now pass.

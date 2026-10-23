@@ -92,6 +92,9 @@ export function DataNotice({
           ? `Partial coverage: ${Object.keys(data.errors).join(", ")} unavailable. `
           : ""}
         {refreshing ? "Refreshing; the previous snapshot remains visible. " : ""}
+        {data.schedule.some((r) => r.has_conflict)
+          ? "Provider event identity disagreement: inspect the source before relying on venue details. "
+          : ""}
         Jolpica · standings after round {data.driver_standings?.round ?? "unavailable"}. Event
         totals can differ from championship points because of deductions or historical scoring
         rules.

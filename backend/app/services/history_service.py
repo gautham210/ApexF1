@@ -399,3 +399,27 @@ async def career(driver_id: str, year: int | None = None):
         "season_coverage": "partial" if has_partial_seasons else "complete",
         "failed_seasons": sorted(failed_seasons),
     }
+
+
+async def championship_progression(year, kind):
+    """Published per-round snapshots, preserving contemporary scoring/countback."""
+    latest = await standings(year, None, kind)
+    if latest["round"] is None or not latest["rows"]:
+        raise jolpica.ProviderError("standings_unavailable")
+    calendar = await races(year, "")
+    rounds = sorted({race.round for race in calendar if race.round <= latest["round"]})
+    semaphore = asyncio.Semaphore(3)
+    async def snapshot(round_number):
+        async with semaphore:
+            try:
+                result = latest if round_number == latest["round"] else await standings(year, round_number, kind)
+                if result["round"] != round_number or not result["rows"]:
+                    raise jolpica.ProviderError("snapshot_unavailable")
+                return {"round": round_number, "points": {r["id"]: r["points"] for r in result["rows"]},
+                        "positions": {r["id"]: r["position"] for r in result["rows"]}, "error": None}
+            except jolpica.ProviderError as exc:
+                return {"round": round_number, "points": None, "positions": None, "error": exc.reason}
+    snapshots = await asyncio.gather(*(snapshot(r) for r in rounds))
+    return {"year": year, "kind": kind, "source": "Jolpica official standings snapshots",
+            "status": "partial" if any(s["error"] for s in snapshots) else "success",
+            "fetched_at": now(), "rounds": snapshots, "cache_seconds": 900}

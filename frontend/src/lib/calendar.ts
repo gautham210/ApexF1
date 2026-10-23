@@ -18,14 +18,20 @@ export function createCalendar(events: ScheduleEvent[], year: number, now = new 
     for (const key of sessionKeys) {
       const date = event[`${key}_date`];
       const name = event[key];
-      if (!date || !name || !Number.isFinite(Date.parse(date))) continue;
+      if (
+        !date ||
+        !name ||
+        !/(Z|[+-]\d{2}:\d{2})$/.test(date) ||
+        !Number.isFinite(Date.parse(date))
+      )
+        continue;
       lines.push(
         "BEGIN:VEVENT",
         `UID:${year}-${event.round_number}-${key}@apexf1`,
         `DTSTAMP:${stamp(now)}`,
         `DTSTART:${stamp(new Date(date))}`,
         `SUMMARY:${escapeText(`${event.event_name} — ${name}`)}`,
-        `LOCATION:${escapeText(`${event.location}, ${event.country}`)}`,
+        `LOCATION:${escapeText(event.has_conflict ? "Venue unconfirmed: provider disagreement" : `${event.location}, ${event.country}`)}`,
         "DESCRIPTION:Schedule snapshot. Re-export after timetable changes. Session end time unavailable.",
         "END:VEVENT",
       );
@@ -50,4 +56,26 @@ export function createCalendar(events: ScheduleEvent[], year: number, now = new 
       })
       .join("\r\n") + "\r\n"
   );
+}
+
+export function googleCalendarUrl(event: ScheduleEvent, key: (typeof sessionKeys)[number]) {
+  const instant = event[`${key}_date`];
+  if (
+    !instant ||
+    !event[key] ||
+    !/(Z|[+-]\d{2}:\d{2})$/.test(instant) ||
+    !Number.isFinite(Date.parse(instant))
+  )
+    return null;
+  const start = stamp(new Date(instant));
+  const params = new URLSearchParams({
+    action: "TEMPLATE",
+    text: `${event.event_name} — ${event[key]}`,
+    dates: `${start}/${start}`,
+    details: "Schedule snapshot. Session end time unavailable; this is a start-time marker.",
+    location: event.has_conflict
+      ? "Venue unconfirmed: provider disagreement"
+      : `${event.location}, ${event.country}`,
+  });
+  return `https://calendar.google.com/calendar/render?${params}`;
 }

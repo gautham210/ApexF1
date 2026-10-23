@@ -190,7 +190,9 @@ async def get_live_timing(session_key: int) -> List[Dict]:
 
     # Fetch intervals (gaps between drivers)
     intervals = await _get("/intervals", {"session_key": session_key})
-    if not intervals:
+    timing_errors = {}
+    if intervals is None:
+        timing_errors["intervals"] = "unavailable"
         intervals = []
 
     # Fetch drivers for this session
@@ -232,6 +234,30 @@ async def get_live_timing(session_key: int) -> List[Dict]:
             if num is not None:
                 pit_map[int(num)] = pit_map.get(int(num), 0) + 1
 
+    for channel, value in (("drivers", drivers), ("stints", stints), ("positions", positions), ("pit_stops", pits)):
+        if value is None:
+            timing_errors[channel] = "unavailable"
+    lap_key = f"live_laps_{session_key}"
+    laps = _medium_cache.get(lap_key)
+    if laps is None:
+        laps = await _get("/laps", {"session_key": session_key})
+        if laps is not None:
+            _medium_cache[lap_key] = laps
+    if laps is None:
+        timing_errors["laps"] = "unavailable"
+    latest_laps = {}
+    best_laps = {}
+    for lap in laps or []:
+        num, duration = lap.get("driver_number"), lap.get("lap_duration")
+        if num is None or not isinstance(duration, (int, float)) or duration <= 0:
+            continue
+        if num not in latest_laps or lap.get("lap_number", 0) > latest_laps[num].get("lap_number", 0):
+            latest_laps[num] = lap
+        best_laps[num] = min(best_laps.get(num, duration), duration)
+    def lap_time(seconds):
+        return f"{int(seconds // 60)}:{seconds % 60:06.3f}" if seconds is not None else None
+    _medium_cache[f"timing_errors_{session_key}"] = timing_errors
+
     # Build leaderboard
     result = []
     seen_drivers = set()
@@ -247,7 +273,7 @@ async def get_live_timing(session_key: int) -> List[Dict]:
 
         driver = driver_map.get(num, {})
         stint = stint_map.get(num, {})
-        pos = position_map.get(num, 99)
+        pos = position_map.get(num)
 
         gap = interval.get("gap_to_leader")
         gap_str = None
@@ -273,18 +299,23 @@ async def get_live_timing(session_key: int) -> List[Dict]:
             "team_color": f"#{driver.get('team_colour', '888888')}",
             "gap_to_leader": gap_str,
             "interval": interval_str,
-            "last_lap": None,  # requires laps endpoint (heavier)
-            "best_lap": None,
+            "last_lap": lap_time(latest_laps.get(num, {}).get("lap_duration")),
+            "best_lap": lap_time(best_laps.get(num)),
+            "lap_number": latest_laps.get(num, {}).get("lap_number"),
+            "sector1": latest_laps.get(num, {}).get("duration_sector_1"),
+            "sector2": latest_laps.get(num, {}).get("duration_sector_2"),
+            "sector3": latest_laps.get(num, {}).get("duration_sector_3"),
             "current_tyre": compound,
-            "tyre_age": stint.get("tyre_age_at_start"),
+            "tyre_age": None,  # Starting age is not current tyre age.
+            "tyre_age_at_start": stint.get("tyre_age_at_start"),
             "pits": pit_map.get(num, 0) if pits is not None else None,
             "status": None,
-            "drs": False,
+            "drs": None,
             "speed": None,
         })
 
     # Sort by position
-    result.sort(key=lambda x: x["position"])
+    result.sort(key=lambda x: (x["position"] is None, x["position"] or 0))
 
     # Fill in missing positions for drivers not in interval data
     for num, driver in driver_map.items():
@@ -294,7 +325,7 @@ async def get_live_timing(session_key: int) -> List[Dict]:
             if compound:
                 compound = compound.upper()
             result.append({
-                "position": position_map.get(num, 99),
+                "position": position_map.get(num),
                 "driver_number": str(num),
                 "driver_name": driver.get("full_name", f"Driver #{num}"),
                 "abbreviation": driver.get("name_acronym", f"#{num}"),
@@ -302,17 +333,22 @@ async def get_live_timing(session_key: int) -> List[Dict]:
                 "team_color": f"#{driver.get('team_colour', '888888')}",
                 "gap_to_leader": None,
                 "interval": None,
-                "last_lap": None,
-                "best_lap": None,
+                "last_lap": lap_time(latest_laps.get(num, {}).get("lap_duration")),
+                "best_lap": lap_time(best_laps.get(num)),
+                "lap_number": latest_laps.get(num, {}).get("lap_number"),
+                "sector1": latest_laps.get(num, {}).get("duration_sector_1"),
+                "sector2": latest_laps.get(num, {}).get("duration_sector_2"),
+                "sector3": latest_laps.get(num, {}).get("duration_sector_3"),
                 "current_tyre": compound,
-                "tyre_age": stint.get("tyre_age_at_start"),
+                "tyre_age": None,  # Starting age is not current tyre age.
+            "tyre_age_at_start": stint.get("tyre_age_at_start"),
                 "pits": pit_map.get(num, 0) if pits is not None else None,
                 "status": None,
-                "drs": False,
+                "drs": None,
                 "speed": None,
             })
 
-    result.sort(key=lambda x: x["position"])
+    result.sort(key=lambda x: (x["position"] is None, x["position"] or 0))
     _live_cache[cache_key] = result
     return result
 
@@ -410,7 +446,14 @@ async def get_live_snapshot(session_key: int) -> Dict[str, Any]:
         return_exceptions=True,
     )
 
+    errors = dict(_medium_cache.get(f"timing_errors_{session_key}", {}))
+    for channel, value in (("timing", timing), ("weather", weather), ("race_control", race_control)):
+        if isinstance(value, Exception) or value is None:
+            errors[channel] = "unavailable"
     return {
+        "status": "partial" if errors else "success",
+        "errors": errors,
+        "session_key": session_key,
         "leaderboard": timing if isinstance(timing, list) else [],
         "weather": weather if isinstance(weather, dict) else None,
         "race_control": race_control if isinstance(race_control, list) else [],

@@ -68,3 +68,6 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+      - name: PWA production artifact tests
+        run: npm run test:pwa

@@ -89,6 +89,7 @@ export interface TelemetryPoint {
 }
 
 export interface ScheduleEvent {
+  completion_status?: "verified_classification" | "unverified";
   round_number: number;
   country: string;
   location: string;
@@ -368,6 +369,7 @@ export const useSettingsStore = create<SettingsState>()(
 
       setScheduleCache: (schedule, year) => {
         const state = get();
+        if (state.selectedYear !== year) return;
         const alreadyBootstrapped = state.contextBootstrapped && state.scheduleYear === year;
         const hasRaceForYear = !!state.currentRace && state.scheduleYear === year;
         const shouldDerive = !alreadyBootstrapped && !hasRaceForYear && schedule.length > 0;
@@ -392,7 +394,7 @@ export const useSettingsStore = create<SettingsState>()(
       },
 
       bootstrapFromBackend: (sc, year) => {
-        if (!sc) return;
+        if (!sc || year !== get().selectedYear) return;
         const compRace = sc.latest_completed_race;
         const nextRace = sc.next_race;
         const activeRace = sc.is_active_weekend ? nextRace : null;

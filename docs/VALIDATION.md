@@ -1,5 +1,39 @@
 # Validation record
 
+## 2026-10-23 — integrated companion delivery from 6ee6d53
+
+Branch `codex/apexf1-overnight-remediation`; starting HEAD `6ee6d5387b5eed37a085113888fd19a70ae86033`. Windows, Python 3.13.5, Node 22.18.0, npm 10.9.3. The implementation continues across integrity, PWA, timezone/widgets, official timeline, simulator, museum, discovery and live improvements; earlier checkpoint deferral notes below are historical records.
+
+| Check | Result and exact evidence |
+|---|---|
+| Backend | PASS: from backend, `python -X utf8 -m unittest discover -s tests -v`; 63 tests, 9.329 s, outside the previously diagnosed sandbox loop restriction. Includes five new companion tests, existing SSRF/origin/identity/partial-career regressions. Existing NumPy deprecation and asyncio slow-task warnings remain. |
+| Frontend logic | PASS: from frontend, `npm test`; 29 tests, 1.454 s final recorded run. Tests cover IANA DST/date rollover, session/season identity, fractional historical event points, transfers, simulation immutability/ties/reset, exact calendar starts, stale live updates and safe model manifests/GLTF parsing. Synthetic geometry exists only inside tests. |
+| TypeScript | PASS: `npm run typecheck` after the final PWA hook/schema corrections. Intermediate checks caught missing route search fields, nullable live-row types and a missing timestamp in the schedule schema; these were fixed rather than bypassed. |
+| ESLint | PASS with warnings: `npm run lint`; zero errors, eight existing Fast Refresh export warnings. New hook-dependency warnings were fixed. |
+| Production build | PASS: `npm run build` outside sandbox, 3,022 modules, 28.60 s. Main 492.85 kB / 153.78 gzip; Companion 31.26 / 10.31 gzip; Race Center 427.98 / 118.25 gzip. Three module 746.70 / 191.63 gzip is lazy and excluded from shell pre-cache; its >500 kB chunk warning remains disclosed. No chunk-warning threshold was increased. |
+| PWA artifact checks | PASS: after the production build, `npm run test:pwa`; five tests, 0.830 s. Checks icon dimensions/metadata, offline navigation, API exclusions, activation consent/cache isolation, versioned shell asset references and static Origin/query variants. |
+| Dependency audit | PASS: `npm audit --omit=dev` reports zero vulnerabilities. `npm install` initially exposed a high follow-redirects advisory; compatible `npm update follow-redirects` resolved it. That update's full dependency audit also reported zero. |
+| Real history API | PASS, limited smoke: local `/api/history/season?year=2025&round=1` returned HTTP 200, success, requested identity, no domain errors, 40 classification rows (race + qualifying). Browser also used full 2025 official standings/results and round snapshots. No exhaustive era coverage claim. |
+| Real RSS | PASS: configured feeds through `news_service.get_feed()` returned success, 100 normalized articles, no feed errors. This exercises pinned DNS, TLS and redirect retrieval; tests independently cover hostile destinations. |
+| Live credentials | BLOCKED for authenticated live verification: local health HTTP 200, status `not_configured`, configured false, REST polling. Unavailable UI was browser-verified. Deterministic tests cover partial live channels, ordering/expiry and unknown fields. No real telemetry/live session is claimed. |
+| CI | Static PASS: YAML parsed and contains backend/frontend jobs plus production PWA artifact tests after build. Remote GitHub Actions and clean Linux dependency installation NOT VERIFIED; no push. |
+| Docker | BLOCKED: executable unavailable via Get-Command. Existing Nginx production config remains; container execution NOT VERIFIED. |
+
+### Actual browser operations
+
+ChatGPT in-app browser reached the local production preview with a same-origin local API proxy. This replaces the older browser-unavailable limitation for this run.
+
+- Simulator: used real 2025 standings, selected Max Verstappen, applied +5 points, observed 421 → 426 and a hypothetical lead over 423, saved a named local scenario, selected it for comparison, reloaded, loaded it, undid and restored baseline. The QA scenario was deleted afterward. This is test evidence, not production fallback data.
+- Official timeline: loaded provider round snapshots, scrubbed to round 24, checked the standings deep link, stepped back to 23 and started playback; real Qatar race/sprint classifications were visible. Full constructor-playback/era matrix is not claimed.
+- Timezone hub: real Australian 2025 weekend table showed UTC/IST/local/London/Monaco conversions; searched Tokyo, selected/favorited Asia/Tokyo, copied schedule, and observed success feedback.
+- Museum: compared M23 and MP4/4, followed detail/source/season links, filtered Ferrari, opened F2004 and confirmed missing-model and unknown-specification labels. Authentic model rendering is BLOCKED by no supplied model; no real WebGL car/device performance is claimed.
+- Responsive: timezone layout measured no page overflow at 390×844, 768×1024 and 1440×1000. Museum measured no page overflow at 320×800. Driver Norris, McLaren constructor, live unavailable route and Home were also rendered at 390 px without page overflow. The mobile More menu listed Companion and Escape restored trigger focus. Viewport override was reset. This is representative coverage, not every route/device/assistive technology combination.
+- Discovery: searching Norris produced the year-aware driver link. Home rendered the race widget and provider-dispute event label. Live Race Center showed `not configured` instead of fake rows.
+- Updates/offline: explicit Update ready reload preserved the museum deep link. Two initial server-off reloads FAILED (blank interface). Investigation found mutable HTML/build pairing and static-request Origin variants; versioned shell and path/ignoreVary matching were added with regressions. Final real test stopped only the verified task-owned preview process, reloaded the same deep link, rendered History garage and the explicit offline/stale-data banner. Preview was restored afterward. API data is never cached. Physical Android/iOS installation, background delivery, OS widgets and notification permission/delivery are NOT VERIFIED.
+
+No production deployment, remote push, PR or merge occurred. All 69 pre-existing CRLF-only entries are preserved and excluded from staging. Source changes and exact file inventory are recorded in the local commit and COMPANION.md; generated dist/test caches and local environment files are excluded.
+
+
 ## 2026-10-23 — continuation from d8a03d8 (Phase A checkpoint)
 
 Branch: codex/apexf1-overnight-remediation. Starting HEAD: d8a03d8996794da67c14b016444a59957bcd64f8. Python 3.13.5, Node 22.18.0, npm 10.9.3.

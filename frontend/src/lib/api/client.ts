@@ -53,6 +53,7 @@ const scheduleEventSchema = z
     location: z.string(),
     event_name: z.string(),
     is_completed: z.boolean(),
+    completion_status: z.enum(["verified_classification", "unverified"]).optional(),
     is_upcoming: z.boolean(),
   })
   .passthrough();
@@ -230,12 +231,22 @@ export const f1Api = {
         results: Record<string, LeaderboardEntry[]>;
       }>
     >("/api/results", { params: { year }, signal }),
-  getSchedule: (year?: number, signal?: AbortSignal) =>
-    api.get<never, APIResponse<ScheduleEvent[]>>("/api/schedule", { params: { year }, signal }),
+  getSchedule: async (year?: number, signal?: AbortSignal) => {
+    const payload = await api.get<never, unknown>("/api/schedule", { params: { year }, signal });
+    return z
+      .object({
+        success: z.literal(true),
+        timestamp: z.string(),
+        data: z.array(scheduleEventSchema),
+      })
+      .passthrough()
+      .parse(payload) as APIResponse<ScheduleEvent[]>;
+  },
 
   // ── Live (OpenF1 primary) ─────────────────────────────────────────
   /** Full live snapshot: timing + weather + race control */
-  getLiveSnapshot: () => api.get<never, APIResponse<LiveSessionData>>("/api/live/snapshot"),
+  getLiveSnapshot: (signal?: AbortSignal) =>
+    api.get<never, APIResponse<LiveSessionData>>("/api/live/snapshot", { signal }),
   getLiveRaceControl: () => api.get("/api/live/race-control"),
   getLiveStints: () => api.get("/api/live/stints"),
 

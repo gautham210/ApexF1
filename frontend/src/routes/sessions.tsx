@@ -89,8 +89,10 @@ function SessionsPage() {
   const activeCircuit = useMemo(() => {
     if (!selected) return { key: null, name: "Grand Prix Circuit" };
     return {
-      key: getCircuitKey(selected.country, selected.location),
-      name: selected.location || selected.country,
+      key: selected.has_conflict ? null : getCircuitKey(selected.country, selected.location),
+      name: selected.has_conflict
+        ? "Venue unconfirmed — provider disagreement"
+        : selected.location || selected.country,
     };
   }, [selected]);
 

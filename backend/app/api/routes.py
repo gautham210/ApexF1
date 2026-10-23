@@ -48,7 +48,11 @@ async def current_session():
 @router.get("/schedule", response_model=APIResponse)
 async def schedule(year: int = Query(default=_CURRENT_YEAR)):
     _validate_year(year)
-    data = await f1_service.get_schedule(year)
+    from app.services.jolpica import ProviderError
+    try:
+        data = await f1_service.get_schedule(year)
+    except ProviderError as exc:
+        raise HTTPException(503, detail={"status": "unavailable", "reason": exc.reason}) from exc
     return APIResponse(success=True, data=[e.model_dump() for e in data])
 
 
@@ -338,8 +342,8 @@ async def websocket_live(ws: WebSocket):
             await ws.close(code=1008)
             return
     else:
-        if settings.APP_ENV == "production" and not settings.WS_ALLOW_NO_ORIGIN:
-            logger.warning("Rejected WS connection missing Origin header in production environment")
+        if not settings.WS_ALLOW_NO_ORIGIN:
+            logger.warning("Rejected WS connection missing Origin header")
             await ws.close(code=1008)
             return
 

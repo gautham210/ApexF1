@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   LayoutGrid,
@@ -25,6 +25,7 @@ const primary = [
 ] as const;
 
 const secondary = [
+  { to: "/companion", label: "Companion tools", icon: LayoutGrid },
   { to: "/notifications", label: "Alerts", icon: Bell },
   { to: "/calendar", label: "Calendar", icon: CalendarPlus },
   { to: "/profile", label: "Profile", icon: User },
@@ -40,6 +41,7 @@ const mobilePrimary = [
 
 // Overflow destinations presented in the accessible More sheet
 const mobileOverflow = [
+  { to: "/companion", label: "Companion tools", icon: LayoutGrid },
   { to: "/replay", label: "Replays", icon: Film },
   { to: "/news", label: "News", icon: Newspaper },
   { to: "/calendar", label: "Calendar", icon: CalendarPlus },
@@ -113,6 +115,40 @@ function DockLink({
 export function MobileNav() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [moreOpen, setMoreOpen] = useState(false);
+  const dialog = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!moreOpen) return;
+    const panel = dialog.current;
+    const opener = trigger.current;
+    if (!panel) return;
+    const focusable = () =>
+      Array.from(panel.querySelectorAll<HTMLElement>("a[href],button:not([disabled])"));
+    focusable()[0]?.focus();
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setMoreOpen(false);
+        return;
+      }
+      if (e.key === "Tab") {
+        const items = focusable();
+        const first = items[0],
+          last = items[items.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last?.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first?.focus();
+        }
+      }
+    };
+    panel.addEventListener("keydown", key);
+    return () => {
+      panel.removeEventListener("keydown", key);
+      opener?.focus();
+    };
+  }, [moreOpen]);
 
   // Close sheet on route transition
   useEffect(() => {
@@ -135,6 +171,7 @@ export function MobileNav() {
       {/* More Overflow Menu Sheet */}
       {moreOpen && (
         <div
+          ref={dialog}
           role="dialog"
           aria-modal="true"
           aria-label="Additional navigation destinations"
@@ -146,7 +183,7 @@ export function MobileNav() {
             </span>
             <button
               onClick={() => setMoreOpen(false)}
-              className="grid h-7 w-7 place-items-center rounded-full text-muted-foreground hover:text-foreground hover:bg-foreground/10"
+              className="grid h-11 w-11 place-items-center rounded-full text-muted-foreground hover:text-foreground hover:bg-foreground/10"
               aria-label="Close more menu"
             >
               <X className="h-4 w-4" />
@@ -162,7 +199,7 @@ export function MobileNav() {
                   key={item.to}
                   to={item.to}
                   className={cn(
-                    "flex items-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary",
+                    "flex min-h-11 items-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary",
                     active
                       ? "bg-foreground/10 text-foreground font-bold"
                       : "text-muted-foreground hover:text-foreground hover:bg-foreground/5",
@@ -212,6 +249,7 @@ export function MobileNav() {
               ? "bg-foreground/10 text-foreground"
               : "text-muted-foreground hover:text-foreground",
           )}
+          ref={trigger}
           aria-label="More navigation destinations"
           aria-expanded={moreOpen}
           aria-haspopup="dialog"

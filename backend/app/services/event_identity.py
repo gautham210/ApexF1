@@ -298,10 +298,15 @@ def reconcile_jolpica_schedule_entry(
     if not fastf1_dict:
         try:
             from app.services import f1_service
-            cached = f1_service._data_cache.get(f"schedule_{year}")
+            cached = f1_service._data_cache.get(f"schedule_v3_{year}")
             if cached:
                 for ev in cached:
                     if ev.round_number == round_num:
+                        if ev.has_conflict and ev.conflict:
+                            race_dict["has_conflict"] = True
+                            race_dict["conflict"] = ev.conflict
+                            race_dict["raceName"] = f"{race_dict.get('raceName', '')} [Provider Conflict]"
+                            return race_dict
                         fastf1_dict = {
                             "round_number": ev.round_number,
                             "country": ev.country,

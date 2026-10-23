@@ -258,3 +258,15 @@ body.theme-post-race {
     scroll-behavior: auto !important;
   }
 }
+
+/* Installed-app safe areas; mobile navigation already reserves its bottom inset. */
+#root {
+  padding-top: env(safe-area-inset-top);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+button,
+select,
+input {
+  max-width: 100%;
+}

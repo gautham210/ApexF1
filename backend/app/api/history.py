@@ -38,3 +38,13 @@ async def portrait(driver_id: str, year: int = Query(ge=1950, le=datetime.now().
     if not re.fullmatch(r"[a-zA-Z0-9_-]{1,80}", driver_id):
         raise HTTPException(422, detail="Invalid driver identity")
     return await guarded(get_portrait(year, driver_id))
+
+
+@router.get("/history/progression")
+async def progression(year: int = Query(ge=1950, le=datetime.now().year + 1), kind: str = Query("drivers", pattern="^(drivers|constructors)$")):
+    return await guarded(history_service.championship_progression(year, kind))
+
+
+@router.get("/history/schedule")
+async def historical_schedule(year: int = Query(ge=1950, le=datetime.now().year + 1)):
+    return await guarded(history_service.races(year, ""))

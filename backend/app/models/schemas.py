@@ -125,6 +125,7 @@ class ScheduleEvent(BaseModel):
     session4_date: Optional[str] = None
     session5: Optional[str] = None
     session5_date: Optional[str] = None
+    completion_status: str = "unverified"
     is_completed: bool = False
     is_upcoming: bool = False
     circuit_name: Optional[str] = None

@@ -683,3 +683,243 @@ test("F-04 career schema retains incomplete-season disclosure", async () => {
   assert.deepEqual(career.failed_seasons, [2024]);
   assert.equal(career.titles, null);
 });
+
+import { formatInZone, eventProgression, simulate, raceWidgetData } from "../src/lib/companion";
+import { validatedModel, cars } from "../src/lib/museum";
+import { acceptLivePayload } from "../src/lib/live-state";
+import type { Result } from "../src/lib/api/history";
+import type { LiveSessionData } from "../src/hooks/useLiveSession";
+test("IANA conversion handles rollover, DST gaps, repeated hours and unconfirmed instants", () => {
+  assert.match(formatInZone("2026-01-01T20:00:00Z", "Asia/Kolkata"), /2 January 2026.*01:30/);
+  assert.match(formatInZone("2026-03-29T00:30:00Z", "Europe/London"), /00:30/);
+  assert.match(formatInZone("2026-03-29T01:30:00Z", "Europe/London"), /02:30/);
+  assert.match(formatInZone("2026-11-01T05:30:00Z", "America/New_York"), /01:30/);
+  assert.match(formatInZone("2026-11-01T06:30:00Z", "America/New_York"), /01:30/);
+  assert.equal(formatInZone("2026-03-29", "UTC"), "Time unconfirmed");
+  assert.equal(formatInZone(null, "UTC"), "Time unconfirmed");
+  assert.equal(formatInZone("2026-01-01T00:00:00Z", "Invalid/Zone"), "Invalid timezone");
+});
+test("widget contract excludes unconfirmed times, respects session and round identity", () => {
+  const event = {
+    round_number: 4,
+    event_name: "Fixture",
+    country: "Fixture",
+    location: "Fixture",
+    is_completed: false,
+    is_upcoming: true,
+    session4: "Qualifying",
+    session4_date: "2026-01-02T10:00:00Z",
+    session5: "Race",
+    session5_date: "2026-01-03T10:00:00Z",
+  };
+  const result = raceWidgetData([event], Date.parse("2026-01-02T11:00:00Z"));
+  assert.equal(result.version, 1);
+  assert.equal(result.nextSession?.name, "Race");
+  assert.equal(result.nextRace?.round, 4);
+  assert.equal(
+    raceWidgetData([{ ...event, session4_date: "2026-01-02", session5_date: undefined }])
+      .nextSession,
+    null,
+  );
+});
+test("event progression uses supplied historic fractional and sprint points, tracking transfers", () => {
+  const rows = [
+    {
+      round: 1,
+      session: "Race",
+      points: 4.5,
+      Driver: { driverId: "a" },
+      Constructor: { constructorId: "old" },
+    },
+    {
+      round: 2,
+      session: "Race",
+      points: 9,
+      Driver: { driverId: "a" },
+      Constructor: { constructorId: "new" },
+    },
+    {
+      round: 2,
+      session: "Sprint",
+      points: 3,
+      Driver: { driverId: "a" },
+      Constructor: { constructorId: "new" },
+    },
+    {
+      round: 2,
+      session: "Qualifying",
+      points: 99,
+      Driver: { driverId: "a" },
+      Constructor: { constructorId: "new" },
+    },
+  ] as Result[];
+  assert.equal(eventProgression(rows, "drivers")[1].points.a, 16.5);
+  const teams = eventProgression(rows, "constructors");
+  assert.equal(teams[1].points.old, 4.5);
+  assert.equal(teams[1].points.new, 12);
+  assert.deepEqual(eventProgression([], "drivers"), []);
+});
+test("simulation preserves official baseline, supports fractional adjustments, ties, undo and reset", () => {
+  const baseline = [
+    { id: "a", name: "A", points: 10, position: 1 },
+    { id: "b", name: "B", points: 10, position: 2 },
+  ];
+  const original = JSON.stringify(baseline);
+  assert.deepEqual(
+    simulate(baseline, []).map((r) => r.rank),
+    [1, 2],
+  );
+  const changes = [{ id: "b", round: 1, delta: 0.5, note: "Manual" }];
+  assert.equal(simulate(baseline, changes)[0].id, "b");
+  assert.equal(
+    simulate(baseline, [...changes, { id: "a", round: 2, delta: 0.5, note: "Tie" }])[0].tied,
+    true,
+  );
+  assert.equal(simulate(baseline, changes.slice(0, -1))[0].id, "a");
+  assert.equal(JSON.stringify(baseline), original);
+  assert.throws(() => simulate(baseline, [{ id: "unknown", round: 1, delta: 1, note: "" }]));
+  assert.throws(() => simulate(baseline, [{ id: "a", round: 1, delta: NaN, note: "" }]));
+});
+test("museum model manifest rejects missing, oversized, external and traversal assets", () => {
+  assert.ok(
+    cars.every((c) => /^https:\/\/www\.(mclaren|ferrari|williamsf1)\.com\//.test(c.source)),
+  );
+  assert.equal(validatedModel(undefined), null);
+  const model = {
+    url: "/models/reviewed.glb",
+    credit: "Owner supplied",
+    license: "Reviewed permission",
+    bytes: 1024,
+  };
+  assert.equal(validatedModel(model)?.url, model.url);
+  for (const url of ["https://unreviewed.example/car.glb", "/models/../secret.glb", "/model.exe"])
+    assert.equal(validatedModel({ ...model, url }), null);
+  assert.equal(validatedModel({ ...model, bytes: 25000001 }), null);
+});
+test("live reducer rejects older snapshots and expires stale or unauthenticated rows", () => {
+  const initial = {
+    is_live: false,
+    state: "UNKNOWN",
+    session_info: null,
+    leaderboard: [],
+    weather: null,
+    race_control: [],
+    last_update: null,
+    is_waking: false,
+    ws_connected: false,
+  } as LiveSessionData;
+  const now = Date.parse("2026-01-01T10:00:00Z");
+  const payload = {
+    is_live: true,
+    state: "RACE",
+    session_info: { session_key: 7 },
+    timestamp: "2026-01-01T10:00:00Z",
+    leaderboard: [{ position: 1 }],
+  } as unknown as Partial<LiveSessionData> & { timestamp: string };
+  const current = acceptLivePayload(initial, payload, now);
+  assert.equal(current.is_live, true);
+  assert.equal(
+    acceptLivePayload(current, { ...payload, timestamp: "2026-01-01T09:59:59Z" }, now),
+    current,
+  );
+  assert.equal(acceptLivePayload(initial, payload, now + 46000).is_live, false);
+  assert.deepEqual(acceptLivePayload(current, { is_live: false }, now).leaderboard, []);
+  assert.equal(acceptLivePayload(initial, { ...payload, session_info: null }, now).is_live, false);
+});
+
+import { googleCalendarUrl } from "../src/lib/calendar";
+test("calendar links preserve exact start instants, no invented two-hour end or disputed venue", () => {
+  const e = {
+    round_number: 1,
+    event_name: "Fixture",
+    country: "Unknown",
+    location: "Unknown",
+    session5: "Race",
+    session5_date: "2026-01-01T20:00:00Z",
+    has_conflict: true,
+    is_completed: false,
+    is_upcoming: true,
+  };
+  const u = new URL(googleCalendarUrl(e, "session5")!);
+  const dates = u.searchParams.get("dates")!.split("/");
+  assert.equal(dates[0], dates[1]);
+  assert.match(u.searchParams.get("location")!, /unconfirmed/);
+  assert.equal(googleCalendarUrl({ ...e, session5_date: "2026-01-01" }, "session5"), null);
+});
+
+test("GLTF viewer dependency parses a synthetic test triangle and rejects invalid assets", async () => {
+  const { GLTFLoader } = await import("three/addons/loaders/GLTFLoader.js");
+  const bytes = Buffer.from(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]).buffer).toString(
+    "base64",
+  );
+  const fixture = {
+    asset: { version: "2.0", generator: "ApexF1 synthetic test geometry — not a car" },
+    scenes: [{ nodes: [0] }],
+    scene: 0,
+    nodes: [{ mesh: 0 }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+    buffers: [{ uri: `data:application/octet-stream;base64,${bytes}`, byteLength: 36 }],
+    bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: 36 }],
+    accessors: [
+      {
+        bufferView: 0,
+        componentType: 5126,
+        count: 3,
+        type: "VEC3",
+        min: [0, 0, 0],
+        max: [1, 1, 0],
+      },
+    ],
+  };
+  const loader = new GLTFLoader();
+  // Node lacks the browser progress-event API used by Three's data-URI loader.
+  const prior = globalThis.ProgressEvent;
+  if (!prior)
+    Object.defineProperty(globalThis, "ProgressEvent", {
+      configurable: true,
+      value: class {
+        constructor(public type: string) {}
+      },
+    });
+  try {
+    const gltf = await loader.parseAsync(JSON.stringify(fixture), "");
+    assert.equal(gltf.scene.children.length, 1);
+    await assert.rejects(() => loader.parseAsync("invalid model", ""));
+  } finally {
+    if (!prior) Reflect.deleteProperty(globalThis, "ProgressEvent");
+  }
+});
+
+test("restoring a tied official baseline retains countback order and zero position changes", () => {
+  const result = simulate(
+    [
+      { id: "z", name: "Zed", points: 10, position: 1 },
+      { id: "a", name: "Alpha", points: 10, position: 2 },
+    ],
+    [],
+  );
+  assert.deepEqual(
+    result.map((r) => r.id),
+    ["z", "a"],
+  );
+  assert.deepEqual(
+    result.map((r) => r.positionChange),
+    [0, 0],
+  );
+});
+test("widget season identity is independent of date rollover into the next calendar year", () => {
+  const event = {
+    round_number: 1,
+    event_name: "Fixture",
+    country: "Fixture",
+    location: "Fixture",
+    is_completed: false,
+    is_upcoming: true,
+    session5: "Race",
+    session5_date: "2027-01-01T00:00:00Z",
+  };
+  assert.equal(
+    raceWidgetData([event], Date.parse("2026-12-31T20:00:00Z"), 2026).nextRace?.year,
+    2026,
+  );
+});

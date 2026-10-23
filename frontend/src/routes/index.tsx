@@ -39,6 +39,7 @@ import heroRain from "@/assets/hero-rain.jpg";
 import heroGarage from "@/assets/hero-garage.jpg";
 import heroHelmet from "@/assets/hero-helmet.jpg";
 
+import { RaceWidget } from "@/components/RaceWidget";
 import { GlassPanel } from "@/components/GlassPanel";
 import { CircuitOutline, type CircuitKey } from "@/components/CircuitOutline";
 
@@ -105,7 +106,7 @@ function CountdownTimer({
 }
 
 function Dashboard() {
-  const { season, currentRace, nextEvent, isLiveWeekend } = useSessionContext();
+  const { season, currentRace, nextEvent, isLiveWeekend, schedule } = useSessionContext();
   const live = useLiveSession();
   const [prefs] = usePreferences();
   const favoriteTeam = prefs.team ? TEAMS[prefs.team] : null;
@@ -214,6 +215,9 @@ function Dashboard() {
       }
     >
       {/* SECTION 1: CINEMATIC HERO */}
+      <div className="max-w-[1300px] mx-auto px-5 pt-5">
+        <RaceWidget year={season} events={schedule} />
+      </div>
       <section className="relative h-[88vh] min-h-[620px] w-full overflow-hidden">
         <motion.img
           initial={{ scale: 1.05, opacity: 0 }}

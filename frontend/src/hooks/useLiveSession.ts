@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { acceptLivePayload } from "@/lib/live-state";
 import { f1Api, WS_URL } from "@/lib/api/client";
 
 export interface LiveSessionInfo {
@@ -13,7 +14,7 @@ export interface LiveSessionInfo {
 }
 
 export interface LiveDriver {
-  position: number;
+  position: number | null;
   driver_number: string;
   driver_name: string;
   abbreviation: string;
@@ -25,9 +26,14 @@ export interface LiveDriver {
   best_lap: string | null;
   current_tyre: string | null;
   tyre_age: number | null;
-  pits: number;
-  status: string;
-  drs: boolean;
+  pits: number | null;
+  status: string | null;
+  drs: boolean | null;
+  lap_number?: number | null;
+  laps?: number | null;
+  sector1?: number | null;
+  sector2?: number | null;
+  sector3?: number | null;
   speed: number | null;
 }
 
@@ -47,7 +53,8 @@ export interface WeatherReading {
   pressure: number | null;
   wind_speed: number | null;
   wind_direction: number | null;
-  rainfall: boolean;
+  rainfall: boolean | null;
+  observed_at?: string | null;
 }
 
 export type SessionState =
@@ -69,6 +76,8 @@ export type SessionState =
   | "UNKNOWN";
 
 export interface LiveSessionData {
+  status?: "success" | "partial";
+  errors?: Record<string, string>;
   timestamp?: string;
   is_live: boolean;
   state: SessionState;
@@ -100,61 +109,26 @@ export function useLiveSession(): LiveSessionData {
   const pingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const retryCount = useRef(0);
   const mountedRef = useRef(true);
+  const requestRef = useRef<AbortController | null>(null);
 
   const applyPayload = useCallback((payload: Partial<LiveSessionData> & { timestamp?: string }) => {
     if (!mountedRef.current) return;
-    setData((prev) => ({
-      ...prev,
-      is_live: payload.is_live ?? prev.is_live,
-      state: payload.state ?? prev.state,
-      session_info: payload.session_info ?? prev.session_info,
-      leaderboard:
-        payload.leaderboard !== undefined
-          ? payload.leaderboard
-          : payload.is_live === false
-            ? []
-            : prev.leaderboard,
-      weather:
-        payload.weather !== undefined
-          ? payload.weather
-          : payload.is_live === false
-            ? null
-            : prev.weather,
-      race_control:
-        payload.race_control !== undefined
-          ? payload.race_control
-          : payload.is_live === false
-            ? []
-            : prev.race_control,
-      last_update: payload.timestamp ?? new Date().toISOString(),
-      is_waking: false,
-      ws_connected: true,
-    }));
+    setData((prev) => ({ ...acceptLivePayload(prev, payload), ws_connected: true }));
   }, []);
 
   const fetchSnapshot = useCallback(async () => {
     if (!mountedRef.current) return;
-    const startMs = Date.now();
+    requestRef.current?.abort();
+    const controller = new AbortController();
+    requestRef.current = controller;
     setData((prev) => ({ ...prev, is_waking: true }));
     try {
-      const res = await f1Api.getLiveSnapshot();
-      const d = res?.data ?? res;
-      if (!mountedRef.current) return;
-      const elapsed = Date.now() - startMs;
-      setData((prev) => ({
-        ...prev,
-        is_live: d.is_live ?? false,
-        state: d.state ?? "ARCHIVE",
-        session_info: d.session_info ?? prev.session_info,
-        leaderboard: d.leaderboard ?? [],
-        weather: d.weather ?? null,
-        race_control: d.race_control ?? [],
-        last_update: d.timestamp ?? new Date().toISOString(),
-        is_waking: false,
-      }));
+      const res = await f1Api.getLiveSnapshot(controller.signal);
+      if (!mountedRef.current || controller.signal.aborted) return;
+      setData((prev) => acceptLivePayload(prev, res.data));
     } catch {
-      if (!mountedRef.current) return;
-      setData((prev) => ({ ...prev, is_waking: false, is_live: false, state: "UNKNOWN" }));
+      if (!mountedRef.current || controller.signal.aborted) return;
+      setData((prev) => ({ ...INITIAL, ws_connected: prev.ws_connected }));
     }
   }, []);
 
@@ -190,7 +164,7 @@ export function useLiveSession(): LiveSessionData {
 
     ws.onclose = () => {
       if (!mountedRef.current) return;
-      setData((prev) => ({ ...prev, ws_connected: false, is_live: false }));
+      setData(() => ({ ...INITIAL }));
       const delay = Math.min(1000 * Math.pow(2, retryCount.current), 30_000);
       retryCount.current += 1;
       reconnectTimer.current = setTimeout(connect, delay);
@@ -218,11 +192,26 @@ export function useLiveSession(): LiveSessionData {
 
   useEffect(() => {
     mountedRef.current = true;
-    fetchSnapshot();
+    void fetchSnapshot();
     connect();
+    const freshness = setInterval(
+      () =>
+        setData((prev) =>
+          prev.is_live && (!prev.last_update || Date.now() - Date.parse(prev.last_update) > 45000)
+            ? { ...INITIAL, ws_connected: prev.ws_connected }
+            : prev,
+        ),
+      5000,
+    );
+    const fallback = setInterval(() => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) void fetchSnapshot();
+    }, 30000);
 
     return () => {
       mountedRef.current = false;
+      clearInterval(freshness);
+      clearInterval(fallback);
+      requestRef.current?.abort();
       if (pingTimer.current) clearInterval(pingTimer.current);
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
       if (wsRef.current) {

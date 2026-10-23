@@ -165,9 +165,35 @@ async def get_current_session_info() -> Optional[SessionInfo]:
         status="UPCOMING" if context.get("next_race") else "ARCHIVE", is_live=False)
 
 
+_schedule_pending = {}
+
+
 async def get_schedule(year: int) -> List[ScheduleEvent]:
+    """Bound and deduplicate expensive FastF1 schedule loads per season."""
+    from app.services.jolpica import ProviderError
+    if f"schedule_v3_{year}" in _data_cache:
+        return _data_cache[f"schedule_v3_{year}"]
+    task = _schedule_pending.get(year)
+    if task is None:
+        if len(_schedule_pending) >= 4:
+            raise ProviderError("schedule_busy")
+        task = asyncio.create_task(_build_schedule(year))
+        _schedule_pending[year] = task
+        def finish(done):
+            if _schedule_pending.get(year) is done:
+                _schedule_pending.pop(year, None)
+            if not done.cancelled():
+                done.exception()  # Consume background errors after a caller timeout.
+        task.add_done_callback(finish)
+    try:
+        return await asyncio.wait_for(asyncio.shield(task), timeout=35)
+    except asyncio.TimeoutError as exc:
+        raise ProviderError("schedule_timeout") from exc
+
+
+async def _build_schedule(year: int) -> List[ScheduleEvent]:
     """Return the full race calendar for a given year."""
-    cache_key = f"schedule_{year}"
+    cache_key = f"schedule_v3_{year}"
     if cache_key in _data_cache:
         return _data_cache[cache_key]
 
@@ -185,11 +211,18 @@ async def get_schedule(year: int) -> List[ScheduleEvent]:
             logger.debug(f"Jolpica schedule reconciliation unavailable for {year}: {j_err}")
 
         from app.services.event_identity import reconcile_event
+        # Completion requires a published classification, never an assumed duration.
+        completed_rounds = set()
+        try:
+            classified = await asyncio.wait_for(history_service.races(year, "results"), timeout=8)
+            completed_rounds = {r.round for r in classified if r.Results}
+        except Exception:
+            pass  # Optional completion domain remains explicitly unverified.
 
         events = []
         for _, row in schedule.iterrows():
             s5_date = _session_date(row, 5)
-            is_completed = s5_date is not None and s5_date + pd.Timedelta(hours=4) <= now
+            is_completed = int(row.get("RoundNumber", 0)) in completed_rounds
             event_date = row.get("EventDate")
             round_num = int(row.get("RoundNumber", 0))
 
@@ -220,7 +253,8 @@ async def get_schedule(year: int) -> List[ScheduleEvent]:
                 session5=str(row.get("Session5", "")) or None,
                 session5_date=_session_date(row, 5).isoformat() if _session_date(row, 5) is not None else None,
                 is_completed=is_completed,
-                is_upcoming=not is_completed,
+                completion_status="verified_classification" if is_completed else "unverified",
+                is_upcoming=not is_completed and s5_date is not None and s5_date > now,
                 circuit_name=reconciled.circuit_name,
                 circuit_id=reconciled.circuit_id,
                 has_conflict=reconciled.has_conflict,
@@ -229,8 +263,9 @@ async def get_schedule(year: int) -> List[ScheduleEvent]:
         _data_cache[cache_key] = events
         return events
     except Exception as e:
-        logger.error(f"get_schedule error: {e}")
-        return []
+        logger.warning("Schedule provider unavailable")
+        from app.services.jolpica import ProviderError
+        raise ProviderError("schedule_unavailable") from e
 
 
 import asyncio
@@ -719,14 +754,14 @@ async def get_season_context(year: int) -> Dict[str, Any]:
 
     # Filter schedule
     completed = sorted([e for e in schedule if e.is_completed], key=lambda x: x.round_number)
-    upcoming = sorted([e for e in schedule if not e.is_completed], key=lambda x: x.round_number)
+    upcoming = sorted([e for e in schedule if not e.is_completed and e.session5_date and pd.to_datetime(e.session5_date, utc=True) >= now], key=lambda x: x.round_number)
 
     # Use the same normalized schedule consumed by every route.
     active_event = None
     for event in upcoming:
         start = pd.to_datetime(event.session1_date, utc=True) if event.session1_date else None
         end = pd.to_datetime(event.session5_date, utc=True) if event.session5_date else None
-        if start is not None and end is not None and start <= now < end + pd.Timedelta(hours=4):
+        if start is not None and end is not None and start <= now < end:
             active_event = event
             break
 
@@ -764,7 +799,12 @@ async def get_dashboard_context(year: int) -> Dict[str, Any]:
     """
     from app.services import history_service, jolpica, news_service
 
-    season_ctx = await get_season_context(year)
+    try:
+        season_ctx = await get_season_context(year)
+    except jolpica.ProviderError:
+        season_ctx = {"year": year, "status": "unavailable", "current_round": 0,
+                      "completed_rounds": 0, "total_rounds": 0, "is_active_weekend": False,
+                      "latest_completed_race": None, "next_race": None, "upcoming_schedule": []}
 
     results = await asyncio.gather(
         history_service.season(year),

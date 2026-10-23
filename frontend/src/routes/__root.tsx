@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Outlet, Link, createRootRouteWithContext, useRouter } from "@tanstack/react-router";
 import { MotionConfig } from "framer-motion";
 import { AppSidebar, MobileNav } from "@/components/AppSidebar";
+import { AppAvailability } from "@/components/AppAvailability";
 import { AmbientBackdrop } from "@/components/AmbientBackdrop";
 import { GlobalContextInit } from "@/components/GlobalContextInit";
 
@@ -57,6 +58,7 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <MotionConfig reducedMotion="user">
+        <AppAvailability />
         <GlobalContextInit />
         <div className="min-h-screen">
           <AmbientBackdrop />

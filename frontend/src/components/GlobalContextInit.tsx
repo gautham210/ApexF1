@@ -1,23 +1,28 @@
+import { useRouterState } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { getScheduleForYear } from "@/lib/api/history";
 import { f1Api } from "@/lib/api/client";
 import { useSettingsStore, useCanonicalStore, type LeaderboardEntry } from "@/lib/store";
 
 export function GlobalContextInit() {
+  const home = useRouterState({ select: (s) => s.location.pathname === "/" });
   const { selectedYear, bootstrapFromBackend, setScheduleCache } = useSettingsStore();
   const schedule = useQuery({
     queryKey: ["schedule", selectedYear],
-    queryFn: ({ signal }) => f1Api.getSchedule(selectedYear, signal),
+    queryFn: ({ signal }) => getScheduleForYear(selectedYear, signal),
     staleTime: 60000,
-    refetchInterval: 60000,
+    refetchInterval: home ? 60000 : false,
   });
   const context = useQuery({
+    enabled: home,
     queryKey: ["dashboard", selectedYear],
     queryFn: ({ signal }) => f1Api.getDashboardContext(selectedYear, signal),
     staleTime: 60000,
-    refetchInterval: 60000,
+    refetchInterval: home ? 60000 : false,
   });
   const results = useQuery({
+    enabled: home,
     queryKey: ["results", selectedYear],
     queryFn: ({ signal }) => f1Api.getSeasonResults(selectedYear, signal),
     staleTime: 300000,

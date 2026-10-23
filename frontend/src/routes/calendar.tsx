@@ -1,5 +1,5 @@
 import type { ScheduleEvent } from "@/lib/store";
-import { createCalendar, sessionKeys } from "@/lib/calendar";
+import { createCalendar, sessionKeys, googleCalendarUrl } from "@/lib/calendar";
 import { createFileRoute } from "@tanstack/react-router";
 import { motion } from "framer-motion";
 import { Check, Calendar } from "lucide-react";
@@ -41,30 +41,6 @@ function CalendarPage() {
       else next.add(r);
       return next;
     });
-
-  const getGoogleCalendarUrl = (
-    event: ScheduleEvent,
-    sessionKey: (typeof sessionKeys)[number] = "session5",
-  ) => {
-    const dateKey = `${sessionKey}_date` as const;
-    const nameKey = sessionKey;
-    const sessionName = event[nameKey] || (sessionKey === "session5" ? "Race" : "Session");
-    const startStr = event[dateKey] || event.event_date;
-    if (!startStr) return "";
-
-    const start = new Date(startStr);
-    if (!Number.isFinite(start.getTime())) return "";
-    const end = new Date(start.getTime() + 2 * 60 * 60 * 1000); // 2 hours duration
-    const formatTime = (d: Date) => d.toISOString().replace(/-|:|\.\d\d\d/g, "");
-
-    const text = encodeURIComponent(`${event.event_name} — ${sessionName}`);
-    const dates = `${formatTime(start)}/${formatTime(end)}`;
-    const details = encodeURIComponent(
-      `ApexF1 Companion Session: ${sessionName} for ${event.event_name} at ${event.location}, ${event.country}.`,
-    );
-    const location = encodeURIComponent(`${event.location}, ${event.country}`);
-    return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${text}&dates=${dates}&details=${details}&location=${location}`;
-  };
 
   const downloadCalendar = () => {
     const url = URL.createObjectURL(
@@ -177,11 +153,11 @@ function CalendarPage() {
                         {sessionKeys.map((sk) => {
                           const sName = w[sk] || (sk === "session5" ? "Race" : null);
                           const sDate = w[`${sk}_date`];
-                          if (!sName || !sDate) return null;
+                          if (!sName || !sDate || !googleCalendarUrl(w, sk)) return null;
                           return (
                             <a
                               key={sk}
-                              href={getGoogleCalendarUrl(w, sk)}
+                              href={googleCalendarUrl(w, sk) ?? undefined}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="text-[9px] font-mono tracking-wider font-bold bg-white/5 border border-border/20 px-2 py-0.5 rounded-md hover:bg-white/10 transition uppercase text-muted-foreground hover:text-foreground"

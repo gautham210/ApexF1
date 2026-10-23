@@ -6,7 +6,7 @@ import {
   getVerifiedEventLabel,
   type RaceCenterSearch,
 } from "@/lib/event-identity";
-import type { WeatherReading, RaceControlMsg } from "@/hooks/useLiveSession";
+import type { WeatherReading, RaceControlMsg, LiveDriver } from "@/hooks/useLiveSession";
 import { createFileRoute } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useEffect, useMemo, useRef } from "react";
@@ -133,16 +133,21 @@ function WeatherBar({ weather }: { weather: WeatherReading }) {
     <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-muted-foreground text-[10px] font-mono tracking-wider font-bold">
       <span className="flex items-center gap-1.5">
         <Thermometer className="w-3.5 h-3.5" />
-        {weather.air_temp?.toFixed(0)}° air / {weather.track_temp?.toFixed(0)}° track
+        {weather.air_temp?.toFixed(0) ?? "—"}° air / {weather.track_temp?.toFixed(0) ?? "—"}° track
       </span>
       <span className="flex items-center gap-1.5">
         <Wind className="w-3.5 h-3.5" />
-        {weather.wind_speed?.toFixed(0)} m/s
+        {weather.wind_speed?.toFixed(0) ?? "—"} m/s
       </span>
       <span className="flex items-center gap-1.5">
         <Droplets className="w-3.5 h-3.5" />
-        {weather.humidity?.toFixed(0)}% hum
+        {weather.humidity?.toFixed(0) ?? "—"}% hum
       </span>
+      {weather.observed_at && (
+        <span className="text-xs">
+          Observed {new Date(weather.observed_at).toLocaleTimeString()}
+        </span>
+      )}
       {weather.rainfall && (
         <span className="flex items-center gap-1.5 text-primary animate-pulse font-bold">
           <CloudRain className="w-3.5 h-3.5 animate-bounce" /> WET TRACK
@@ -302,7 +307,7 @@ function LeaderboardTable({
   expanded,
   setExpanded,
 }: {
-  rows: LeaderboardEntry[];
+  rows: (LeaderboardEntry | LiveDriver)[];
   loading: boolean;
   expanded: string | null;
   setExpanded: (v: string | null) => void;
@@ -360,7 +365,7 @@ function LeaderboardTable({
         {rows.map((entry, i) => {
           const isExp = expanded === entry.driver_number;
           const teamCol = entry.team_color || "#888";
-          const isTop3 = i < 3;
+          const isTop3 = entry.position !== null && entry.position >= 1 && entry.position <= 3;
 
           return (
             <motion.div
@@ -422,7 +427,7 @@ function LeaderboardTable({
                 {/* Gap */}
                 <div className="text-right truncate">
                   <span className="font-mono text-[10px] font-semibold text-muted-foreground">
-                    {i === 0 ? "LEADER" : entry.gap_to_leader || "—"}
+                    {entry.position === 1 ? "LEADER" : entry.gap_to_leader || "—"}
                   </span>
                 </div>
 
@@ -967,7 +972,7 @@ function RaceCenter() {
     );
   }
 
-  if (!isArchiveSession && !event && (live.state === "UNKNOWN" || live.is_waking)) {
+  if (!isArchiveSession && !event && live.is_waking) {
     return (
       <div className="min-h-screen px-6 pb-32 pt-12 lg:px-12 flex items-center justify-center">
         <div className="text-center space-y-4">
@@ -984,6 +989,61 @@ function RaceCenter() {
   return (
     <div className="min-h-screen px-6 pb-32 pt-12 lg:px-12 space-y-6">
       <LiveProviderNotice />
+      {showLive && live.status === "partial" && (
+        <p role="status" className="glass p-4 text-sm">
+          Partial live coverage: {Object.keys(live.errors ?? {}).join(", ")} unavailable. Available
+          channels remain visible.
+        </p>
+      )}
+      {showLive && live.leaderboard.length > 0 && (
+        <details className="glass rounded-xl p-4">
+          <summary className="cursor-pointer py-2">Latest recorded laps and sectors</summary>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr>
+                  {[
+                    "Driver",
+                    "Lap",
+                    "Last lap",
+                    "Best lap",
+                    "Sector 1 (s)",
+                    "Sector 2 (s)",
+                    "Sector 3 (s)",
+                  ].map((h) => (
+                    <th className="p-3 text-left" key={h}>
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {live.leaderboard.map((d) => (
+                  <tr key={d.driver_number} className="border-t border-border">
+                    <th className="p-3 text-left">{d.driver_name}</th>
+                    <td>{d.lap_number ?? "—"}</td>
+                    <td>{d.last_lap ?? "—"}</td>
+                    <td>{d.best_lap ?? "—"}</td>
+                    <td>{d.sector1 ?? "—"}</td>
+                    <td>{d.sector2 ?? "—"}</td>
+                    <td>{d.sector3 ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-muted-foreground my-2">
+            Completed provider lap records. Missing fields are unavailable; these are not
+            interpolated sensor readings.
+          </p>
+        </details>
+      )}
+      {!isArchiveSession && !live.is_live && (
+        <p role="status" className="glass rounded-xl p-4 text-sm">
+          Live timing is unavailable, stale or disconnected. No cached rows are presented as current
+          timing. Select an archive session for recorded data.
+        </p>
+      )}
       {event?.has_conflict && event.conflict && (
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex items-start gap-3 text-xs font-mono text-amber-200/90">
           <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
