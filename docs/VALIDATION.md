@@ -166,3 +166,16 @@ At the last browser inspection the tool reported local browser use disabled in W
 - Reliability/production: PARTIAL; local suites/build pass; Docker and remote CI UNVERIFIED.
 
 NOT READY — SPECIFIC BLOCKERS REMAIN for complete release acceptance: authenticated live-session end-to-end verification, container/clean Linux validation, and incomplete official-timeline/full-route acceptance. Physical Android/iOS installation and calendar import, supplied-model GPU/rendering checks, and notification delivery require their respective devices/assets/external environment. No push, PR, merge or deployment performed.
+
+
+## Desktop workspace changes — 2026-10-23
+
+Starting commit 3b151501788204f18d5cda58783a2ccb9fb10583. Source review found hover-only desktop labels, large viewport-height heroes, narrow data containers, and nested calendar scrolling. Preserved existing palette, typography, real-data contracts and mobile dock.
+
+Implemented persistent 208px desktop navigation with current-page semantics and scroll support for short laptops; keyboard skip link and visible focus; wider 1680px data containers; shorter desktop Home/calendar/profile heroes; two-column calendar rounds without nested scroll; three-column wide-screen news; expanded catalogue grid; earlier Race Center split layout. Standings, companion, driver and constructor pages gain horizontal room while reading/settings pages retain narrower measures.
+
+Source inspected: Home, calendar, companion timeline/simulator/catalogue, driver/constructor profiles, standings, news, Race Center, profile, replay, shared shell and navigation. This is a source/layout implementation pass, not complete rendered route acceptance. Browser inventory returned “Local browser use is disabled in Work settings”; no screenshots, console inspection or new viewport tests at 320/360/390/430/768/1024/1280/1440/1920 were performed. Previous acceptance screenshots/results do not validate these new layouts. Sessions layout and exhaustive search/settings interactions were not redesigned. Visual tuning and route-by-route browser acceptance remain outstanding; the full requested desktop definition of done is not established.
+
+Validation: backend 64 tests PASS (4.911s, exit 0); frontend 32 tests PASS (1.076s, exit 0); typecheck PASS. Initial lint exposed three formatting errors in edited components, corrected with targeted formatting. Final build/PWA/lint/audit outcomes recorded below. All 69 original working-tree entries retained their exact status and identity; no data logic or dependencies changed.
+
+Final gates: lint PASS (0 errors, 8 existing warnings); production build PASS (3022 modules; CSS 102.90 kB / 17.03 gzip); PWA artifact tests PASS (5 tests, 0.679s); npm audit PASS (0 known vulnerabilities). Each command exited 0. Existing lazy Three chunk-size warning remains. Backend dependency pins unchanged; previous direct-pin scan was not rerun. Browser acceptance remains BLOCKED by disabled local browser access.

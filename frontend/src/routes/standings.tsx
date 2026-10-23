@@ -39,7 +39,7 @@ function StandingsPage() {
   const rows = standings?.rows ?? [];
   return (
     <div className="min-h-screen px-5 lg:px-12 pt-10 pb-32">
-      <div className="max-w-[1300px] mx-auto">
+      <div className="max-w-[1680px] mx-auto">
         <header className="relative overflow-hidden rounded-3xl min-h-56 p-8 mb-8">
           <img
             src={heroDriver}

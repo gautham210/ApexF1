@@ -48,7 +48,7 @@ function ProfilePage() {
 
   return (
     <div className="pb-32">
-      <section className="relative h-[56vh] min-h-[420px] w-full overflow-hidden">
+      <section className="relative h-[56vh] min-h-[420px] lg:h-[320px] lg:min-h-0 w-full overflow-hidden">
         <motion.img
           initial={{ scale: 1.05 }}
           animate={{ scale: 1 }}

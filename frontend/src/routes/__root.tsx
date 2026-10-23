@@ -58,13 +58,16 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <MotionConfig reducedMotion="user">
+        <a href="#main-content" className="skip-navigation">
+          Skip to content
+        </a>
         <AppAvailability />
         <GlobalContextInit />
         <div className="min-h-screen">
           <AmbientBackdrop />
           <AppSidebar />
           <MobileNav />
-          <main className="lg:pl-[84px]">
+          <main id="main-content" tabIndex={-1} className="min-w-0 lg:pl-[208px]">
             <Outlet />
           </main>
         </div>

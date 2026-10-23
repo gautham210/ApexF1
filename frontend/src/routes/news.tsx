@@ -28,7 +28,7 @@ function NewsPage() {
       (!search.q || `${a.title} ${a.summary}`.toLowerCase().includes(search.q.toLowerCase())),
   );
   return (
-    <div className="max-w-[1300px] mx-auto px-5 lg:px-12 pt-12 pb-32">
+    <div className="max-w-[1680px] mx-auto px-5 lg:px-12 pt-12 pb-32">
       <header className="border-b border-border/40 pb-8">
         <p className="text-xs uppercase tracking-widest text-muted-foreground">From the paddock</p>
         <h1 className="font-display text-6xl mt-4">F1 news</h1>
@@ -106,7 +106,7 @@ function NewsPage() {
           publication dates; search matches supplied text.
         </p>
       )}
-      <div className="grid md:grid-cols-2 gap-5">
+      <div className="grid md:grid-cols-2 2xl:grid-cols-3 gap-5">
         {visible.map((a) => (
           <article key={a.link} className="glass rounded-2xl p-7 flex flex-col">
             <p className="text-xs text-muted-foreground mb-4">

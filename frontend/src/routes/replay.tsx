@@ -81,7 +81,7 @@ function ReplayPage() {
         <div className="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-background/40" />
         <div className="absolute inset-0 bg-gradient-to-r from-background/70 via-transparent to-transparent" />
 
-        <div className="relative z-10 mx-auto flex h-full max-w-[1400px] flex-col justify-end px-6 pb-14 lg:px-12">
+        <div className="relative z-10 mx-auto flex h-full max-w-[1680px] flex-col justify-end px-6 pb-14 lg:px-12">
           <div className="text-[10px] font-mono tracking-[0.2em] text-muted-foreground uppercase">
             Episodic archives
           </div>
@@ -93,7 +93,7 @@ function ReplayPage() {
         </div>
       </section>
 
-      <section className="mx-auto -mt-16 max-w-[1400px] px-6 lg:px-12 relative z-20 space-y-12">
+      <section className="mx-auto -mt-16 max-w-[1680px] px-6 lg:px-12 relative z-20 space-y-12">
         <div>
           <div className="text-[10px] font-mono tracking-[0.2em] text-muted-foreground uppercase">
             Documentary episodes

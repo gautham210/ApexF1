@@ -1119,7 +1119,7 @@ function RaceCenter() {
       {live.race_control.length > 0 && <RaceControlTicker messages={live.race_control} />}
 
       {/* 3. CORE TWO-COLUMN BROADCAST VIEW */}
-      <div className="grid gap-6 xl:grid-cols-3">
+      <div className="grid gap-6 lg:grid-cols-3">
         {/* LEFT COLUMN: Timing Tower */}
         <div className="xl:col-span-1 min-w-0 space-y-4">
           <div className="flex justify-between items-center px-1">
@@ -1160,7 +1160,7 @@ function RaceCenter() {
         </div>
 
         {/* RIGHT COLUMN: Interactive Telemetry Compare / Circuit Vector */}
-        <div className="xl:col-span-2 min-w-0 space-y-4">
+        <div className="lg:col-span-2 min-w-0 space-y-4">
           {/* Segmented controls tabs */}
           <div className="flex items-center gap-1 bg-white/5 p-1 rounded-2xl border border-border/40 self-start backdrop-blur-md max-w-max">
             {[

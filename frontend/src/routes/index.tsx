@@ -215,10 +215,10 @@ function Dashboard() {
       }
     >
       {/* SECTION 1: CINEMATIC HERO */}
-      <div className="max-w-[1300px] mx-auto px-5 pt-5">
+      <div className="max-w-[1680px] mx-auto px-5 pt-5">
         <RaceWidget year={season} events={schedule} />
       </div>
-      <section className="relative h-[88vh] min-h-[620px] w-full overflow-hidden">
+      <section className="relative h-[72vh] min-h-[540px] lg:h-[560px] lg:min-h-0 w-full overflow-hidden">
         <motion.img
           initial={{ scale: 1.05, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
@@ -233,7 +233,7 @@ function Dashboard() {
         <div className="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-background/50" />
         <div className="absolute inset-0 bg-gradient-to-r from-background/70 via-transparent to-transparent" />
 
-        <div className="relative z-10 mx-auto flex h-full max-w-[1400px] flex-col justify-end px-6 pb-16 lg:px-12">
+        <div className="relative z-10 mx-auto flex h-full max-w-[1680px] flex-col justify-end px-6 pb-16 lg:px-12">
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
@@ -298,7 +298,7 @@ function Dashboard() {
             initial={{ opacity: 0, y: 40 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 1, delay: 0.6 }}
-            className="mt-10 grid grid-cols-2 gap-3 md:grid-cols-4 lg:max-w-3xl"
+            className="mt-10 grid grid-cols-2 gap-3 md:grid-cols-4 lg:max-w-5xl"
           >
             <GlassPanel className="p-4">
               <div className="flex items-center gap-2 text-[10px] font-mono tracking-[0.18em] text-muted-foreground uppercase">
@@ -374,7 +374,7 @@ function Dashboard() {
       </section>
 
       {/* SECTION 2: LIVE CONTEXTUAL HUB */}
-      <section className="mx-auto -mt-20 max-w-[1400px] px-6 lg:px-12 relative z-20">
+      <section className="mx-auto -mt-20 max-w-[1680px] px-6 lg:px-12 relative z-20">
         <AnimatePresence mode="wait">
           {/* BEFORE STATE: Countdown, weather, and circuit overview */}
           {weekendState === "BEFORE" && (
@@ -664,7 +664,7 @@ function Dashboard() {
       </section>
 
       {/* SECTION 3: STORIES & DOCUMENTARY FEED */}
-      <section className="mx-auto mt-24 max-w-[1400px] px-6 lg:px-12 grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+      <section className="mx-auto mt-12 max-w-[1680px] px-6 lg:px-12 grid gap-8 md:grid-cols-2 lg:grid-cols-3">
         {/* Personalization Driver Spotlight (Accent & Alert personalization) */}
         {favoriteDriver && (
           <GlassPanel

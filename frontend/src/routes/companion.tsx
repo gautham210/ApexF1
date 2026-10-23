@@ -46,7 +46,7 @@ function Companion() {
     if (selectedYear !== search.year) setSelectedYear(search.year);
   }, [selectedYear, search.year, setSelectedYear]);
   return (
-    <div className="max-w-[1300px] mx-auto px-5 lg:px-12 pt-10 pb-32 min-w-0">
+    <div className="max-w-[1680px] mx-auto px-5 lg:px-12 pt-10 pb-32 min-w-0">
       <p className="text-xs uppercase tracking-widest text-muted-foreground">ApexF1 companion</p>
       <h1 className="font-display text-5xl md:text-6xl mt-4">Your race weekend.</h1>
       <nav aria-label="Companion tools" className="flex flex-wrap gap-2 my-6">
@@ -967,7 +967,7 @@ function Museum({ year, carId }: { year: number; carId?: string }) {
           Only {year}
         </label>
       </div>
-      <div className="grid md:grid-cols-3 gap-4 my-6">
+      <div className="grid sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 my-6">
         {list.map((c) => (
           <article key={c.id} className="glass rounded-2xl p-6">
             <p className="text-sm text-muted-foreground">

@@ -53,7 +53,7 @@ export function AppSidebar() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   return (
-    <aside className="fixed left-0 top-0 z-40 hidden h-screen w-[84px] flex-col items-center justify-between py-7 lg:flex">
+    <aside className="desktop-navigation fixed left-0 top-0 z-40 hidden h-dvh w-[208px] flex-col items-stretch gap-6 overflow-y-auto border-r border-border bg-background/95 px-4 py-6 lg:flex">
       <Link to="/" className="flex flex-col items-center gap-1">
         <div className="grid h-10 w-10 place-items-center rounded-xl glass-strong">
           <span className="font-display text-xl leading-none">A</span>
@@ -61,13 +61,16 @@ export function AppSidebar() {
         <span className="font-mono text-[9px] tracking-[0.2em] text-muted-foreground">F1</span>
       </Link>
 
-      <nav className="glass rounded-full p-1.5 flex flex-col gap-0.5">
+      <nav aria-label="Primary navigation" className="flex flex-col gap-1">
         {primary.map((item) => (
           <DockLink key={item.to} {...item} active={pathname === item.to} />
         ))}
       </nav>
 
-      <nav className="glass-subtle rounded-full p-1.5 flex flex-col gap-0.5">
+      <nav
+        aria-label="Tools and preferences"
+        className="mt-auto border-t border-border pt-4 flex flex-col gap-1"
+      >
         {secondary.map((item) => (
           <DockLink key={item.to} {...item} active={pathname === item.to} small />
         ))}
@@ -93,21 +96,20 @@ function DockLink({
     <Link
       to={to}
       className={cn(
-        "group relative grid place-items-center rounded-full transition-all duration-300",
-        small ? "h-9 w-9" : "h-10 w-10",
+        "group relative flex items-center gap-3 rounded-lg px-3 transition-colors duration-150",
+        small ? "min-h-11 w-full" : "min-h-11 w-full",
         active
           ? "bg-foreground/10 text-foreground"
           : "text-muted-foreground hover:text-foreground hover:bg-foreground/5",
       )}
       aria-label={label}
+      aria-current={active ? "page" : undefined}
     >
       <Icon className={small ? "h-4 w-4" : "h-[17px] w-[17px]"} strokeWidth={1.5} />
       {active && (
         <span className="absolute -left-2 top-1/2 h-4 w-[2px] -translate-y-1/2 rounded-full bg-primary" />
       )}
-      <span className="pointer-events-none absolute left-full ml-3 whitespace-nowrap rounded-md glass-strong px-2.5 py-1 text-[11px] opacity-0 transition-opacity group-hover:opacity-100">
-        {label}
-      </span>
+      <span className="text-sm whitespace-nowrap">{label}</span>
     </Link>
   );
 }

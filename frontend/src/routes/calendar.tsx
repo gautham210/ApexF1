@@ -56,7 +56,7 @@ function CalendarPage() {
   return (
     <div className="pb-32">
       {/* Immersive banner */}
-      <section className="relative h-[48vh] min-h-[380px] overflow-hidden">
+      <section className="relative h-[48vh] min-h-[380px] lg:h-[300px] lg:min-h-0 overflow-hidden">
         <motion.img
           initial={{ scale: 1.05 }}
           animate={{ scale: 1 }}
@@ -66,7 +66,7 @@ function CalendarPage() {
           className="absolute inset-0 h-full w-full object-cover opacity-60"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-background/40" />
-        <div className="relative z-10 mx-auto flex h-full max-w-[1200px] flex-col justify-end px-6 pb-12 lg:px-12">
+        <div className="relative z-10 mx-auto flex h-full max-w-[1560px] flex-col justify-end px-6 pb-12 lg:px-12">
           <div className="text-[10px] font-mono tracking-[0.2em] text-muted-foreground">
             CALENDAR EXPORT
           </div>
@@ -78,7 +78,7 @@ function CalendarPage() {
         </div>
       </section>
 
-      <div className="mx-auto -mt-10 max-w-[1200px] px-6 lg:px-12 relative z-20">
+      <div className="mx-auto -mt-10 max-w-[1560px] px-6 lg:px-12 relative z-20">
         <div className="grid gap-6 md:grid-cols-3">
           {integrations.map((it, i) => (
             <motion.div
@@ -120,7 +120,7 @@ function CalendarPage() {
           </div>
           <h2 className="mt-1 font-display text-4xl">Follow weekends one-by-one</h2>
 
-          <div className="mt-6 grid gap-3 max-h-[60vh] overflow-y-auto pr-1 scrollbar-none">
+          <div className="mt-6 grid gap-3 xl:grid-cols-2">
             {schedule.map((w, i) => {
               const on = followed.has(w.round_number);
               const eventDateStr = w.event_date
