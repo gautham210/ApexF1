@@ -987,3 +987,29 @@ test("model resource boundary permits embedded buffers and local blobs but denie
   ])
     assert.throws(() => modelResourceUrl(url, origin));
 });
+
+import { resolveApiOrigin, websocketOrigin } from "../src/lib/api/config";
+test("deployment configuration never falls back to a static production origin", () => {
+  assert.equal(resolveApiOrigin(undefined, false, false, "https://frontend.example"), null);
+  assert.equal(resolveApiOrigin(undefined, true, false), "http://localhost:8000");
+  assert.equal(
+    resolveApiOrigin(undefined, false, true, "https://proxy.example"),
+    "https://proxy.example",
+  );
+  for (const input of ["https://backend.example", "https://backend.example/api/"]) {
+    const origin = resolveApiOrigin(input, false, false)!;
+    assert.equal(
+      new URL("/api/history/season", origin).href,
+      "https://backend.example/api/history/season",
+    );
+    assert.equal(websocketOrigin(origin), "wss://backend.example");
+  }
+  assert.equal(websocketOrigin("http://localhost:8000"), "ws://localhost:8000");
+  for (const value of [
+    "javascript:alert(1)",
+    "https://user:pass@example.com",
+    "https://example.com/path",
+    "https://example.com/?token=x",
+  ])
+    assert.throws(() => resolveApiOrigin(value, false, false));
+});

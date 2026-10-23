@@ -145,53 +145,26 @@ export const dashboardResponseSchema = z.object({
     })
     .passthrough(),
 });
-declare global {
-  interface Window {
-    VITE_API_URL?: string;
-    NEXT_PUBLIC_API_URL?: string;
-  }
-}
 import axios from "axios";
-
-const getBaseUrl = () => {
-  // 1. Resolve compiled environment variables
-  const viteEnv = import.meta.env?.VITE_API_URL || import.meta.env?.NEXT_PUBLIC_API_URL;
-  if (viteEnv) return viteEnv;
-
-  // 2. Check global window variables
-  const windowEnv =
-    typeof window !== "undefined" ? window.VITE_API_URL || window.NEXT_PUBLIC_API_URL : null;
-  if (windowEnv) return windowEnv;
-
-  // 3. Server-side environment checks
-  if (typeof window === "undefined") {
-    return (
-      (typeof process !== "undefined"
-        ? process.env?.VITE_API_URL || process.env?.NEXT_PUBLIC_API_URL
-        : null) || "http://localhost:8000"
-    );
-  }
-
-  // 4. Localhost fallback only during development
-  if (
-    import.meta.env.DEV &&
-    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
-  ) {
-    return "http://localhost:8000";
-  }
-
-  // Production defaults to the same-origin reverse proxy. Split hosting requires VITE_API_URL.
-  return window.location.origin;
-};
-
-const BASE_URL = getBaseUrl();
-
-export const WS_URL = BASE_URL.replace(/^http/, "ws");
+import { resolveApiOrigin, websocketOrigin } from "./config";
+const BASE_URL = resolveApiOrigin(
+  import.meta.env?.VITE_API_URL,
+  Boolean(import.meta.env?.DEV),
+  import.meta.env?.VITE_SAME_ORIGIN_API === "true",
+  typeof window !== "undefined" ? window.location.origin : undefined,
+);
+export const WS_URL = websocketOrigin(BASE_URL);
 
 export const api = axios.create({
-  baseURL: BASE_URL,
+  baseURL: BASE_URL ?? undefined,
   timeout: 35000,
   headers: { "Content-Type": "application/json" },
+});
+
+// Fail explicitly before a missing configuration can request the static SPA origin.
+api.interceptors.request.use((config) => {
+  if (!BASE_URL) throw new Error("Backend configuration unavailable: VITE_API_URL is required");
+  return config;
 });
 
 // Intercept: unwrap .data, handle cold-boot, graceful fallback

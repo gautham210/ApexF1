@@ -133,7 +133,7 @@ export function useLiveSession(): LiveSessionData {
   }, []);
 
   const connect = useCallback(() => {
-    if (!mountedRef.current) return;
+    if (!mountedRef.current || !WS_URL) return;
     if (wsRef.current && wsRef.current.readyState <= WebSocket.OPEN) return;
 
     const wsEndpoint = `${WS_URL}/api/ws/live`;
