@@ -2,6 +2,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
+test("Vercel SPA fallback respects clean URLs for deep-link navigation", async () => {
+  const config = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
+  const fallback = config.rewrites.find((route) => route.source === "/(.*)");
+  assert.ok(fallback, "SPA deep links require a fallback");
+  assert.equal(fallback.destination, "/");
+  if (config.cleanUrls) assert.doesNotMatch(fallback.destination, /\.html$/);
+});
 const manifest = JSON.parse(
   await readFile(new URL("../dist/manifest.webmanifest", import.meta.url), "utf8"),
 );
