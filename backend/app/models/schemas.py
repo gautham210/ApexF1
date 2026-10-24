@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from typing import Optional, List, Any, Dict
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class Driver(BaseModel):
@@ -53,11 +53,13 @@ class LeaderboardEntry(BaseModel):
     best_lap: Optional[str] = None
     current_tyre: Optional[str] = None
     tyre_age: Optional[int] = None
-    pits: Optional[int] = 0
+    pits: Optional[int] = None
     sector1: Optional[str] = None
     sector2: Optional[str] = None
     sector3: Optional[str] = None
-    status: Optional[str] = "ON_TRACK"
+    status: Optional[str] = None
+    laps: Optional[int] = None
+    points: Optional[float] = None
     drs: Optional[bool] = False
     speed: Optional[float] = None
 
@@ -104,7 +106,7 @@ class WeatherData(BaseModel):
     pressure: Optional[float] = None
     wind_speed: Optional[float] = None
     wind_direction: Optional[float] = None
-    rainfall: Optional[bool] = False
+    rainfall: Optional[bool] = None
 
 
 class ScheduleEvent(BaseModel):
@@ -123,11 +125,21 @@ class ScheduleEvent(BaseModel):
     session4_date: Optional[str] = None
     session5: Optional[str] = None
     session5_date: Optional[str] = None
+    completion_status: str = "unverified"
     is_completed: bool = False
     is_upcoming: bool = False
+    circuit_name: Optional[str] = None
+    circuit_id: Optional[str] = None
+    has_conflict: bool = False
+    conflict: Optional[Dict[str, Any]] = None
 
 
 class StandingsEntry(BaseModel):
+    driver_id: Optional[str] = None
+    constructor_id: Optional[str] = None
+    number: Optional[str] = None
+    code: Optional[str] = None
+    display_name: Optional[str] = None
     position: int
     name: str
     points: float
@@ -145,5 +157,5 @@ class APIResponse(BaseModel):
 
     def __init__(self, **data):
         if not data.get("timestamp"):
-            data["timestamp"] = datetime.utcnow().isoformat()
+            data["timestamp"] = datetime.now(timezone.utc).isoformat()
         super().__init__(**data)

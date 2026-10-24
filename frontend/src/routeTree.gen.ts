@@ -15,8 +15,12 @@ import { Route as ReplayRouteImport } from './routes/replay'
 import { Route as RaceCenterRouteImport } from './routes/race-center'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as NotificationsRouteImport } from './routes/notifications'
+import { Route as NewsRouteImport } from './routes/news'
+import { Route as CompanionRouteImport } from './routes/companion'
 import { Route as CalendarRouteImport } from './routes/calendar'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as TeamsConstructorIdRouteImport } from './routes/teams.$constructorId'
+import { Route as DriversDriverIdRouteImport } from './routes/drivers.$driverId'
 
 const StandingsRoute = StandingsRouteImport.update({
   id: '/standings',
@@ -48,6 +52,16 @@ const NotificationsRoute = NotificationsRouteImport.update({
   path: '/notifications',
   getParentRoute: () => rootRouteImport,
 } as any)
+const NewsRoute = NewsRouteImport.update({
+  id: '/news',
+  path: '/news',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CompanionRoute = CompanionRouteImport.update({
+  id: '/companion',
+  path: '/companion',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CalendarRoute = CalendarRouteImport.update({
   id: '/calendar',
   path: '/calendar',
@@ -58,80 +72,118 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TeamsConstructorIdRoute = TeamsConstructorIdRouteImport.update({
+  id: '/teams/$constructorId',
+  path: '/teams/$constructorId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DriversDriverIdRoute = DriversDriverIdRouteImport.update({
+  id: '/drivers/$driverId',
+  path: '/drivers/$driverId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/calendar': typeof CalendarRoute
+  '/companion': typeof CompanionRoute
+  '/news': typeof NewsRoute
   '/notifications': typeof NotificationsRoute
   '/profile': typeof ProfileRoute
   '/race-center': typeof RaceCenterRoute
   '/replay': typeof ReplayRoute
   '/sessions': typeof SessionsRoute
   '/standings': typeof StandingsRoute
+  '/drivers/$driverId': typeof DriversDriverIdRoute
+  '/teams/$constructorId': typeof TeamsConstructorIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/calendar': typeof CalendarRoute
+  '/companion': typeof CompanionRoute
+  '/news': typeof NewsRoute
   '/notifications': typeof NotificationsRoute
   '/profile': typeof ProfileRoute
   '/race-center': typeof RaceCenterRoute
   '/replay': typeof ReplayRoute
   '/sessions': typeof SessionsRoute
   '/standings': typeof StandingsRoute
+  '/drivers/$driverId': typeof DriversDriverIdRoute
+  '/teams/$constructorId': typeof TeamsConstructorIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/calendar': typeof CalendarRoute
+  '/companion': typeof CompanionRoute
+  '/news': typeof NewsRoute
   '/notifications': typeof NotificationsRoute
   '/profile': typeof ProfileRoute
   '/race-center': typeof RaceCenterRoute
   '/replay': typeof ReplayRoute
   '/sessions': typeof SessionsRoute
   '/standings': typeof StandingsRoute
+  '/drivers/$driverId': typeof DriversDriverIdRoute
+  '/teams/$constructorId': typeof TeamsConstructorIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/calendar'
+    | '/companion'
+    | '/news'
     | '/notifications'
     | '/profile'
     | '/race-center'
     | '/replay'
     | '/sessions'
     | '/standings'
+    | '/drivers/$driverId'
+    | '/teams/$constructorId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/calendar'
+    | '/companion'
+    | '/news'
     | '/notifications'
     | '/profile'
     | '/race-center'
     | '/replay'
     | '/sessions'
     | '/standings'
+    | '/drivers/$driverId'
+    | '/teams/$constructorId'
   id:
     | '__root__'
     | '/'
     | '/calendar'
+    | '/companion'
+    | '/news'
     | '/notifications'
     | '/profile'
     | '/race-center'
     | '/replay'
     | '/sessions'
     | '/standings'
+    | '/drivers/$driverId'
+    | '/teams/$constructorId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CalendarRoute: typeof CalendarRoute
+  CompanionRoute: typeof CompanionRoute
+  NewsRoute: typeof NewsRoute
   NotificationsRoute: typeof NotificationsRoute
   ProfileRoute: typeof ProfileRoute
   RaceCenterRoute: typeof RaceCenterRoute
   ReplayRoute: typeof ReplayRoute
   SessionsRoute: typeof SessionsRoute
   StandingsRoute: typeof StandingsRoute
+  DriversDriverIdRoute: typeof DriversDriverIdRoute
+  TeamsConstructorIdRoute: typeof TeamsConstructorIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -178,6 +230,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof NotificationsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/news': {
+      id: '/news'
+      path: '/news'
+      fullPath: '/news'
+      preLoaderRoute: typeof NewsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/companion': {
+      id: '/companion'
+      path: '/companion'
+      fullPath: '/companion'
+      preLoaderRoute: typeof CompanionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/calendar': {
       id: '/calendar'
       path: '/calendar'
@@ -192,18 +258,36 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/teams/$constructorId': {
+      id: '/teams/$constructorId'
+      path: '/teams/$constructorId'
+      fullPath: '/teams/$constructorId'
+      preLoaderRoute: typeof TeamsConstructorIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/drivers/$driverId': {
+      id: '/drivers/$driverId'
+      path: '/drivers/$driverId'
+      fullPath: '/drivers/$driverId'
+      preLoaderRoute: typeof DriversDriverIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CalendarRoute: CalendarRoute,
+  CompanionRoute: CompanionRoute,
+  NewsRoute: NewsRoute,
   NotificationsRoute: NotificationsRoute,
   ProfileRoute: ProfileRoute,
   RaceCenterRoute: RaceCenterRoute,
   ReplayRoute: ReplayRoute,
   SessionsRoute: SessionsRoute,
   StandingsRoute: StandingsRoute,
+  DriversDriverIdRoute: DriversDriverIdRoute,
+  TeamsConstructorIdRoute: TeamsConstructorIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

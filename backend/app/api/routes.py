@@ -1,9 +1,11 @@
+import logging
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 from app.services import f1_service, openf1_service
 from app.websockets.manager import manager
 from app.models.schemas import APIResponse
 from datetime import datetime
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _CURRENT_YEAR = datetime.now().year
@@ -46,7 +48,11 @@ async def current_session():
 @router.get("/schedule", response_model=APIResponse)
 async def schedule(year: int = Query(default=_CURRENT_YEAR)):
     _validate_year(year)
-    data = await f1_service.get_schedule(year)
+    from app.services.jolpica import ProviderError
+    try:
+        data = await f1_service.get_schedule(year)
+    except ProviderError as exc:
+        raise HTTPException(503, detail={"status": "unavailable", "reason": exc.reason}) from exc
     return APIResponse(success=True, data=[e.model_dump() for e in data])
 
 
@@ -72,19 +78,13 @@ async def leaderboard(
     session: str = Query(default="Race"),
 ):
     """
-    Live: served from OpenF1 if session is active.
-    Archive: served from FastF1.
+    Requested classification: Jolpica race results, with FastF1 fallback.
+    Live timing uses /live/snapshot and /ws/live.
     """
     _validate_year(year)
     _validate_round(round)
 
-    # Check if OpenF1 has a live session
-    state_info = await openf1_service.get_session_state()
-    if state_info.get("is_live") and state_info.get("session_key"):
-        data = await openf1_service.get_live_timing(state_info["session_key"])
-        return APIResponse(success=True, data=data)
-
-    # Fall back to FastF1 for historical data
+    # Explicit event coordinates always resolve that archive; live has dedicated endpoints.
     data = await f1_service.get_leaderboard(year, round, session)
     return APIResponse(success=True, data=[e.model_dump() for e in data])
 
@@ -102,11 +102,13 @@ async def live_snapshot():
             "state": state_info.get("state", "ARCHIVE"),
             "session_info": {
                 "session_name": state_info.get("session_name"),
+                    "date_start": state_info.get("date_start"),
+                    "session_key": state_info.get("session_key"),
                 "display_name": state_info.get("display_name"),
                 "circuit": state_info.get("circuit"),
                 "country": state_info.get("country"),
                 "year": state_info.get("year"),
-                "track_status": "GREEN",
+                "track_status": state_info.get("track_status", "UNKNOWN"),
             },
             "leaderboard": [],
             "weather": None,
@@ -119,6 +121,8 @@ async def live_snapshot():
         "state": state_info.get("state"),
         "session_info": {
             "session_name": state_info.get("session_name"),
+                    "date_start": state_info.get("date_start"),
+                    "session_key": state_info.get("session_key"),
             "display_name": state_info.get("display_name"),
             "circuit": state_info.get("circuit"),
             "country": state_info.get("country"),
@@ -133,18 +137,18 @@ async def live_snapshot():
 async def live_race_control():
     state_info = await openf1_service.get_session_state()
     if not state_info.get("session_key"):
-        return APIResponse(success=True, data=[])
+        return APIResponse(success=False, data=None, error="Live session unavailable")
     data = await openf1_service.get_race_control_messages(state_info["session_key"])
-    return APIResponse(success=True, data=data)
+    return APIResponse(success=data is not None, data=data, error="Race control unavailable" if data is None else None)
 
 
 @router.get("/live/stints", response_model=APIResponse)
 async def live_stints():
     state_info = await openf1_service.get_session_state()
     if not state_info.get("session_key"):
-        return APIResponse(success=True, data={})
+        return APIResponse(success=False, data=None, error="Live session unavailable")
     data = await openf1_service.get_stints(state_info["session_key"])
-    return APIResponse(success=True, data=data)
+    return APIResponse(success=data is not None, data=data, error="Tyre stints unavailable" if data is None else None)
 
 
 # ─── Archive data (FastF1 only) ───────────────────────────────────────────────
@@ -187,13 +191,6 @@ async def weather(
     _validate_year(year)
     _validate_round(round)
 
-    # Try OpenF1 first for live weather
-    state_info = await openf1_service.get_session_state()
-    if state_info.get("is_live") and state_info.get("session_key"):
-        live_w = await openf1_service.get_live_weather(state_info["session_key"])
-        if live_w:
-            return APIResponse(success=True, data=live_w)
-
     data = await f1_service.get_weather(year, round, session)
     return APIResponse(success=True, data=data.model_dump() if data else None)
 
@@ -213,20 +210,36 @@ async def race_control(
 @router.get("/standings", response_model=APIResponse)
 async def standings(year: int = Query(default=_CURRENT_YEAR)):
     _validate_year(year)
-    data = await f1_service.get_standings(year)
+    from app.services.jolpica import ProviderError
+    try:
+        data = await f1_service.get_standings(year)
+    except ProviderError as exc:
+        raise HTTPException(503, detail={"status": "unavailable", "reason": exc.reason}) from exc
     return APIResponse(
-        success=True,
+        success=data["status"] != "unavailable",
         data={
             "drivers": [e.model_dump() for e in data["drivers"]],
             "constructors": [e.model_dump() for e in data["constructors"]],
+            "status": data["status"],
+            "errors": data["errors"],
+            "round": data["round"],
+            "source": data["source"],
+            "fetched_at": data["fetched_at"],
         },
+        error="Championship standings unavailable" if data["status"] == "unavailable" else None,
     )
 
 
 @router.get("/constructors", response_model=APIResponse)
 async def constructors(year: int = Query(default=_CURRENT_YEAR)):
     _validate_year(year)
-    data = await f1_service.get_standings(year)
+    from app.services.jolpica import ProviderError
+    try:
+        data = await f1_service.get_standings(year)
+    except ProviderError as exc:
+        raise HTTPException(503, detail={"status": "unavailable", "reason": exc.reason}) from exc
+    if not data["constructors"]:
+        raise HTTPException(503, detail={"status": "unavailable", "reason": data["errors"].get("constructor_standings", "no_standings")})
     return APIResponse(success=True, data=[e.model_dump() for e in data["constructors"]])
 
 
@@ -240,7 +253,7 @@ async def track_status(
     _validate_round(round)
     messages = await f1_service.get_race_control(year, round, session)
     flags = [m for m in messages if m.flag]
-    latest_flag = flags[-1].flag if flags else "GREEN"
+    latest_flag = flags[-1].flag if flags else "UNKNOWN"
     return APIResponse(success=True, data={"status": latest_flag, "messages": [m.model_dump() for m in flags[-5:]]})
 
 
@@ -267,19 +280,32 @@ async def tyres(
 async def insights(year: int = Query(default=_CURRENT_YEAR)):
     _validate_year(year)
     data = await f1_service.get_insights(year)
-    return APIResponse(success=True, data=data)
+    unavailable = data.get("status") == "unavailable"
+    return APIResponse(
+        success=not unavailable,
+        data=data,
+        error="Historical insights unavailable" if unavailable else None,
+    )
 
 
 @router.get("/news", response_model=APIResponse)
 async def news():
-    data = await f1_service.get_news()
-    return APIResponse(success=True, data=data)
+    from app.services.jolpica import ProviderError
+    try:
+        data = await f1_service.get_news()
+        return APIResponse(success=True, data=data)
+    except ProviderError as exc:
+        raise HTTPException(503, detail="News provider unavailable") from exc
 
 
 @router.get("/engine-standings", response_model=APIResponse)
 async def engine_standings(year: int = Query(default=_CURRENT_YEAR)):
     _validate_year(year)
-    data = await f1_service.get_engine_standings(year)
+    from app.services.jolpica import ProviderError
+    try:
+        data = await f1_service.get_engine_standings(year)
+    except ProviderError as exc:
+        raise HTTPException(503, detail={"status": "unavailable", "reason": exc.reason}) from exc
     return APIResponse(success=True, data=data)
 
 
@@ -301,6 +327,26 @@ async def websocket_live(ws: WebSocket):
     Stays connected to receive push updates from the live broadcaster.
     Frontend should reconnect automatically on disconnect.
     """
+    from app.core.config import settings
+    # Origin validation against CSWSH:
+    # Browser clients always send Origin. Untrusted or malformed origins are rejected with code 1008.
+    # In production, missing Origin is rejected unless WS_ALLOW_NO_ORIGIN is enabled.
+    # Note: Origin validation prevents CSWSH; it is NOT client authentication.
+    origin = ws.headers.get("origin")
+    allowed_origins = {o.rstrip("/") for o in settings.cors_origins_list if o}
+
+    if origin:
+        clean_origin = origin.strip().rstrip("/")
+        if clean_origin not in allowed_origins:
+            logger.warning(f"Rejected WS connection from untrusted origin: {origin}")
+            await ws.close(code=1008)
+            return
+    else:
+        if not settings.WS_ALLOW_NO_ORIGIN:
+            logger.warning("Rejected WS connection missing Origin header")
+            await ws.close(code=1008)
+            return
+
     await manager.connect(ws, channel="live")
     try:
         # Send immediate state snapshot on connect
@@ -313,6 +359,8 @@ async def websocket_live(ws: WebSocket):
                 "is_live": True,
                 "session_info": {
                     "session_name": state_info.get("session_name"),
+                    "date_start": state_info.get("date_start"),
+                    "session_key": state_info.get("session_key"),
                     "display_name": state_info.get("display_name"),
                     "circuit": state_info.get("circuit"),
                     "country": state_info.get("country"),
@@ -328,11 +376,13 @@ async def websocket_live(ws: WebSocket):
                 "is_live": False,
                 "session_info": {
                     "session_name": state_info.get("session_name"),
+                    "date_start": state_info.get("date_start"),
+                    "session_key": state_info.get("session_key"),
                     "display_name": state_info.get("display_name"),
                     "circuit": state_info.get("circuit"),
                     "country": state_info.get("country"),
                     "year": state_info.get("year"),
-                    "track_status": "GREEN",
+                    "track_status": state_info.get("track_status", "UNKNOWN"),
                 },
                 "leaderboard": [],
                 "weather": None,
@@ -357,3 +407,18 @@ async def websocket_live(ws: WebSocket):
         logging.getLogger(__name__).warning(f"WS error: {e}")
     finally:
         await manager.disconnect(ws, channel="live")
+
+
+@router.get("/results", response_model=APIResponse)
+async def season_results(year: int = Query(default=_CURRENT_YEAR)):
+    _validate_year(year)
+    data = await f1_service.get_season_results(year)
+    if data.get("unavailable"):
+        raise HTTPException(status_code=503, detail="Official classifications unavailable from provider")
+    return APIResponse(success=True, data=data)
+
+
+@router.get("/live/health")
+async def live_health():
+    from app.services.openf1_auth import health
+    return {"success": True, "data": health()}

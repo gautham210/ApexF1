@@ -42,6 +42,8 @@ async def _live_loop():
                     "is_live": True,
                     "session_info": {
                         "session_name": state_info.get("session_name"),
+                        "date_start": state_info.get("date_start"),
+                        "session_key": state_info.get("session_key"),
                         "display_name": state_info.get("display_name"),
                         "circuit": state_info.get("circuit"),
                         "country": state_info.get("country"),
@@ -61,6 +63,8 @@ async def _live_loop():
                     "is_live": False,
                     "session_info": {
                         "session_name": state_info.get("session_name"),
+                        "date_start": state_info.get("date_start"),
+                        "session_key": state_info.get("session_key"),
                         "display_name": state_info.get("display_name"),
                         "circuit": state_info.get("circuit"),
                         "country": state_info.get("country"),
@@ -82,6 +86,8 @@ async def _live_loop():
                     "is_live": False,
                     "session_info": {
                         "session_name": state_info.get("session_name"),
+                        "date_start": state_info.get("date_start"),
+                        "session_key": state_info.get("session_key"),
                         "display_name": state_info.get("display_name"),
                         "circuit": state_info.get("circuit"),
                         "country": state_info.get("country"),

@@ -61,15 +61,30 @@ SESSION_DISPLAY = {
 
 
 async def _get(path: str, params: dict = None, timeout: float = 8.0) -> Any:
-    """Make an OpenF1 API request. Returns parsed JSON or None on failure."""
-    url = f"{OPENF1_BASE}{path}"
+    from app.services import openf1_auth
+    headers = await openf1_auth.headers()
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            r = await client.get(url, params=params or {})
-            r.raise_for_status()
-            return r.json()
-    except Exception as e:
-        logger.warning(f"OpenF1 request failed [{path}]: {e}")
+            response = await client.get(f"{OPENF1_BASE}{path}", params=params or {}, headers=headers)
+            if response.status_code == 401 and openf1_auth.configured():
+                headers = await openf1_auth.headers(force=True)
+                if headers:
+                    response = await client.get(f"{OPENF1_BASE}{path}", params=params or {}, headers=headers)
+            if response.status_code in (401, 403):
+                openf1_auth.record("unauthorized")
+                return None
+            if response.status_code == 429:
+                openf1_auth.record("rate_limited")
+                return None
+            response.raise_for_status()
+            payload = response.json()
+            if not isinstance(payload, list) or any(not isinstance(row, dict) for row in payload):
+                raise ValueError("Invalid response")
+            openf1_auth.record("available")
+            return payload
+    except (httpx.HTTPError, ValueError):
+        openf1_auth.record("unavailable")
+        logger.warning("OpenF1 request unavailable: %s", path)
         return None
 
 
@@ -91,129 +106,76 @@ async def get_latest_session() -> Optional[Dict]:
     return session
 
 
-async def get_session_state() -> Dict[str, Any]:
-    """
-    Determine the true current session state.
-
-    Returns a dict with:
-      - state: one of UPCOMING/WEEKEND/FP1/FP2/FP3/QUALIFYING/SPRINT_Q/SPRINT/RACE/
-               RED_FLAG/SC/VSC/CHECKERED/ARCHIVE
-      - is_live: bool (True only when a session is genuinely active)
-      - session: OpenF1 session dict or None
-      - session_key: int or None
-      - session_name: str
-      - display_name: str  (e.g. "FP1", "RACE")
-      - circuit: str
-      - country: str
-      - year: int
-      - round: int
-      - track_status: str (GREEN/YELLOW/SC/VSC/RED)
-    """
-    cache_key = "openf1_session_state"
-    if cache_key in _session_cache:
-        return _session_cache[cache_key]
-
-    session = await get_latest_session()
-    if not session:
-        result = {
-            "state": "ARCHIVE",
-            "is_live": False,
-            "session": None,
-            "session_key": None,
-            "session_name": "Unknown",
-            "display_name": "—",
-            "circuit": "—",
-            "country": "—",
-            "year": datetime.now(timezone.utc).year,
-            "round": 0,
-            "track_status": "GREEN",
-        }
-        _session_cache[cache_key] = result
+def classify_session(session, messages, authenticated, now=None, timing=None):
+    """A scheduled time window is not proof of a live feed."""
+    now = now or datetime.now(timezone.utc)
+    result = {"state": "UNAVAILABLE", "is_live": False, "session": session,
+              "session_key": session.get("session_key") if session else None,
+              "session_name": (session or {}).get("session_name", "Unknown"),
+              "display_name": (session or {}).get("session_name", "Unavailable"),
+              "date_start": (session or {}).get("date_start"),
+              "circuit": (session or {}).get("circuit_short_name"),
+              "country": (session or {}).get("country_name"),
+              "year": (session or {}).get("year"), "round": None, "track_status": "UNKNOWN"}
+    if not session or not authenticated:
         return result
-
-    now = datetime.now(timezone.utc)
-
-    # Parse session window from OpenF1 data
-    date_start_str = session.get("date_start")
-    date_end_str = session.get("date_end")
-
-    session_key = session.get("session_key")
-    session_name = session.get("session_name", "Race")
-    display_name = SESSION_DISPLAY.get(session_name, session_name.upper())
-    circuit = session.get("circuit_short_name", session.get("circuit_key", "—"))
-    country = session.get("country_name", "—")
-    year = session.get("year", now.year)
-    meeting_key = session.get("meeting_key")
-
-    state = "ARCHIVE"
-    is_live = False
-    track_status = "GREEN"
-
-    if date_start_str and date_end_str:
+    if session.get("is_cancelled") is True:
+        result["state"] = "CANCELLED"
+        return result
+    valid = []
+    for message in messages:
         try:
-            # OpenF1 returns UTC ISO strings
-            def _parse(s):
-                s = s.replace("Z", "+00:00")
-                return datetime.fromisoformat(s)
+            stamp = datetime.fromisoformat(message["date"].replace("Z", "+00:00"))
+            if stamp.tzinfo and stamp <= now:
+                valid.append((stamp, message))
+        except (ValueError, KeyError, TypeError):
+            continue
+    valid.sort(key=lambda x: x[0], reverse=True)
+    terminal = next((m for _, m in valid if any(word in m.get("message", "").upper() for word in ("SESSION ENDED", "SESSION FINISHED", "SESSION ABORTED", "SESSION CANCELLED"))), None)
+    restarted = next((stamp for stamp,m in valid if "SESSION STARTED" in m.get("message", "").upper() or "SESSION RESUMED" in m.get("message", "").upper()), None)
+    if terminal and (not restarted or datetime.fromisoformat(terminal["date"].replace("Z", "+00:00")) >= restarted):
+        result["state"] = "COMPLETED" if "CANCELLED" not in terminal.get("message", "") else "CANCELLED"
+        return result
+    recent_timing = []
+    for row in timing or []:
+        try:
+            stamp = datetime.fromisoformat(row["date"].replace("Z", "+00:00"))
+            if stamp.tzinfo and stamp <= now:
+                recent_timing.append(stamp)
+        except (ValueError, KeyError, TypeError):
+            continue
+    newest_timing = max(recent_timing, default=None)
+    control_fresh = valid and (now - valid[0][0]).total_seconds() <= 180
+    timing_fresh = newest_timing and (now - newest_timing).total_seconds() <= 180
+    if not control_fresh and not timing_fresh:
+        result["state"] = "STALE"
+        return result
+    evidence = max([s for s in [valid[0][0] if control_fresh else None, newest_timing if timing_fresh else None] if s])
+    result.update(is_live=True, state=SESSION_DISPLAY.get(session.get("session_name"), "LIVE"), observed_at=evidence.isoformat())
+    flags = [m.get("flag") for _,m in valid if m.get("scope") == "Track" and m.get("flag")]
+    if flags:
+        result["track_status"] = {"RED":"RED", "YELLOW":"YELLOW", "DOUBLE YELLOW":"YELLOW", "GREEN":"GREEN", "CLEAR":"GREEN", "CHEQUERED":"CHECKERED"}.get(flags[0], "UNKNOWN")
+        if flags[0] == "RED": result["state"] = "RED_FLAG"
+    return result
 
-            date_start = _parse(date_start_str)
-            date_end = _parse(date_end_str)
 
-            # Add a generous buffer: session may run over
-            session_end_with_buffer = date_end.replace(
-                tzinfo=date_end.tzinfo or timezone.utc
-            )
-            date_start = date_start.replace(tzinfo=date_start.tzinfo or timezone.utc)
-
-            if now < date_start:
-                # Session hasn't started yet — check if it's today/imminent
-                delta_hours = (date_start - now).total_seconds() / 3600
-                state = "UPCOMING" if delta_hours > 6 else "WEEKEND"
-            elif date_start <= now <= session_end_with_buffer:
-                # Session window is active — check track status for red flag etc.
-                is_live = True
-                state = display_name.replace(" ", "_").upper()
-
-                # Fetch live track status
-                ts_data = await _get("/track_status", {"session_key": session_key})
-                if ts_data and isinstance(ts_data, list) and len(ts_data) > 0:
-                    latest_ts = ts_data[-1]
-                    raw_status = str(latest_ts.get("track_status", "1"))
-                    track_status = TRACK_STATUS_MAP.get(raw_status, "GREEN")
-
-                    # Override state for safety car / red flag
-                    if track_status == "RED":
-                        state = "RED_FLAG"
-                    elif track_status == "SC":
-                        state = "SC"
-                    elif track_status == "VSC":
-                        state = "VSC"
-            else:
-                # Session ended — CHECKERED within 30 min, then ARCHIVE
-                elapsed_minutes = (now - session_end_with_buffer).total_seconds() / 60
-                state = "CHECKERED" if elapsed_minutes < 30 else "ARCHIVE"
-
-        except Exception as e:
-            logger.warning(f"Session state parse error: {e}")
-            state = "ARCHIVE"
-
-    result = {
-        "state": state,
-        "is_live": is_live,
-        "session": session,
-        "session_key": session_key,
-        "meeting_key": meeting_key,
-        "session_name": session_name,
-        "display_name": display_name,
-        "circuit": circuit,
-        "country": country,
-        "year": year,
-        "round": session.get("meeting_key", 0),
-        "track_status": track_status,
-        "date_start": date_start_str,
-        "date_end": date_end_str,
-    }
-    _session_cache[cache_key] = result
+async def get_session_state() -> Dict[str, Any]:
+    from app.services import openf1_auth
+    key = "openf1_session_state"
+    if key in _session_cache:
+        return _session_cache[key]
+    if not openf1_auth.configured():
+        return classify_session(None, [], False)
+    session = await get_latest_session()
+    session_key = session.get("session_key") if session else None
+    messages, intervals, positions = await asyncio.gather(
+        get_race_control_messages(session_key) if session_key else asyncio.sleep(0, result=[]),
+        _get("/intervals", {"session_key": session_key}) if session_key else asyncio.sleep(0, result=[]),
+        _get("/position", {"session_key": session_key}) if session_key else asyncio.sleep(0, result=[]),
+    )
+    timing = intervals or positions or []
+    result = classify_session(session, messages or [], openf1_auth.state["status"] == "available", timing=timing)
+    _session_cache[key] = result
     return result
 
 
@@ -227,8 +189,10 @@ async def get_live_timing(session_key: int) -> List[Dict]:
         return _live_cache[cache_key]
 
     # Fetch intervals (gaps between drivers)
-    intervals = await _get("/intervals", {"session_key": session_key, "interval<": 10})
-    if not intervals:
+    intervals = await _get("/intervals", {"session_key": session_key})
+    timing_errors = {}
+    if intervals is None:
+        timing_errors["intervals"] = "unavailable"
         intervals = []
 
     # Fetch drivers for this session
@@ -270,11 +234,35 @@ async def get_live_timing(session_key: int) -> List[Dict]:
             if num is not None:
                 pit_map[int(num)] = pit_map.get(int(num), 0) + 1
 
+    for channel, value in (("drivers", drivers), ("stints", stints), ("positions", positions), ("pit_stops", pits)):
+        if value is None:
+            timing_errors[channel] = "unavailable"
+    lap_key = f"live_laps_{session_key}"
+    laps = _medium_cache.get(lap_key)
+    if laps is None:
+        laps = await _get("/laps", {"session_key": session_key})
+        if laps is not None:
+            _medium_cache[lap_key] = laps
+    if laps is None:
+        timing_errors["laps"] = "unavailable"
+    latest_laps = {}
+    best_laps = {}
+    for lap in laps or []:
+        num, duration = lap.get("driver_number"), lap.get("lap_duration")
+        if num is None or not isinstance(duration, (int, float)) or duration <= 0:
+            continue
+        if num not in latest_laps or lap.get("lap_number", 0) > latest_laps[num].get("lap_number", 0):
+            latest_laps[num] = lap
+        best_laps[num] = min(best_laps.get(num, duration), duration)
+    def lap_time(seconds):
+        return f"{int(seconds // 60)}:{seconds % 60:06.3f}" if seconds is not None else None
+    _medium_cache[f"timing_errors_{session_key}"] = timing_errors
+
     # Build leaderboard
     result = []
     seen_drivers = set()
 
-    for interval in intervals:
+    for interval in sorted(intervals, key=lambda item: item.get("date", ""), reverse=True):
         num = interval.get("driver_number")
         if num is None:
             continue
@@ -285,7 +273,7 @@ async def get_live_timing(session_key: int) -> List[Dict]:
 
         driver = driver_map.get(num, {})
         stint = stint_map.get(num, {})
-        pos = position_map.get(num, 99)
+        pos = position_map.get(num)
 
         gap = interval.get("gap_to_leader")
         gap_str = None
@@ -293,10 +281,10 @@ async def get_live_timing(session_key: int) -> List[Dict]:
             if gap == 0:
                 gap_str = "LEADER"
             else:
-                gap_str = f"+{gap:.3f}"
+                gap_str = f"+{gap:.3f}" if isinstance(gap, (int, float)) else str(gap)
 
         interval_val = interval.get("interval")
-        interval_str = f"+{interval_val:.3f}" if interval_val is not None and interval_val > 0 else None
+        interval_str = (f"+{interval_val:.3f}" if interval_val > 0 else None) if isinstance(interval_val, (int, float)) else interval_val
 
         compound = stint.get("compound", "UNKNOWN")
         if compound:
@@ -311,18 +299,23 @@ async def get_live_timing(session_key: int) -> List[Dict]:
             "team_color": f"#{driver.get('team_colour', '888888')}",
             "gap_to_leader": gap_str,
             "interval": interval_str,
-            "last_lap": None,  # requires laps endpoint (heavier)
-            "best_lap": None,
+            "last_lap": lap_time(latest_laps.get(num, {}).get("lap_duration")),
+            "best_lap": lap_time(best_laps.get(num)),
+            "lap_number": latest_laps.get(num, {}).get("lap_number"),
+            "sector1": latest_laps.get(num, {}).get("duration_sector_1"),
+            "sector2": latest_laps.get(num, {}).get("duration_sector_2"),
+            "sector3": latest_laps.get(num, {}).get("duration_sector_3"),
             "current_tyre": compound,
-            "tyre_age": stint.get("tyre_age_at_start"),
-            "pits": pit_map.get(num, 0),
-            "status": "ON_TRACK",
-            "drs": False,
+            "tyre_age": None,  # Starting age is not current tyre age.
+            "tyre_age_at_start": stint.get("tyre_age_at_start"),
+            "pits": pit_map.get(num, 0) if pits is not None else None,
+            "status": None,
+            "drs": None,
             "speed": None,
         })
 
     # Sort by position
-    result.sort(key=lambda x: x["position"])
+    result.sort(key=lambda x: (x["position"] is None, x["position"] or 0))
 
     # Fill in missing positions for drivers not in interval data
     for num, driver in driver_map.items():
@@ -332,7 +325,7 @@ async def get_live_timing(session_key: int) -> List[Dict]:
             if compound:
                 compound = compound.upper()
             result.append({
-                "position": position_map.get(num, 99),
+                "position": position_map.get(num),
                 "driver_number": str(num),
                 "driver_name": driver.get("full_name", f"Driver #{num}"),
                 "abbreviation": driver.get("name_acronym", f"#{num}"),
@@ -340,17 +333,22 @@ async def get_live_timing(session_key: int) -> List[Dict]:
                 "team_color": f"#{driver.get('team_colour', '888888')}",
                 "gap_to_leader": None,
                 "interval": None,
-                "last_lap": None,
-                "best_lap": None,
+                "last_lap": lap_time(latest_laps.get(num, {}).get("lap_duration")),
+                "best_lap": lap_time(best_laps.get(num)),
+                "lap_number": latest_laps.get(num, {}).get("lap_number"),
+                "sector1": latest_laps.get(num, {}).get("duration_sector_1"),
+                "sector2": latest_laps.get(num, {}).get("duration_sector_2"),
+                "sector3": latest_laps.get(num, {}).get("duration_sector_3"),
                 "current_tyre": compound,
-                "tyre_age": stint.get("tyre_age_at_start"),
-                "pits": pit_map.get(num, 0),
-                "status": "ON_TRACK",
-                "drs": False,
+                "tyre_age": None,  # Starting age is not current tyre age.
+            "tyre_age_at_start": stint.get("tyre_age_at_start"),
+                "pits": pit_map.get(num, 0) if pits is not None else None,
+                "status": None,
+                "drs": None,
                 "speed": None,
             })
 
-    result.sort(key=lambda x: x["position"])
+    result.sort(key=lambda x: (x["position"] is None, x["position"] or 0))
     _live_cache[cache_key] = result
     return result
 
@@ -373,26 +371,28 @@ async def get_live_weather(session_key: int) -> Optional[Dict]:
         "pressure": latest.get("pressure"),
         "wind_speed": latest.get("wind_speed"),
         "wind_direction": latest.get("wind_direction"),
-        "rainfall": bool(latest.get("rainfall", False)),
+        "rainfall": bool(latest["rainfall"]) if latest.get("rainfall") is not None else None,
+        "observed_at": latest.get("date"),
     }
     _medium_cache[cache_key] = result
     return result
 
 
-async def get_race_control_messages(session_key: int) -> List[Dict]:
+async def get_race_control_messages(session_key: int) -> Optional[List[Dict]]:
     """Get race control messages for the session."""
     cache_key = f"race_control_{session_key}"
     if cache_key in _medium_cache:
         return _medium_cache[cache_key]
 
     data = await _get("/race_control", {"session_key": session_key})
-    if not data or not isinstance(data, list):
-        return []
+    if data is None or not isinstance(data, list):
+        return None
 
     messages = []
     for msg in data[-20:]:  # last 20 messages
         messages.append({
             "time": msg.get("date"),
+            "date": msg.get("date"),
             "lap": msg.get("lap_number"),
             "category": msg.get("category"),
             "message": msg.get("message", ""),
@@ -405,15 +405,15 @@ async def get_race_control_messages(session_key: int) -> List[Dict]:
     return result
 
 
-async def get_stints(session_key: int) -> Dict[str, List[Dict]]:
+async def get_stints(session_key: int) -> Optional[Dict[str, List[Dict]]]:
     """Get tyre stint data by driver."""
     cache_key = f"stints_{session_key}"
     if cache_key in _medium_cache:
         return _medium_cache[cache_key]
 
     data = await _get("/stints", {"session_key": session_key})
-    if not data or not isinstance(data, list):
-        return {}
+    if data is None or not isinstance(data, list):
+        return None
 
     result: Dict[str, List[Dict]] = {}
     for stint in data:
@@ -427,7 +427,7 @@ async def get_stints(session_key: int) -> Dict[str, List[Dict]]:
             "compound": (stint.get("compound") or "UNKNOWN").upper(),
             "lap_start": stint.get("lap_start"),
             "lap_end": stint.get("lap_end"),
-            "tyre_age_at_start": stint.get("tyre_age_at_start", 0),
+            "tyre_age_at_start": stint.get("tyre_age_at_start"),
         })
 
     _medium_cache[cache_key] = result
@@ -446,7 +446,14 @@ async def get_live_snapshot(session_key: int) -> Dict[str, Any]:
         return_exceptions=True,
     )
 
+    errors = dict(_medium_cache.get(f"timing_errors_{session_key}", {}))
+    for channel, value in (("timing", timing), ("weather", weather), ("race_control", race_control)):
+        if isinstance(value, Exception) or value is None:
+            errors[channel] = "unavailable"
     return {
+        "status": "partial" if errors else "success",
+        "errors": errors,
+        "session_key": session_key,
         "leaderboard": timing if isinstance(timing, list) else [],
         "weather": weather if isinstance(weather, dict) else None,
         "race_control": race_control if isinstance(race_control, list) else [],

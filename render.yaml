@@ -1,0 +1,25 @@
+# Existing service blueprint: review/import against the existing Render service, not a new project.
+services:
+  - type: web
+    name: apexf1-api
+    runtime: docker
+    repo: https://github.com/gautham210/ApexF1
+    branch: main
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeployTrigger: "off"
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: CACHE_DIR
+        value: /app/cache
+      - key: CORS_ORIGINS
+        value: https://apex-f1-one.vercel.app
+      - key: WS_ALLOW_NO_ORIGIN
+        value: "false"
+      - key: OPENF1_IMAGES_ENABLED
+        value: "false"
+# OpenF1 credentials are optional secret settings, never blueprint values.
+# Preview acceptance requires adding the exact preview origin to CORS_ORIGINS.
+# Docker listens on 8000; Render detects this port. Cache is ephemeral and bounded by application policy.

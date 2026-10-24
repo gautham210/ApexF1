@@ -2,13 +2,10 @@ import fastf1
 import pandas as pd
 import numpy as np
 import logging
-import json
-import os
-import time
-import httpx
 from typing import Optional, Dict, Any, List
-from datetime import datetime
+from datetime import datetime, timezone
 from cachetools import TTLCache
+from app.services.metadata import team_display_name
 from app.models.schemas import (
     SessionInfo, LeaderboardEntry, LapTime,
     TelemetryPoint, WeatherData, RaceControlMessage,
@@ -21,14 +18,6 @@ logger = logging.getLogger(__name__)
 _session_cache: TTLCache = TTLCache(maxsize=20, ttl=600)   # sessions live 10 min
 _data_cache: TTLCache = TTLCache(maxsize=200, ttl=300)     # general data: 5 min
 _news_cache: TTLCache = TTLCache(maxsize=5, ttl=600)       # news: 10 min
-
-# Disk cache directory (alongside existing fastf1 cache)
-_DISK_CACHE_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "cache", "standings")
-os.makedirs(_DISK_CACHE_DIR, exist_ok=True)
-
-# Jolpica/Ergast API base (no API key required)
-_JOLPICA_BASE = "https://api.jolpi.ca/ergast/f1"
-_JOLPICA_CACHE_TTL_SECONDS = 3600  # 1 hour
 
 # Constructor name normalization map — canonical mapping from ALL Jolpica/Ergast/FastF1
 # variant strings to our internal canonical name used in TEAM_COLORS.
@@ -107,6 +96,26 @@ COMPOUND_COLORS: Dict[str, str] = {
 }
 
 
+def normalize_constructor(name: str, year: int) -> str:
+    if year < 2026 and name in ("Sauber", "Kick Sauber", "Stake F1 Team Kick Sauber", "Alfa Romeo"):
+        return name
+    if year < 2025 and name in ("AlphaTauri", "Alpha Tauri", "Scuderia AlphaTauri Honda", "RB", "RB F1 Team"):
+        return name
+    return _CONSTRUCTOR_NAME_MAP.get(name, name)
+
+
+def _session_date(row, number):
+    """FastF1 UTC columns are naive UTC; local columns must retain their offset."""
+    value = row.get(f"Session{number}DateUtc")
+    if value is not None and pd.notna(value):
+        return pd.to_datetime(value, utc=True)
+    value = row.get(f"Session{number}Date")
+    if value is None or pd.isna(value):
+        return None
+    stamp = pd.Timestamp(value)
+    return stamp.tz_convert("UTC") if stamp.tzinfo else None
+
+
 def _safe_val(val, default=None):
     """Safely convert pandas/numpy values to Python native types."""
     if val is None:
@@ -145,129 +154,118 @@ def _timedelta_to_str(td) -> Optional[str]:
 
 
 async def get_current_session_info() -> Optional[SessionInfo]:
-    """Get the current or most recent session, with timezone-safe weekend state machine."""
-    cache_key = "current_session"
-    if cache_key in _data_cache:
-        return _data_cache[cache_key]
-
-    try:
-        year = datetime.now().year
-        schedule = fastf1.get_event_schedule(year, include_testing=False)
-        now = pd.Timestamp.utcnow().tz_localize(None)
-
-        current_event = None
-        status = "Completed"
-        is_live = False
-        active_session_name = "Race"
-
-        # Find the active or most recent event
-        for _, row in schedule.iterrows():
-            s1_date = pd.to_datetime(row.get("Session1Date")).tz_localize(None) if pd.notna(row.get("Session1Date")) else None
-            s5_date = pd.to_datetime(row.get("Session5Date")).tz_localize(None) if pd.notna(row.get("Session5Date")) else None
-            
-            if not s5_date:
-                continue
-
-            # Active weekend range: from Friday practice (or 6 hours before) to 4 hours post-race
-            weekend_start = s1_date - pd.Timedelta(hours=6) if s1_date else s5_date - pd.Timedelta(days=2)
-            weekend_end = s5_date + pd.Timedelta(hours=4)
-
-            if weekend_start <= now <= weekend_end:
-                current_event = row
-                is_live = True
-                status = "Live"
-                
-                # Detect which specific session is active or recently completed
-                sessions = [
-                    ("Session1", "Session1Date"),
-                    ("Session2", "Session2Date"),
-                    ("Session3", "Session3Date"),
-                    ("Session4", "Session4Date"),
-                    ("Session5", "Session5Date"),
-                ]
-                
-                # Default to current session or track the active one
-                for s_name_key, s_date_key in sessions:
-                    s_date = pd.to_datetime(row.get(s_date_key)).tz_localize(None) if pd.notna(row.get(s_date_key)) else None
-                    if s_date and s_date <= now <= s_date + pd.Timedelta(hours=2.5):
-                        active_session_name = str(row.get(s_name_key, "Race"))
-                        status = f"{active_session_name.upper()} LIVE"
-                        break
-                else:
-                    # Between sessions
-                    status = "WEEKEND ACTIVE"
-                break
-        else:
-            # No active weekend, find the most recently completed one
-            completed_events = []
-            for _, row in schedule.iterrows():
-                s5_date = pd.to_datetime(row.get("Session5Date")).tz_localize(None) if pd.notna(row.get("Session5Date")) else None
-                if s5_date and s5_date + pd.Timedelta(hours=4) <= now:
-                    completed_events.append(row)
-            if completed_events:
-                current_event = completed_events[-1]
-            else:
-                current_event = schedule.iloc[0]
-
-        if current_event is None:
-            return None
-
-        info = SessionInfo(
-            year=year,
-            round_number=int(current_event.get("RoundNumber", 1)),
-            country=str(current_event.get("Country", "")),
-            circuit=str(current_event.get("Location", "")),
-            session_name=str(current_event.get("EventName", "")),
-            session_type=active_session_name,
-            date=str(current_event.get("EventDate", "")),
-            status=status,
-            is_live=is_live,
-        )
-        _data_cache[cache_key] = info
-        return info
-    except Exception as e:
-        logger.error(f"get_current_session_info error: {e}")
+    year = datetime.now().year
+    context = await get_season_context(year)
+    event = context.get("next_race") or context.get("latest_completed_race")
+    if not event:
         return None
+    return SessionInfo(year=year, round_number=event["round_number"],
+        country=event["country"], circuit=event["location"], session_name="Race",
+        session_type="Race", date=event.get("session5_date"),
+        status="UPCOMING" if context.get("next_race") else "ARCHIVE", is_live=False)
+
+
+_schedule_pending = {}
 
 
 async def get_schedule(year: int) -> List[ScheduleEvent]:
+    """Bound and deduplicate expensive FastF1 schedule loads per season."""
+    from app.services.jolpica import ProviderError
+    if f"schedule_v3_{year}" in _data_cache:
+        return _data_cache[f"schedule_v3_{year}"]
+    task = _schedule_pending.get(year)
+    if task is None:
+        if len(_schedule_pending) >= 4:
+            raise ProviderError("schedule_busy")
+        task = asyncio.create_task(_build_schedule(year))
+        _schedule_pending[year] = task
+        def finish(done):
+            if _schedule_pending.get(year) is done:
+                _schedule_pending.pop(year, None)
+            if not done.cancelled():
+                done.exception()  # Consume background errors after a caller timeout.
+        task.add_done_callback(finish)
+    try:
+        return await asyncio.wait_for(asyncio.shield(task), timeout=35)
+    except asyncio.TimeoutError as exc:
+        raise ProviderError("schedule_timeout") from exc
+
+
+async def _build_schedule(year: int) -> List[ScheduleEvent]:
     """Return the full race calendar for a given year."""
-    cache_key = f"schedule_{year}"
+    cache_key = f"schedule_v3_{year}"
     if cache_key in _data_cache:
         return _data_cache[cache_key]
 
     try:
-        schedule = fastf1.get_event_schedule(year, include_testing=False)
-        now = pd.Timestamp.utcnow().tz_localize(None)
+        schedule = await asyncio.to_thread(fastf1.get_event_schedule, year, include_testing=False)
+        now = pd.Timestamp.now(tz="UTC")
+
+        # Attempt to fetch Jolpica schedule for canonical event reconciliation
+        jolpica_by_round: Dict[int, Dict[str, Any]] = {}
+        try:
+            from app.services import history_service
+            jolpica_races = await asyncio.wait_for(history_service.races(year, ""), timeout=5.0)
+            jolpica_by_round = {r.round: r.model_dump() for r in (jolpica_races or [])}
+        except Exception as j_err:
+            logger.debug(f"Jolpica schedule reconciliation unavailable for {year}: {j_err}")
+
+        from app.services.event_identity import reconcile_event
+        # Completion requires a published classification, never an assumed duration.
+        completed_rounds = set()
+        try:
+            classified = await asyncio.wait_for(history_service.races(year, "results"), timeout=8)
+            completed_rounds = {r.round for r in classified if r.Results}
+        except Exception:
+            pass  # Optional completion domain remains explicitly unverified.
+
         events = []
         for _, row in schedule.iterrows():
-            s5_date = pd.to_datetime(row.get("Session5Date")).tz_localize(None) if pd.notna(row.get("Session5Date")) else None
-            is_completed = s5_date is not None and s5_date + pd.Timedelta(hours=4) <= now
+            s5_date = _session_date(row, 5)
+            is_completed = int(row.get("RoundNumber", 0)) in completed_rounds
             event_date = row.get("EventDate")
+            round_num = int(row.get("RoundNumber", 0))
+
+            f1_dict = {
+                "round_number": round_num,
+                "country": str(row.get("Country", "")),
+                "location": str(row.get("Location", "")),
+                "event_name": str(row.get("EventName", "")),
+                "event_date": str(event_date) if pd.notna(event_date) else None,
+            }
+            j_dict = jolpica_by_round.get(round_num)
+            reconciled = reconcile_event(year, round_num, f1_dict, j_dict)
+
             events.append(ScheduleEvent(
-                round_number=int(row.get("RoundNumber", 0)),
-                country=str(row.get("Country", "")),
-                location=str(row.get("Location", "")),
-                event_name=str(row.get("EventName", "")),
-                event_date=str(event_date) if pd.notna(event_date) else None,
+                round_number=round_num,
+                country=reconciled.country,
+                location=reconciled.location,
+                event_name=reconciled.event_name,
+                event_date=reconciled.event_date,
                 session1=str(row.get("Session1", "")) or None,
-                session1_date=str(row.get("Session1Date", "")) if pd.notna(row.get("Session1Date")) else None,
+                session1_date=_session_date(row, 1).isoformat() if _session_date(row, 1) is not None else None,
                 session2=str(row.get("Session2", "")) or None,
-                session2_date=str(row.get("Session2Date", "")) if pd.notna(row.get("Session2Date")) else None,
+                session2_date=_session_date(row, 2).isoformat() if _session_date(row, 2) is not None else None,
                 session3=str(row.get("Session3", "")) or None,
-                session3_date=str(row.get("Session3Date", "")) if pd.notna(row.get("Session3Date")) else None,
+                session3_date=_session_date(row, 3).isoformat() if _session_date(row, 3) is not None else None,
                 session4=str(row.get("Session4", "")) or None,
-                session4_date=str(row.get("Session4Date", "")) if pd.notna(row.get("Session4Date")) else None,
+                session4_date=_session_date(row, 4).isoformat() if _session_date(row, 4) is not None else None,
                 session5=str(row.get("Session5", "")) or None,
-                session5_date=str(row.get("Session5Date", "")) if pd.notna(row.get("Session5Date")) else None,
+                session5_date=_session_date(row, 5).isoformat() if _session_date(row, 5) is not None else None,
                 is_completed=is_completed,
-                is_upcoming=not is_completed,
+                completion_status="verified_classification" if is_completed else "unverified",
+                is_upcoming=not is_completed and s5_date is not None and s5_date > now,
+                circuit_name=reconciled.circuit_name,
+                circuit_id=reconciled.circuit_id,
+                has_conflict=reconciled.has_conflict,
+                conflict=reconciled.conflict.model_dump() if reconciled.conflict else None,
             ))
         _data_cache[cache_key] = events
         return events
     except Exception as e:
-        logger.error(f"get_schedule error: {e}")
-        return []
+        logger.warning("Schedule provider unavailable")
+        from app.services.jolpica import ProviderError
+        raise ProviderError("schedule_unavailable") from e
 
 
 import asyncio
@@ -308,6 +306,11 @@ async def _load_session(year: int, round_number: int, session_name: str = "Race"
 
 
 async def get_leaderboard(year: int, round_number: int, session_name: str = "Race") -> List[LeaderboardEntry]:
+    if session_name in ("Race", "R"):
+        official = await get_season_results(year)
+        rows = official.get("results", {}).get(str(round_number), [])
+        if rows:
+            return [LeaderboardEntry(**row) for row in rows]
     cache_key = f"leaderboard_{year}_{round_number}_{session_name}"
     if cache_key in _data_cache:
         return _data_cache[cache_key]
@@ -326,7 +329,9 @@ async def get_leaderboard(year: int, round_number: int, session_name: str = "Rac
         for pos, (_, row) in enumerate(results.iterrows(), start=1):
             team = str(row.get("TeamName", ""))
             entries.append(LeaderboardEntry(
-                position=pos,
+                position=int(row["Position"]) if pd.notna(row.get("Position")) else 0,
+                status=_safe_val(row.get("Status")),
+                laps=_safe_val(row.get("Laps")),
                 driver_number=str(row.get("DriverNumber", "")),
                 driver_name=str(row.get("FullName", "")),
                 abbreviation=str(row.get("Abbreviation", "")),
@@ -521,198 +526,110 @@ async def get_drivers(year: int, round_number: int) -> List[Driver]:
         return []
 
 
-def _standings_disk_cache_path(year: int, kind: str) -> str:
-    return os.path.join(_DISK_CACHE_DIR, f"{kind}_{year}.json")
+def _project_legacy_standings(history: Dict[str, Any], year: int) -> Dict[str, Any]:
+    """Preserve old StandingsEntry response fields while sourcing official rows from history."""
+    errors = dict(history.get("errors") or {})
+    driver_snapshot = history.get("driver_standings")
+    constructor_snapshot = history.get("constructor_standings")
+    driver_rows = (driver_snapshot or {}).get("rows") or []
+    constructor_rows = (constructor_snapshot or {}).get("rows") or []
+    drivers, constructors = [], []
+    projection_errors = {}
+    for row in driver_rows:
+        driver = row.get("Driver") or {}
+        if row.get("position") is None or not driver.get("driverId"):
+            projection_errors["drivers"] = "unranked_identity_unrepresentable"
+            continue
+        constructor_list = row.get("Constructors") or []
+        constructor_name = normalize_constructor(constructor_list[0]["name"], year) if constructor_list else ""
+        drivers.append(StandingsEntry(
+            position=row["position"],
+            name=f"{driver.get('givenName', '')} {driver.get('familyName', '')}".strip(),
+            driver_id=driver["driverId"],
+            code=driver.get("code"),
+            points=row["points"],
+            wins=row["wins"],
+            team=constructor_name,
+            nationality=driver.get("nationality") or "",
+            color=TEAM_COLORS.get(constructor_name, "#888888"),
+        ))
+    for row in constructor_rows:
+        constructor = row.get("Constructor") or {}
+        if row.get("position") is None or not constructor.get("constructorId"):
+            projection_errors["constructors"] = "unranked_identity_unrepresentable"
+            continue
+        name = normalize_constructor(constructor["name"], year)
+        constructors.append(StandingsEntry(
+            position=row["position"],
+            name=name,
+            constructor_id=constructor["constructorId"],
+            display_name=team_display_name(name, year),
+            points=row["points"],
+            wins=row["wins"],
+            color=TEAM_COLORS.get(name, "#888888"),
+        ))
+    if not drivers:
+        errors.setdefault("driver_standings", "no_snapshot")
+    if not constructors:
+        errors.setdefault("constructor_standings", "no_snapshot")
+    errors.update(projection_errors)
+    if not drivers and not constructors:
+        history_status = "unavailable"
+    elif errors:
+        history_status = "partial"
+    else:
+        history_status = "success"
+    snapshot_round = (driver_snapshot or constructor_snapshot or {}).get("round")
+    return {
+        "drivers": drivers,
+        "constructors": constructors,
+        "status": history_status,
+        "errors": errors,
+        "round": snapshot_round,
+        "source": history.get("source", "Jolpica"),
+        "fetched_at": history.get("fetched_at", datetime.now(timezone.utc).isoformat()),
+    }
 
 
-def _load_standings_from_disk(year: int, kind: str) -> Optional[list]:
-    """Return cached standings list if file exists and is < TTL seconds old."""
-    path = _standings_disk_cache_path(year, kind)
-    try:
-        if not os.path.exists(path):
-            return None
-        age = time.time() - os.path.getmtime(path)
-        if age > _JOLPICA_CACHE_TTL_SECONDS:
-            return None
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception as e:
-        logger.warning(f"Disk cache read error ({path}): {e}")
-        return None
+async def get_standings(year: int) -> Dict[str, Any]:
+    """Project legacy standings contracts from the canonical official snapshot."""
+    from app.services import history_service, jolpica
 
-
-def _save_standings_to_disk(year: int, kind: str, data: list) -> None:
-    path = _standings_disk_cache_path(year, kind)
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f)
-    except Exception as e:
-        logger.warning(f"Disk cache write error ({path}): {e}")
-
-
-async def _fetch_jolpica_driver_standings(year: int) -> List[StandingsEntry]:
-    """Fetch driver championship standings from Jolpica (Ergast-compatible) API."""
-    url = f"{_JOLPICA_BASE}/{year}/driverStandings.json"
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            data = resp.json()
-        lists = data["MRData"]["StandingsTable"]["StandingsLists"]
-        if not lists:
-            return []
-        standings_raw = lists[0]["DriverStandings"]
-        entries: List[StandingsEntry] = []
-        for item in standings_raw:
-            driver = item["Driver"]
-            constructor_name = item["Constructors"][0]["name"] if item.get("Constructors") else ""
-            team_normalized = _CONSTRUCTOR_NAME_MAP.get(constructor_name, constructor_name)
-            full_name = f"{driver['givenName']} {driver['familyName']}"
-            entries.append(StandingsEntry(
-                position=int(item["position"]),
-                name=full_name,
-                points=float(item["points"]),
-                wins=int(item["wins"]),
-                team=team_normalized,
-                nationality=driver.get("nationality", ""),
-                color=TEAM_COLORS.get(team_normalized, "#888888"),
-            ))
-        return entries
-    except Exception as e:
-        logger.error(f"Jolpica driver standings fetch error: {e}")
-        return []
-
-
-async def _fetch_jolpica_constructor_standings(year: int) -> List[StandingsEntry]:
-    """Fetch constructor championship standings from Jolpica API."""
-    url = f"{_JOLPICA_BASE}/{year}/constructorStandings.json"
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            data = resp.json()
-        lists = data["MRData"]["StandingsTable"]["StandingsLists"]
-        if not lists:
-            return []
-        standings_raw = lists[0]["ConstructorStandings"]
-        entries: List[StandingsEntry] = []
-        for item in standings_raw:
-            constructor_name = item["Constructor"]["name"]
-            team_normalized = _CONSTRUCTOR_NAME_MAP.get(constructor_name, constructor_name)
-            entries.append(StandingsEntry(
-                position=int(item["position"]),
-                name=team_normalized,
-                points=float(item["points"]),
-                wins=int(item["wins"]),
-                color=TEAM_COLORS.get(team_normalized, "#888888"),
-            ))
-        return entries
-    except Exception as e:
-        logger.error(f"Jolpica constructor standings fetch error: {e}")
-        return []
-
-
-async def get_standings(year: int) -> Dict[str, List[StandingsEntry]]:
-    """Return driver and constructor championship standings via Jolpica API.
-    
-    Data source priority:
-      1. In-memory TTL cache (60s)
-      2. Disk cache (1h) — survives server restart
-      3. Live Jolpica API call
-      4. Empty list (DO NOT generate fake data)
-    """
-    cache_key = f"standings_{year}"
-    if cache_key in _data_cache:
-        return _data_cache[cache_key]
-
-    # Try disk cache first
-    cached_drivers_raw = _load_standings_from_disk(year, "drivers")
-    cached_constructors_raw = _load_standings_from_disk(year, "constructors")
-
-    if cached_drivers_raw is not None and cached_constructors_raw is not None:
-        logger.info(f"Standings for {year} loaded from disk cache")
-        driver_standings = [StandingsEntry(**d) for d in cached_drivers_raw]
-        constructor_standings = [StandingsEntry(**c) for c in cached_constructors_raw]
-        result = {"drivers": driver_standings, "constructors": constructor_standings}
-        _data_cache[cache_key] = result
-        return result
-
-    # Live fetch from Jolpica API
-    logger.info(f"Fetching live standings for {year} from Jolpica API")
-    driver_standings = await _fetch_jolpica_driver_standings(year)
-    constructor_standings = await _fetch_jolpica_constructor_standings(year)
-
-    if driver_standings:
-        _save_standings_to_disk(year, "drivers", [e.model_dump() for e in driver_standings])
-    if constructor_standings:
-        _save_standings_to_disk(year, "constructors", [e.model_dump() for e in constructor_standings])
-
-    result = {"drivers": driver_standings, "constructors": constructor_standings}
-    if driver_standings or constructor_standings:
-        _data_cache[cache_key] = result
+    driver_snapshot, constructor_snapshot = await asyncio.gather(
+        history_service.standings(year, None, "drivers"),
+        history_service.standings(year, None, "constructors"),
+        return_exceptions=True,
+    )
+    errors = {}
+    if isinstance(driver_snapshot, Exception):
+        errors["driver_standings"] = getattr(driver_snapshot, "reason", "unavailable")
+        driver_snapshot = None
+    if isinstance(constructor_snapshot, Exception):
+        errors["constructor_standings"] = getattr(constructor_snapshot, "reason", "unavailable")
+        constructor_snapshot = None
+    if driver_snapshot and constructor_snapshot and driver_snapshot["round"] != constructor_snapshot["round"]:
+        errors["constructor_standings"] = "round_mismatch"
+        constructor_snapshot = None
+    if driver_snapshot is None and constructor_snapshot is None:
+        raise jolpica.ProviderError("unavailable")
+    result = _project_legacy_standings({
+        "driver_standings": driver_snapshot,
+        "constructor_standings": constructor_snapshot,
+        "status": "partial" if errors else "success",
+        "errors": errors,
+        "source": "Jolpica",
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
+    }, year)
+    if result["status"] == "unavailable":
+        raise jolpica.ProviderError("unavailable")
     return result
 
 import xml.etree.ElementTree as ET
 
-# Multiple RSS feeds tried in order until one succeeds
-_NEWS_FEEDS = [
-    ("https://www.motorsport.com/rss/f1/news/", "Motorsport.com"),
-    ("https://www.autosport.com/rss/f1/news/", "Autosport"),
-    ("https://www.racefans.net/feed/", "RaceFans"),
-]
-
 async def get_news(year: int = 2026, country: str = None) -> List[Dict[str, str]]:
-    """
-    Returns authentic news headlines from official RSS feeds.
-    Never hallucinates or generates fictional paddock journalism.
-    """
-    cache_key = f"news_feed_{year}_{country or 'all'}"
-    if cache_key in _news_cache:
-        return _news_cache[cache_key]
-
-    # ONLY fetch real live articles from actual RSS feeds.
-    # No fabricated news items for historical/upcoming coordinates.
-    news_items = []
-    for feed_url, source_name in _NEWS_FEEDS:
-        try:
-            async with httpx.AsyncClient(timeout=6.0, follow_redirects=True) as client:
-                resp = await client.get(feed_url)
-                resp.raise_for_status()
-                root = ET.fromstring(resp.text)
-                
-                for item in root.findall('.//item')[:6]:
-                    title_el = item.find('title')
-                    link_el = item.find('link')
-                    date_el = item.find('pubDate')
-                    title = title_el.text.strip() if title_el is not None and title_el.text else ""
-                    link = link_el.text.strip() if link_el is not None and link_el.text else ""
-                    pub_date = date_el.text.strip() if date_el is not None and date_el.text else ""
-                    if title and link:
-                        news_items.append({
-                            "title": title,
-                            "source": source_name,
-                            "tag": "Paddock Story",
-                            "link": link,
-                            "published": pub_date,
-                        })
-        except Exception as e:
-            logger.warning(f"get_news feed {feed_url} failed: {e}")
-            continue
-
-    if news_items:
-        # Deduplicate by first 60 chars of title (case-insensitive)
-        seen = set()
-        unique = []
-        for item in news_items:
-            key = item["title"][:60].lower()
-            if key not in seen:
-                seen.add(key)
-                unique.append(item)
-        news_items = unique[:8]
-        _news_cache[cache_key] = news_items
-        return news_items
-        
-    return []
+    from app.services.news_service import get_feed
+    from app.services.jolpica import ProviderError
+    return (await get_feed())["articles"][:12]
 
 
 _ENGINE_SUPPLIER_COLORS: Dict[str, str] = {
@@ -727,6 +644,8 @@ _ENGINE_SUPPLIER_COLORS: Dict[str, str] = {
 }
 
 async def get_engine_standings(year: int):
+    from app.services.jolpica import ProviderError
+
     cache_key = f"engine_standings_{year}"
     if cache_key in _data_cache:
         return _data_cache[cache_key]
@@ -743,25 +662,31 @@ async def get_engine_standings(year: int):
     elif year == 2025:
         ENGINE_MAP = {
             "Mercedes": "Mercedes", "McLaren": "Mercedes", "Williams": "Mercedes",
-            "Ferrari": "Ferrari", "Haas F1 Team": "Ferrari", "Audi": "Ferrari",
-            "Red Bull Racing": "Honda RBPT", "Racing Bulls": "Honda RBPT",
+            "Ferrari": "Ferrari", "Haas F1 Team": "Ferrari", "Kick Sauber": "Ferrari", "Sauber": "Ferrari", "Alfa Romeo": "Ferrari",
+            "Red Bull Racing": "Honda RBPT", "Racing Bulls": "Honda RBPT", "RB": "Honda RBPT", "RB F1 Team": "Honda RBPT",
             "Aston Martin": "Mercedes",
             "Alpine": "Renault"
         }
-    else: # 2024 and earlier
+    elif year == 2024:
         ENGINE_MAP = {
             "Mercedes": "Mercedes", "McLaren": "Mercedes", "Williams": "Mercedes", "Aston Martin": "Mercedes",
-            "Ferrari": "Ferrari", "Haas F1 Team": "Ferrari", "Audi": "Ferrari",
-            "Red Bull Racing": "Honda RBPT", "Racing Bulls": "Honda RBPT",
+            "Ferrari": "Ferrari", "Haas F1 Team": "Ferrari", "Kick Sauber": "Ferrari", "Sauber": "Ferrari", "Alfa Romeo": "Ferrari",
+            "Red Bull Racing": "Honda RBPT", "Racing Bulls": "Honda RBPT", "RB": "Honda RBPT", "RB F1 Team": "Honda RBPT",
             "Alpine": "Renault"
         }
     
-    standings = await _fetch_jolpica_constructor_standings(year)
+    else:
+        raise ProviderError("power_unit_mapping_unavailable")
+
+    snapshot = await get_standings(year)
+    standings = snapshot["constructors"]
+    if not standings:
+        raise ProviderError(snapshot["errors"].get("constructor_standings", "unavailable"))
     engines: Dict[str, Any] = {}
     team_points: Dict[str, Dict[str, Any]] = {}  # for contribution tracking
     
     for c in standings:
-        engine = ENGINE_MAP.get(c.name, "Other")
+        engine = ENGINE_MAP.get(c.name, "Unmapped supplier")
         if engine not in engines:
             engines[engine] = {"name": engine, "points": 0.0, "wins": 0, "teams": [], "team_points": {}}
         engines[engine]["points"] += c.points
@@ -787,91 +712,24 @@ async def get_engine_standings(year: int):
 
 
 async def get_insights(year: int) -> Dict[str, Any]:
-    cache_key = f"insights_{year}"
-    if cache_key in _data_cache:
-        return _data_cache[cache_key]
-        
-    insights = {
-        "driver_in_form": {"name": "—", "stat": "TBD"},
-        "fastest_qualifier": {"name": "—", "stat": "TBD"},
-        "biggest_gainer": {"name": "—", "stat": "TBD"},
-        "recent_winner": {"name": "—", "stat": "TBD"},
-        "constructor_leader": {"name": "—", "stat": "TBD"},
-    }
-    
-    try:
-        drivers = await _fetch_jolpica_driver_standings(year)
-        constructors = await _fetch_jolpica_constructor_standings(year)
-        
-        if constructors:
-            leader = constructors[0]
-            insights["constructor_leader"] = {"name": leader.name, "stat": f"{int(leader.points)} pts"}
-            
-        if drivers:
-            leader = drivers[0]
-            insights["driver_in_form"] = {"name": leader.name, "stat": "Championship Leader"}
-            
-        schedule = await get_schedule(year)
-        past_races = [r for r in schedule if r.is_completed]
-        
-        if past_races:
-            last_race = past_races[-1]
-            url = f"{_JOLPICA_BASE}/{year}/{last_race.round_number}/results.json"
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(url)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    races = data["MRData"]["RaceTable"]["Races"]
-                    if races:
-                        results = races[0]["Results"]
-                        if results:
-                            winner = results[0]
-                            # Use event_name or location — NEVER country (country = "United States" for Miami)
-                            gp_label = last_race.event_name or f"{last_race.location or last_race.country} Grand Prix"
-                            w_name = f"{winner['Driver']['givenName']} {winner['Driver']['familyName']}"
-                            insights["recent_winner"] = {"name": w_name, "stat": f"{gp_label} Winner"}
-                            
-                            max_gained = 0
-                            gainer_name = "—"
-                            for res in results:
-                                try:
-                                    grid = int(res["grid"])
-                                    pos = int(res["position"])
-                                    gained = grid - pos
-                                    if gained > max_gained and grid > 0:
-                                        max_gained = gained
-                                        gainer_name = f"{res['Driver']['givenName']} {res['Driver']['familyName']}"
-                                except Exception as _e: logger.warning(f"insights sub-fetch error: {_e}")
-                            if max_gained > 0:
-                                insights["biggest_gainer"] = {"name": gainer_name, "stat": f"+{max_gained} Positions"}
-                                
-            # Fetch ALL qualifying results for the season to count poles
-            url_qual = f"{_JOLPICA_BASE}/{year}/qualifying.json?limit=50"
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(url_qual)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    races = data["MRData"]["RaceTable"]["Races"]
-                    pole_counts: Dict[str, int] = {}
-                    for r in races:
-                        try:
-                            qual_results = r.get("QualifyingResults", [])
-                            if qual_results:
-                                # position "1" is pole — sort by position
-                                sorted_q = sorted(qual_results, key=lambda x: int(x.get("position", 99)))
-                                driver = sorted_q[0]["Driver"]
-                                name = f"{driver['givenName']} {driver['familyName']}"
-                                pole_counts[name] = pole_counts.get(name, 0) + 1
-                        except Exception as _e: logger.warning(f"insights sub-fetch error: {_e}")
-                    if pole_counts:
-                        fastest = max(pole_counts.items(), key=lambda x: x[1])
-                        insights["fastest_qualifier"] = {"name": fastest[0], "stat": f"{fastest[1]} Pole{'s' if fastest[1] > 1 else ''} This Season"}
+    from app.services import history_service, jolpica
 
-        _data_cache[cache_key] = insights
-    except Exception as e:
-        logger.error(f"get_insights error: {e}")
-        
-    return insights
+    try:
+        data = await history_service.season(year)
+        return {
+            **history_service.dashboard_insights(data),
+            "status": data["status"],
+            "errors": data["errors"],
+            "source": data["source"],
+            "fetched_at": data["fetched_at"],
+            "qualifying_coverage": data["metric_coverage"]["qualifying_p1"],
+        }
+    except jolpica.ProviderError as exc:
+        unavailable = {
+            key: {"name": "Unavailable", "stat": f"Historical {key.replace('_', ' ')} unavailable", "status": "unavailable"}
+            for key in ("driver_in_form", "qualifying_p1_leader", "biggest_gainer", "recent_winner", "constructor_leader")
+        }
+        return {**unavailable, "status": "unavailable", "errors": {"history": exc.reason}, "qualifying_coverage": "unavailable"}
 
 
 async def get_season_context(year: int) -> Dict[str, Any]:
@@ -888,33 +746,24 @@ async def get_season_context(year: int) -> Dict[str, Any]:
     if not schedule:
         return {
             "year": year, "completed_rounds": 0, "total_rounds": 0,
-            "current_round": 1, "latest_completed_race": None, "next_race": None,
+            "current_round": 1, "is_active_weekend": False,
+            "latest_completed_race": None, "next_race": None, "upcoming_schedule": [],
         }
 
-    now = pd.Timestamp.utcnow().tz_localize(None)
+    now = pd.Timestamp.now(tz="UTC")
 
     # Filter schedule
     completed = sorted([e for e in schedule if e.is_completed], key=lambda x: x.round_number)
-    upcoming = sorted([e for e in schedule if not e.is_completed], key=lambda x: x.round_number)
+    upcoming = sorted([e for e in schedule if not e.is_completed and e.session5_date and pd.to_datetime(e.session5_date, utc=True) >= now], key=lambda x: x.round_number)
 
-    # Detect if we have an active weekend right now
+    # Use the same normalized schedule consumed by every route.
     active_event = None
-    try:
-        raw_schedule = fastf1.get_event_schedule(year, include_testing=False)
-        for event in schedule:
-            row = raw_schedule[raw_schedule["RoundNumber"] == event.round_number]
-            if not row.empty:
-                latest_row = row.iloc[0]
-                s1_date = pd.to_datetime(latest_row.get("Session1Date")).tz_localize(None) if pd.notna(latest_row.get("Session1Date")) else None
-                s5_date = pd.to_datetime(latest_row.get("Session5Date")).tz_localize(None) if pd.notna(latest_row.get("Session5Date")) else None
-                if s5_date:
-                    weekend_start = s1_date - pd.Timedelta(hours=6) if s1_date else s5_date - pd.Timedelta(days=2)
-                    weekend_end = s5_date + pd.Timedelta(hours=4)
-                    if weekend_start <= now <= weekend_end:
-                        active_event = event
-                        break
-    except Exception as e:
-        logger.error(f"Error checking active weekend in season context: {e}")
+    for event in upcoming:
+        start = pd.to_datetime(event.session1_date, utc=True) if event.session1_date else None
+        end = pd.to_datetime(event.session5_date, utc=True) if event.session5_date else None
+        if start is not None and end is not None and start <= now < end:
+            active_event = event
+            break
 
     latest_completed = completed[-1] if completed else None
     
@@ -924,7 +773,7 @@ async def get_season_context(year: int) -> Dict[str, Any]:
         next_race = active_event
     else:
         next_race = upcoming[0] if upcoming else None
-        current_round = latest_completed.round_number if latest_completed else (next_race.round_number if next_race else 1)
+        current_round = next_race.round_number if next_race else (latest_completed.round_number if latest_completed else 1)
 
     ctx = {
         "year": year,
@@ -948,37 +797,95 @@ async def get_dashboard_context(year: int) -> Dict[str, Any]:
     Synthesizes season context, standings, insights, news, and schedule.
     Provides historically accurate context-aware news based on the selected year and event.
     """
-    cache_key = f"dashboard_context_{year}"
-    if cache_key in _data_cache:
-        return _data_cache[cache_key]
+    from app.services import history_service, jolpica, news_service
 
-    season_ctx = await get_season_context(year)
-    active_event = season_ctx.get("next_race")  # If active weekend, next_race is the active one!
-    country = active_event.get("country") if active_event else None
+    try:
+        season_ctx = await get_season_context(year)
+    except jolpica.ProviderError:
+        season_ctx = {"year": year, "status": "unavailable", "current_round": 0,
+                      "completed_rounds": 0, "total_rounds": 0, "is_active_weekend": False,
+                      "latest_completed_race": None, "next_race": None, "upcoming_schedule": []}
 
     results = await asyncio.gather(
-        get_standings(year),
-        get_insights(year),
-        get_news(year, country),
+        history_service.season(year),
+        news_service.get_feed(),
         return_exceptions=True,
     )
 
-    standings   = results[0] if isinstance(results[0], dict) else {}
-    insights    = results[1] if isinstance(results[1], dict) else {}
-    news        = results[2] if isinstance(results[2], list) else []
-
-    drivers      = standings.get("drivers", [])
-    constructors = standings.get("constructors", [])
+    history = results[0] if isinstance(results[0], dict) else None
+    news_feed = results[1] if isinstance(results[1], dict) else None
+    news = news_feed.get("articles", []) if news_feed else []
+    history_error = None if history is not None else (
+        results[0].reason if isinstance(results[0], jolpica.ProviderError) else "unavailable"
+    )
+    unavailable_insights = {
+        key: {"name": "Unavailable", "stat": f"Historical {key.replace('_', ' ')} unavailable", "status": "unavailable"}
+        for key in ("driver_in_form", "qualifying_p1_leader", "biggest_gainer", "recent_winner", "constructor_leader")
+    }
+    standings_projection = _project_legacy_standings(history, year) if history else {
+        "drivers": [], "constructors": [], "status": "unavailable",
+        "errors": {"history": history_error}, "round": None, "source": None, "fetched_at": None,
+    }
     upcoming     = season_ctx.get("upcoming_schedule", [])
 
     result = {
         "season_context": season_ctx,
-        "driver_standings":      [e.model_dump() for e in drivers[:15]],
-        "constructor_standings": [e.model_dump() for e in constructors[:10]],
-        "insights": insights,
+        # Keep the existing response keys; status and errors distinguish unavailable data from no rows.
+        "driver_standings": [entry.model_dump() for entry in standings_projection["drivers"]],
+        "constructor_standings": [entry.model_dump() for entry in standings_projection["constructors"]],
+        "insights": history_service.dashboard_insights(history) if history else unavailable_insights,
+        "history_status": standings_projection["status"],
+        "history_round": standings_projection["round"],
+        "history_source": standings_projection["source"],
+        "history_fetched_at": standings_projection["fetched_at"],
+        "history_errors": standings_projection["errors"],
         "news": news[:6],
+        "news_status": news_feed.get("status", "unavailable") if news_feed else "unavailable",
+        "news_errors": news_feed.get("errors", {}) if news_feed else {"feed": "unavailable"},
         "upcoming_schedule": upcoming,
     }
 
-    _data_cache[cache_key] = result
     return result
+
+
+async def get_season_results(year: int) -> Dict[str, Any]:
+    """Legacy leaderboard projection backed by the canonical history transport."""
+    key = f"season_results_{year}"
+    if key in _data_cache:
+        return _data_cache[key]
+    try:
+        from app.services import history_service, jolpica
+
+        races = await history_service.races(year, "results")
+        by_round = {}
+        for race in races:
+            entries = {}
+            for result in race.Results:
+                # The legacy timing-store shape requires a numeric position. Keep all
+                # statuses and unranked rows in /api/history/season, where the schema
+                # represents them without inventing an order.
+                if result.position is None:
+                    continue
+                driver, constructor = result.Driver, result.Constructor
+                entry = LeaderboardEntry(
+                    position=result.position,
+                    driver_number=result.number or "",
+                    driver_name=f"{driver.givenName} {driver.familyName}".strip(),
+                    abbreviation=driver.code or "",
+                    team=constructor.name,
+                    team_color=TEAM_COLORS.get(constructor.name, "#888888"),
+                    status=result.status,
+                    laps=result.laps,
+                    points=result.points,
+                    best_lap=(result.FastestLap or {}).get("Time", {}).get("time"),
+                )
+                entries[driver.driverId] = entry.model_dump()
+            if entries:
+                by_round[str(race.round)] = sorted(entries.values(), key=lambda entry: entry["position"])
+        data = {"year": year, "source": "Jolpica", "fetched_at": pd.Timestamp.now(tz="UTC").isoformat(),
+                "results": by_round}
+        _data_cache[key] = data
+        return data
+    except (jolpica.ProviderError, KeyError, TypeError, ValueError) as exc:
+        logger.warning("Season classifications unavailable: %s", getattr(exc, "reason", type(exc).__name__))
+        return {"year": year, "source": "Jolpica", "results": {}, "unavailable": True}

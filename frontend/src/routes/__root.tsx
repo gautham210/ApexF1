@@ -1,11 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import {
-  Outlet,
-  Link,
-  createRootRouteWithContext,
-  useRouter,
-} from "@tanstack/react-router";
+import { Outlet, Link, createRootRouteWithContext, useRouter } from "@tanstack/react-router";
+import { MotionConfig } from "framer-motion";
 import { AppSidebar, MobileNav } from "@/components/AppSidebar";
+import { AppAvailability } from "@/components/AppAvailability";
 import { AmbientBackdrop } from "@/components/AmbientBackdrop";
 import { GlobalContextInit } from "@/components/GlobalContextInit";
 
@@ -28,7 +25,7 @@ function NotFoundComponent() {
   );
 }
 
-function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
+function ErrorComponent({ error, reset }: { error: unknown; reset: () => void }) {
   console.error(error);
   const router = useRouter();
   return (
@@ -37,7 +34,10 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
         <h1 className="font-display text-3xl">Signal lost</h1>
         <p className="mt-2 text-sm text-muted-foreground">Something interrupted the feed.</p>
         <button
-          onClick={() => { router.invalidate(); reset(); }}
+          onClick={() => {
+            router.invalidate();
+            reset();
+          }}
           className="mt-6 rounded-full glass-strong px-5 py-2.5 text-sm transition hover:bg-foreground/10"
         >
           Reconnect
@@ -57,15 +57,21 @@ function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   return (
     <QueryClientProvider client={queryClient}>
-      <GlobalContextInit />
-      <div className="min-h-screen">
-        <AmbientBackdrop />
-        <AppSidebar />
-        <MobileNav />
-        <main className="lg:pl-[84px]">
-          <Outlet />
-        </main>
-      </div>
+      <MotionConfig reducedMotion="user">
+        <a href="#main-content" className="skip-navigation">
+          Skip to content
+        </a>
+        <AppAvailability />
+        <GlobalContextInit />
+        <div className="min-h-screen">
+          <AmbientBackdrop />
+          <AppSidebar />
+          <MobileNav />
+          <main id="main-content" tabIndex={-1} className="min-w-0 lg:pl-[208px]">
+            <Outlet />
+          </main>
+        </div>
+      </MotionConfig>
     </QueryClientProvider>
   );
 }
