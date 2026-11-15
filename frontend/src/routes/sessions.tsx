@@ -1,13 +1,16 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useMemo } from "react";
 import { Cloud, Sun, CloudRain, Play, Clock, ChevronRight, Compass } from "lucide-react";
 import { useSessionContext } from "@/hooks/useSessionContext";
 import { useLiveSession } from "@/hooks/useLiveSession";
+import { getCircuitMap } from "@/lib/api/telemetry";
 import { useCanonicalStore } from "@/lib/store";
 import { getSessionTelemetryState } from "@/lib/event-identity";
 import { GlassPanel } from "@/components/GlassPanel";
-import { CircuitOutline, type CircuitKey } from "@/components/CircuitOutline";
+import { type CircuitKey } from "@/components/CircuitOutline";
+import { CircuitTrackMap } from "@/components/CircuitTrackMap";
 import { cn } from "@/lib/utils";
 
 import heroRace from "@/assets/hero-race.jpg";
@@ -95,6 +98,13 @@ function SessionsPage() {
         : selected.location || selected.country,
     };
   }, [selected]);
+
+  const circuitMapQuery = useQuery({
+    queryKey: ["circuit-map", season, selected?.round_number],
+    queryFn: () => getCircuitMap(season, selected!.round_number, "Race"),
+    enabled: Boolean(selected && !selected.has_conflict && season >= 2018 && selected.is_completed),
+    staleTime: 1000 * 60 * 60,
+  });
 
   const parsedSessions = useMemo(() => {
     if (!selected) return [];
@@ -220,16 +230,17 @@ function SessionsPage() {
                       {selected.event_name}
                     </h2>
                   </div>
-                  <div className="absolute right-8 top-8 opacity-80 max-sm:hidden">
-                    {activeCircuit.key ? (
-                      <div className="h-32 w-48">
-                        <CircuitOutline circuit={activeCircuit.key} className="h-full w-full" />
-                      </div>
-                    ) : (
-                      <div className="rounded-2xl glass-strong border border-border/40 px-3.5 py-1.5 text-[9px] font-mono text-muted-foreground uppercase tracking-widest font-bold">
-                        Circuit outline unavailable
-                      </div>
-                    )}
+                  <div className="absolute right-8 top-8 opacity-90 max-sm:hidden">
+                    <div className="h-32 w-48">
+                      <CircuitTrackMap
+                        circuitMap={circuitMapQuery.data}
+                        loading={circuitMapQuery.isLoading}
+                        fallbackCircuitKey={activeCircuit.key}
+                        trackName={selected.event_name}
+                        showCorners={false}
+                        className="h-full w-full"
+                      />
+                    </div>
                   </div>
                 </div>
 

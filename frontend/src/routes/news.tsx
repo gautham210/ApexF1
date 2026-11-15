@@ -28,7 +28,7 @@ function NewsPage() {
       (!search.q || `${a.title} ${a.summary}`.toLowerCase().includes(search.q.toLowerCase())),
   );
   return (
-    <div className="max-w-[1680px] mx-auto px-5 lg:px-12 pt-12 pb-32">
+    <div className="max-w-[1680px] mx-auto overflow-x-clip px-4 sm:px-5 lg:px-12 pt-8 sm:pt-12 pb-32">
       <header className="border-b border-border/40 pb-8">
         <p className="text-xs uppercase tracking-widest text-muted-foreground">From the paddock</p>
         <h1 className="font-display text-6xl mt-4">F1 news</h1>
@@ -40,7 +40,7 @@ function NewsPage() {
         <label className="text-sm">
           Publisher
           <select
-            className="ml-2 p-3 rounded-lg border border-border bg-background"
+            className="ml-2 px-3.5 py-2.5 rounded-xl glass border border-white/12 bg-background/85 text-sm text-foreground"
             value={search.source ?? ""}
             onChange={(e) =>
               void navigate({ search: { ...search, source: e.target.value || undefined } })
@@ -55,7 +55,7 @@ function NewsPage() {
         <label className="text-sm">
           Topic
           <select
-            className="ml-2 p-3 rounded-lg border border-border bg-background max-w-60"
+            className="ml-2 px-3.5 py-2.5 rounded-xl glass border border-white/12 bg-background/85 text-sm text-foreground max-w-full sm:max-w-60"
             value={search.topic ?? ""}
             onChange={(e) =>
               void navigate({ search: { ...search, topic: e.target.value || undefined } })

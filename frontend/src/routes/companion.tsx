@@ -36,7 +36,8 @@ export const Route = createFileRoute("/companion")({
   }),
   component: Companion,
 });
-const control = "rounded-lg border border-border bg-background px-3 py-3 min-h-11";
+const control =
+  "rounded-xl glass border border-white/12 bg-background/80 px-3.5 py-2.5 min-h-11 text-sm text-foreground transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50";
 function Companion() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
@@ -46,9 +47,11 @@ function Companion() {
     if (selectedYear !== search.year) setSelectedYear(search.year);
   }, [selectedYear, search.year, setSelectedYear]);
   return (
-    <div className="max-w-[1680px] mx-auto px-5 lg:px-12 pt-10 pb-32 min-w-0">
-      <p className="text-xs uppercase tracking-widest text-muted-foreground">ApexF1 companion</p>
-      <h1 className="font-display text-5xl md:text-6xl mt-4">Your race weekend.</h1>
+    <div className="max-w-[1680px] mx-auto overflow-x-clip px-4 sm:px-5 lg:px-12 pt-8 sm:pt-10 pb-32 min-w-0">
+      <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-muted-foreground">
+        ApexF1 companion
+      </p>
+      <h1 className="font-display text-4xl sm:text-5xl md:text-6xl mt-3">Your race weekend.</h1>
       <nav aria-label="Companion tools" className="flex flex-wrap gap-2 my-6">
         {views.map((view) => (
           <Link
@@ -56,7 +59,11 @@ function Companion() {
             to="/companion"
             search={{ ...search, view }}
             aria-current={search.view === view ? "page" : undefined}
-            className={`${control} ${search.view === view ? "bg-foreground/10" : ""}`}
+            className={`${control} ${
+              search.view === view
+                ? "glass-strong border-primary/40 text-foreground font-semibold"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
           >
             {
               {

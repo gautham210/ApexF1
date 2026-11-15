@@ -23,11 +23,11 @@ export function SeasonControls({
   onChange: (year: number, round?: number) => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-4 my-6">
-      <label className="text-sm">
-        Season
+    <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3 sm:gap-4 my-6">
+      <label className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3 text-sm font-medium text-muted-foreground">
+        <span>Season</span>
         <select
-          className="ml-3 rounded-lg border border-border bg-background p-3"
+          className="w-full sm:w-auto rounded-xl glass border border-white/12 bg-background/85 px-3.5 py-2.5 text-sm text-foreground"
           value={year}
           onChange={(e) => onChange(Number(e.target.value))}
         >
@@ -39,10 +39,10 @@ export function SeasonControls({
           ))}
         </select>
       </label>
-      <label className="text-sm">
-        Standings through
+      <label className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3 text-sm font-medium text-muted-foreground min-w-0">
+        <span>Standings through</span>
         <select
-          className="ml-3 rounded-lg border border-border bg-background p-3 max-w-64"
+          className="w-full sm:w-auto sm:max-w-72 rounded-xl glass border border-white/12 bg-background/85 px-3.5 py-2.5 text-sm text-foreground min-w-0 truncate"
           value={round ?? ""}
           onChange={(e) => onChange(year, e.target.value ? Number(e.target.value) : undefined)}
         >
