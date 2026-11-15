@@ -248,6 +248,38 @@ async def circuit_map(
     return APIResponse(success=True, data=data)
 
 
+@router.get("/replay/session-meta", response_model=APIResponse)
+async def replay_session_meta(
+    year: int = Query(default=_CURRENT_YEAR),
+    round: int = Query(default=1),
+    session: str = Query(default="Race"),
+):
+    _validate_year(year)
+    _validate_round(round)
+    canonical_session = _validate_session(session)
+    data = await f1_service.get_replay_metadata(year, round, canonical_session)
+    return APIResponse(success=True, data=data)
+
+
+@router.get("/replay/positions", response_model=APIResponse)
+async def replay_positions(
+    year: int = Query(default=_CURRENT_YEAR),
+    round: int = Query(default=1),
+    session: str = Query(default="Race"),
+    start_s: int = Query(default=0, ge=0),
+    end_s: int = Query(default=300, ge=1),
+):
+    _validate_year(year)
+    _validate_round(round)
+    canonical_session = _validate_session(session)
+    if end_s <= start_s:
+        raise HTTPException(status_code=422, detail="end_s must be greater than start_s")
+    if (end_s - start_s) > 600:
+        raise HTTPException(status_code=422, detail="window length (end_s - start_s) must be <= 600 seconds")
+    data = await f1_service.get_replay_positions(year, round, canonical_session, start_s, end_s)
+    return APIResponse(success=True, data=data)
+
+
 @router.get("/weather", response_model=APIResponse)
 async def weather(
     year: int = Query(default=_CURRENT_YEAR),

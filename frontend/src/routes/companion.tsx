@@ -20,6 +20,9 @@ import {
   type ChampionshipKind,
 } from "@/lib/companion";
 import { cars } from "@/lib/museum";
+import { PageHeader } from "@/components/PageHeader";
+import { presentEvent } from "@/lib/event-presentation";
+import { cn } from "@/lib/utils";
 const CarViewer = lazy(() => import("@/components/CarViewer"));
 const views = ["times", "timeline", "simulator", "museum", "discover"] as const;
 type View = (typeof views)[number];
@@ -47,64 +50,71 @@ function Companion() {
     if (selectedYear !== search.year) setSelectedYear(search.year);
   }, [selectedYear, search.year, setSelectedYear]);
   return (
-    <div className="max-w-[1680px] mx-auto overflow-x-clip px-4 sm:px-5 lg:px-12 pt-8 sm:pt-10 pb-32 min-w-0">
-      <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-muted-foreground">
-        ApexF1 companion
-      </p>
-      <h1 className="font-display text-4xl sm:text-5xl md:text-6xl mt-3">Your race weekend.</h1>
-      <nav aria-label="Companion tools" className="flex flex-wrap gap-2 my-6">
-        {views.map((view) => (
-          <Link
-            key={view}
-            to="/companion"
-            search={{ ...search, view }}
-            aria-current={search.view === view ? "page" : undefined}
-            className={`${control} ${
-              search.view === view
-                ? "glass-strong border-primary/40 text-foreground font-semibold"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {
-              {
-                times: "Race times",
-                timeline: "Championship timeline",
-                simulator: "What if?",
-                museum: "History garage",
-                discover: "Discover",
-              }[view]
-            }
-          </Link>
-        ))}
-      </nav>
-      <label className="block mb-6">
-        Season{" "}
-        <select
-          className={control}
-          value={search.year}
-          onChange={(e) => void navigate({ search: { ...search, year: Number(e.target.value) } })}
-        >
-          {Array.from(
-            { length: new Date().getFullYear() - 1949 },
-            (_, i) => new Date().getFullYear() - i,
-          ).map((y) => (
-            <option key={y}>{y}</option>
-          ))}
-        </select>
-      </label>
-      {search.view === "times" ? (
-        <TimeHub year={search.year} />
-      ) : search.view === "museum" ? (
-        <Museum year={search.year} carId={search.car} />
-      ) : search.view === "discover" ? (
-        <Discovery year={search.year} />
-      ) : (
-        <Championship
-          key={`${search.year}-${search.view}`}
-          year={search.year}
-          simulation={search.view === "simulator"}
+    <div className="apex-page pb-32">
+      <div className="mx-auto max-w-[1680px]">
+        <PageHeader
+          eyebrow="APEXF1 COMPANION"
+          title="Your race weekend"
+          subtitle="Canonical IANA timezone converter, championship progression timeline, points simulator, historic garage, and season index."
+          actions={
+            <label className="flex items-center gap-2 text-xs font-mono text-muted-foreground">
+              <span>SEASON</span>
+              <select
+                className={control}
+                value={search.year}
+                onChange={(e) =>
+                  void navigate({ search: { ...search, year: Number(e.target.value) } })
+                }
+              >
+                {Array.from(
+                  { length: new Date().getFullYear() - 1949 },
+                  (_, i) => new Date().getFullYear() - i,
+                ).map((y) => (
+                  <option key={y}>{y}</option>
+                ))}
+              </select>
+            </label>
+          }
         />
-      )}
+
+        <nav aria-label="Companion tools" className="apex-tab-bar my-6 w-fit max-w-full">
+          {views.map((view) => (
+            <Link
+              key={view}
+              to="/companion"
+              search={{ ...search, view }}
+              aria-current={search.view === view ? "page" : undefined}
+              className={cn(
+                "apex-tab whitespace-nowrap",
+                search.view === view && "apex-tab-active",
+              )}
+            >
+              {
+                {
+                  times: "Race times",
+                  timeline: "Championship timeline",
+                  simulator: "What if?",
+                  museum: "History garage",
+                  discover: "Discover",
+                }[view]
+              }
+            </Link>
+          ))}
+        </nav>
+        {search.view === "times" ? (
+          <TimeHub year={search.year} />
+        ) : search.view === "museum" ? (
+          <Museum year={search.year} carId={search.car} />
+        ) : search.view === "discover" ? (
+          <Discovery year={search.year} />
+        ) : (
+          <Championship
+            key={`${search.year}-${search.view}`}
+            year={search.year}
+            simulation={search.view === "simulator"}
+          />
+        )}
+      </div>
     </div>
   );
 }
@@ -206,22 +216,27 @@ function TimeHub({ year }: { year: number }) {
           value={event?.round_number ?? ""}
           onChange={(e) => setRound(Number(e.target.value))}
         >
-          {events.map((e) => (
-            <option key={e.round_number} value={e.round_number}>
-              {e.round_number} · {e.event_name}
-            </option>
-          ))}
+          {events.map((e) => {
+            const p = presentEvent(e);
+            return (
+              <option key={e.round_number} value={e.round_number}>
+                {e.round_number} · {p.displayName}
+              </option>
+            );
+          })}
         </select>
       </label>
       {event?.has_conflict && (
-        <p role="alert" className="my-4 text-amber-400">
-          Providers disagree about this event. Venue unconfirmed; times remain provider-reported.
+        <p role="alert" className="my-4 text-amber-400 text-sm">
+          {presentEvent(event).conflictDetail ??
+            "Providers disagree about this event. Venue unconfirmed; times remain provider-reported."}
         </p>
       )}
       <div className="overflow-x-auto">
         <table className="text-sm w-full whitespace-nowrap">
           <caption className="text-left my-3">
-            {event?.event_name ?? "No event schedule available"} — timezone conversion
+            {event ? presentEvent(event).displayName : "No event schedule available"} — timezone
+            conversion
           </caption>
           <thead>
             <tr>
@@ -1097,57 +1112,67 @@ function Discovery({ year }: { year: number }) {
         retry={() => void query.refetch()}
       />
       <div className="grid md:grid-cols-3 gap-5">
-        <section>
-          <h3 className="font-display text-2xl">Drivers</h3>
-          {Object.values(data?.drivers ?? {})
-            .filter((d) => match(`${d.givenName} ${d.familyName}`))
-            .map((d) => (
-              <Link
-                className="block underline py-3"
-                key={d.driverId}
-                to="/drivers/$driverId"
-                params={{ driverId: d.driverId }}
-                search={{ year }}
-              >
-                {d.givenName} {d.familyName}
-              </Link>
-            ))}
+        <section className="apex-card p-5">
+          <h3 className="font-display text-2xl mb-3">Drivers</h3>
+          <div className="divide-y divide-border/25">
+            {Object.values(data?.drivers ?? {})
+              .filter((d) => match(`${d.givenName} ${d.familyName}`))
+              .map((d) => (
+                <Link
+                  className="flex items-center justify-between py-2.5 text-sm hover:text-primary transition min-h-11"
+                  key={d.driverId}
+                  to="/drivers/$driverId"
+                  params={{ driverId: d.driverId }}
+                  search={{ year }}
+                >
+                  <span>
+                    {d.givenName} {d.familyName}
+                  </span>
+                  <span className="text-[10px] font-mono text-muted-foreground">PROFILE →</span>
+                </Link>
+              ))}
+          </div>
         </section>
-        <section>
-          <h3 className="font-display text-2xl">Constructors</h3>
-          {Object.values(data?.constructors ?? {})
-            .filter((c) => match(c.name))
-            .map((c) => (
-              <Link
-                className="block underline py-3"
-                key={c.constructorId}
-                to="/teams/$constructorId"
-                params={{ constructorId: c.constructorId }}
-                search={{ year }}
-              >
-                {c.name}
-              </Link>
-            ))}
+        <section className="apex-card p-5">
+          <h3 className="font-display text-2xl mb-3">Constructors</h3>
+          <div className="divide-y divide-border/25">
+            {Object.values(data?.constructors ?? {})
+              .filter((c) => match(c.name))
+              .map((c) => (
+                <Link
+                  className="flex items-center justify-between py-2.5 text-sm hover:text-primary transition min-h-11"
+                  key={c.constructorId}
+                  to="/teams/$constructorId"
+                  params={{ constructorId: c.constructorId }}
+                  search={{ year }}
+                >
+                  <span>{c.name}</span>
+                  <span className="text-[10px] font-mono text-muted-foreground">TEAM →</span>
+                </Link>
+              ))}
+          </div>
         </section>
-        <section>
-          <h3 className="font-display text-2xl">Circuits & events</h3>
-          {data?.schedule
-            .filter((r) =>
-              match(`${r.raceName} ${r.Circuit.circuitName} ${r.Circuit.Location.country}`),
-            )
-            .map((r) => (
-              <button
-                className="block text-left underline py-3"
-                key={r.round}
-                onClick={() => setRound(r.round)}
-              >
-                {r.round} ·{" "}
-                {r.has_conflict
-                  ? "Venue unconfirmed — provider disagreement"
-                  : r.Circuit.circuitName}{" "}
-                · {r.raceName}
-              </button>
-            ))}
+        <section className="apex-card p-5">
+          <h3 className="font-display text-2xl mb-3">Circuits & events</h3>
+          <div className="divide-y divide-border/25">
+            {data?.schedule
+              .filter((r) =>
+                match(`${r.raceName} ${r.Circuit.circuitName} ${r.Circuit.Location.country}`),
+              )
+              .map((r) => (
+                <button
+                  className="w-full text-left py-2.5 text-sm hover:text-primary transition min-h-11"
+                  key={r.round}
+                  onClick={() => setRound(r.round)}
+                >
+                  <span className="font-mono text-xs text-muted-foreground mr-2">R{r.round}</span>
+                  {r.has_conflict
+                    ? "Venue unconfirmed — provider disagreement"
+                    : r.Circuit.circuitName}{" "}
+                  · {r.raceName}
+                </button>
+              ))}
+          </div>
         </section>
       </div>
       {round !== null && (

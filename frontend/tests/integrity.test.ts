@@ -1015,12 +1015,21 @@ test("deployment configuration never falls back to a static production origin", 
 });
 
 import {
-  buildReplayFrames,
   formatLapDuration,
+  formatReplayClock,
   interpolateTrackPosition,
-  isDrsOpen,
-  normalizeBrakePercent,
 } from "../src/lib/replay-helpers";
+import { presentEvent } from "../src/lib/event-presentation";
+import {
+  REPLAY_SPEEDS,
+  clampViewport,
+  computeDriverStatesAt,
+  getWindowBoundsForTime,
+  mergeChunkIntoMap,
+  sampleDriverPositionsAt,
+  viewportToViewBox,
+} from "../src/lib/replay-engine";
+import type { ReplayFrame, ReplayMetadata } from "../src/lib/api/telemetry";
 
 test("parseRaceCenterSearch omits raw debug keys so clean URLs are serialized", () => {
   const parsed = parseRaceCenterSearch({
@@ -1036,20 +1045,12 @@ test("parseRaceCenterSearch omits raw debug keys so clean URLs are serialized", 
   assert.equal("rawSession" in parsed, false);
 });
 
-test("replay helpers align multi-channel telemetry, brake scale, DRS, and track coordinates", () => {
-  assert.equal(normalizeBrakePercent(0), 0);
-  assert.equal(normalizeBrakePercent(1), 100);
-  assert.equal(normalizeBrakePercent(72), 72);
-  assert.equal(normalizeBrakePercent(null), null);
-
-  assert.equal(isDrsOpen(10), true);
-  assert.equal(isDrsOpen(12), true);
-  assert.equal(isDrsOpen(8), false);
-  assert.equal(isDrsOpen(null), false);
-
+test("replay helpers format lap durations, replay clock, and track interpolation cleanly", () => {
   assert.equal(formatLapDuration(89.412), "1:29.412");
   assert.equal(formatLapDuration("1:35.123"), "1:35.123");
   assert.equal(formatLapDuration(null), "—");
+  assert.equal(formatReplayClock(3665), "1:01:05");
+  assert.equal(formatReplayClock(125), "02:05");
 
   const midPos = interpolateTrackPosition(
     [
@@ -1059,28 +1060,125 @@ test("replay helpers align multi-channel telemetry, brake scale, DRS, and track 
     0.5,
   );
   assert.deepEqual(midPos, { x: 200, y: 400 });
+});
 
-  const frames = buildReplayFrames(
-    [
-      { time: 0, distance: 0, speed: 290, throttle: 100, brake: 0, gear: 8, rpm: 11800, drs: 12 },
-      { time: 1.5, distance: 120, speed: 140, throttle: 0, brake: 1, gear: 3, rpm: 9200, drs: 0 },
-    ],
-    [
-      {
-        time: 0.05,
-        distance: 0,
-        speed: 288,
-        throttle: 100,
-        brake: 0,
-        gear: 8,
-        rpm: 11700,
-        drs: 12,
+test("presentEvent formats provider conflicts cleanly without raw bracket prefixes", () => {
+  const presented = presentEvent({
+    round_number: 16,
+    event_name: "Bahrain Grand Prix [Provider Conflict]",
+    official_event_name: "2026 Conflict Event",
+    location: "Disputed (Kuala Lumpur)",
+    country: "Malaysia",
+    event_date: "2026-09-13",
+    session1: "Practice 1",
+    session1_date: "2026-09-11T04:30:00Z",
+    session2: "Practice 2",
+    session2_date: "2026-09-11T08:00:00Z",
+    session3: "Practice 3",
+    session3_date: "2026-09-12T04:30:00Z",
+    session4: "Qualifying",
+    session4_date: "2026-09-12T08:00:00Z",
+    session5: "Race",
+    session5_date: "2026-09-13T07:00:00Z",
+    event_format: "conventional",
+    has_conflict: true,
+    conflict: {
+      fastf1: { country: "Bahrain", location: "Kuala Lumpur", event_name: "Bahrain Grand Prix" },
+      jolpica: {
+        country: "Malaysia",
+        location: "Kuala Lumpur",
+        circuit_name: "Sepang International Circuit",
+        event_name: "Malaysian Grand Prix",
       },
-      { time: 1.62, distance: 120, speed: 136, throttle: 0, brake: 1, gear: 3, rpm: 9000, drs: 0 },
+    },
+  });
+
+  assert.equal(presented.displayName, "Bahrain Grand Prix");
+  assert.equal(presented.cleanVenue, "Kuala Lumpur");
+  assert.equal(presented.hasConflict, true);
+  assert.equal(presented.conflictBadge, "Provider note: Bahrain (FastF1) vs Malaysia (Jolpica)");
+  assert.match(presented.conflictDetail ?? "", /Sepang International Circuit/);
+});
+
+test("track replay engine supports speeds, viewport clamping, position sampling, and driver ordering", () => {
+  assert.deepEqual(REPLAY_SPEEDS, [0.5, 1, 2, 5, 10, 20]);
+
+  const clamped = clampViewport({ zoom: 12, panX: 9999, panY: -9999 });
+  assert.equal(clamped.zoom, 5);
+  assert.equal(viewportToViewBox({ zoom: 1, panX: 0, panY: 0 }), "0.0 0.0 1000.0 1000.0");
+
+  assert.deepEqual(getWindowBoundsForTime(310, 500, 300), { startS: 300, endS: 500 });
+
+  const frames = new Map<number, Record<string, [number, number]>>();
+  const chunk: ReplayFrame[] = [
+    { t: 10, cars: { "1": [100, 200], "44": [300, 400] } },
+    { t: 11, cars: { "1": [200, 400] } },
+  ];
+  mergeChunkIntoMap(frames, chunk);
+
+  const sampled = sampleDriverPositionsAt(frames, 10.5);
+  assert.deepEqual(sampled["1"], { x: 150, y: 300 });
+  // Driver 44 has no keyframe at t=11 so does not fabricate an extrapolated point beyond keyframe 10
+  assert.deepEqual(sampled["44"], { x: 300, y: 400 });
+
+  const meta: ReplayMetadata = {
+    replay_available: true,
+    session_key: 9999,
+    year: 2024,
+    round_number: 3,
+    session: "Race",
+    source: "OpenF1",
+    duration_seconds: 500,
+    race_start_offset: 0,
+    total_laps: 58,
+    chunk_seconds: 300,
+    drivers: [
+      {
+        number: "1",
+        abbr: "VER",
+        full_name: "Max Verstappen",
+        team: "Red Bull Racing",
+        color: "#3671C6",
+      },
+      {
+        number: "55",
+        abbr: "SAI",
+        full_name: "Carlos Sainz",
+        team: "Ferrari",
+        color: "#E8002D",
+      },
     ],
-  );
-  assert.equal(frames.length, 2);
-  assert.equal(frames[0].drsA, true);
-  assert.equal(frames[1].brakeA, 100);
-  assert.equal(frames[1].deltaSec, -0.12);
+    laps_by_driver: {
+      "55": [{ lap: 2, t_start: 5, t_end: 88, duration: 83.0 }],
+      "1": [{ lap: 2, t_start: 5, t_end: 89, duration: 84.0 }],
+    },
+    position_events: [
+      { driver_number: "55", t: 0, position: 2 },
+      { driver_number: "1", t: 0, position: 1 },
+      { driver_number: "55", t: 10, position: 1 },
+      { driver_number: "1", t: 10, position: 2 },
+    ],
+    circuit: {
+      circuit: "Melbourne",
+      points: [
+        { x: 0, y: 0 },
+        { x: 1000, y: 0 },
+      ],
+      rotation: 0,
+      sectors: [],
+    },
+  };
+
+  const { currentLap, states } = computeDriverStatesAt(meta, 10.5, {
+    "55": { x: 120, y: 0 },
+    "1": { x: 150, y: 300 },
+  });
+  assert.equal(currentLap, 2);
+  assert.equal(states[0].driver.abbr, "SAI");
+  assert.equal(states[0].position, 1);
+  assert.equal(states[0].lap, 2);
+  assert.equal(states[0].status, "on-track");
+  assert.equal(states[1].driver.abbr, "VER");
+  assert.equal(states[1].position, 2);
+  assert.equal(states[1].status, "on-track");
 });

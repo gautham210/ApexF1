@@ -15,7 +15,6 @@ import {
   Trophy,
   Zap,
   Radio,
-  Flag,
   AlertTriangle,
 } from "lucide-react";
 import { f1Api } from "@/lib/api/client";
@@ -41,7 +40,7 @@ import heroHelmet from "@/assets/hero-helmet.jpg";
 
 import { RaceWidget } from "@/components/RaceWidget";
 import { GlassPanel } from "@/components/GlassPanel";
-import { CircuitOutline, type CircuitKey } from "@/components/CircuitOutline";
+import { presentEvent } from "@/lib/event-presentation";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -171,12 +170,15 @@ function Dashboard() {
   });
   const news = newsQuery.data?.articles ?? [];
 
+  const pres = presentEvent(currentRace);
   const isEventLoading = !currentRace && dashboardLoading && !dashboardError;
-  const activeEventName =
-    currentRace?.event_name ||
-    currentRace?.location ||
-    (isEventLoading ? "Loading weekend schedule…" : "Event unavailable");
-  const activeCountry = currentRace?.country || "";
+  const activeEventName = currentRace
+    ? pres.displayName
+    : isEventLoading
+      ? "Loading weekend schedule…"
+      : "Event unavailable";
+  const activeCountry = pres.cleanCountry;
+  const topDriver = ctx?.driver_standings?.[0] ?? null;
   const weather =
     live.session_info?.year === season &&
     matchesSession(
@@ -223,7 +225,7 @@ function Dashboard() {
       }
     >
       {/* SECTION 1: CINEMATIC HERO */}
-      <section className="relative min-h-[560px] lg:min-h-[600px] w-full overflow-hidden">
+      <section className="relative min-h-[400px] lg:min-h-[440px] w-full overflow-hidden">
         <motion.img
           initial={{ scale: 1.05, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
@@ -235,17 +237,17 @@ function Dashboard() {
           height={1080}
         />
         {/* Soft edge highlights & layered gradients */}
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-background/50" />
-        <div className="absolute inset-0 bg-gradient-to-r from-background/70 via-transparent to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/45 to-background/55" />
+        <div className="absolute inset-0 bg-gradient-to-r from-background/75 via-transparent to-transparent" />
 
-        <div className="relative z-10 mx-auto flex h-full max-w-[1680px] flex-col justify-end px-6 pb-16 lg:px-12">
+        <div className="relative z-10 mx-auto flex h-full max-w-[1440px] flex-col justify-end px-4 sm:px-6 lg:px-10 pt-10 pb-10">
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 1, delay: 0.3 }}
             className="max-w-2xl"
           >
-            <div className="flex items-center gap-3 text-xs font-mono tracking-[0.2em] text-muted-foreground uppercase">
+            <div className="flex flex-wrap items-center gap-2.5 text-xs font-mono tracking-[0.2em] text-muted-foreground uppercase">
               {live.is_live ? (
                 <span className="flex items-center gap-1.5 text-primary font-bold">
                   <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
@@ -268,19 +270,18 @@ function Dashboard() {
               )}
               <span>·</span>
               <span>
-                {currentRace?.location ||
-                  (isEventLoading ? "Syncing circuit" : "Location unavailable")}
+                {pres.cleanVenue || (isEventLoading ? "Syncing circuit" : "Location unavailable")}
               </span>
             </div>
 
-            <h1 className="mt-5 font-display text-5xl leading-[0.95] text-balance md:text-7xl">
+            <h1 className="mt-4 font-display text-4xl leading-[0.98] text-balance sm:text-5xl md:text-6xl">
               {activeEventName}
             </h1>
-            <p className="mt-4 max-w-md text-sm text-muted-foreground leading-relaxed">
-              Follow the weekend schedule, championship standings and latest paddock reporting.
+            <p className="mt-3 max-w-md text-sm text-muted-foreground leading-relaxed">
+              Weekend schedule, interactive track replays, standings and latest paddock reporting.
             </p>
 
-            <div className="mt-8 flex flex-wrap items-center gap-3">
+            <div className="mt-6 flex flex-wrap items-center gap-3">
               {live.is_live ? (
                 <Link
                   to="/race-center"
@@ -291,9 +292,15 @@ function Dashboard() {
               ) : (
                 <Link
                   to="/race-center"
+                  search={{
+                    mode: "replay",
+                    year: season,
+                    round: currentRace?.round_number ?? 1,
+                    session: "Race",
+                  }}
                   className="group inline-flex items-center gap-2 rounded-full bg-foreground px-5 py-2.5 text-sm font-medium text-background transition hover:bg-foreground/90"
                 >
-                  <Clock className="h-3.5 w-3.5 fill-current" /> Explore Telemetry
+                  <Play className="h-3.5 w-3.5 fill-current" /> Track Replay
                 </Link>
               )}
               <Link
@@ -305,14 +312,14 @@ function Dashboard() {
             </div>
           </motion.div>
 
-          {/* Floating metadata panel */}
+          {/* Uniform 4-card metadata rail */}
           <motion.div
             initial={{ opacity: 0, y: 40 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 1, delay: 0.6 }}
-            className="mt-10 grid grid-cols-2 gap-3 md:grid-cols-4 lg:max-w-5xl"
+            className="mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3"
           >
-            <GlassPanel className="p-4">
+            <GlassPanel className="p-4 flex flex-col justify-between min-h-[108px]">
               <div className="flex items-center gap-2 text-[10px] font-mono tracking-[0.18em] text-muted-foreground uppercase">
                 <Clock className="h-3 w-3" /> {nextSession?.name || "Session clock"}
               </div>
@@ -328,69 +335,67 @@ function Dashboard() {
                 )}
               </div>
             </GlassPanel>
-            <GlassPanel className="p-4">
+            <GlassPanel className="p-4 flex flex-col justify-between min-h-[108px]">
               <div className="flex items-center gap-2 text-[10px] font-mono tracking-[0.18em] text-muted-foreground uppercase">
-                <MapPin className="h-3 w-3" /> Location
+                <MapPin className="h-3 w-3" /> Venue
               </div>
-              <div className="mt-2 font-display text-2xl leading-none truncate">
-                {currentRace?.location || "Unavailable"}
-              </div>
-              <div className="text-[10px] text-muted-foreground truncate mt-1">
-                {currentRace?.country || "Unavailable"}
-              </div>
-            </GlassPanel>
-            <GlassPanel className="p-4">
-              <div className="flex items-center gap-2 text-[10px] font-mono tracking-[0.18em] text-muted-foreground uppercase">
-                <Cloud className="h-3 w-3" /> Conditions
-              </div>
-              <div className="mt-2 font-display text-2xl">
-                {weather?.rainfall === true
-                  ? "Rain observed"
-                  : weather?.rainfall === false
-                    ? "No rain observed"
-                    : "Unavailable"}
-              </div>
-              <div className="flex items-center gap-3 text-[10px] text-muted-foreground mt-1">
-                <span className="inline-flex items-center gap-0.5">
-                  <Thermometer className="h-3 w-3" />{" "}
-                  {weather?.air_temp != null
-                    ? `${weather.air_temp.toFixed(0)}°`
-                    : "Air temperature unavailable"}
-                </span>
-                <span className="inline-flex items-center gap-0.5">
-                  <Wind className="h-3 w-3" />{" "}
-                  {weather?.wind_speed != null
-                    ? `${weather.wind_speed.toFixed(0)} m/s`
-                    : "Wind unavailable"}
-                </span>
-              </div>
-            </GlassPanel>
-            <GlassPanel className="p-4">
-              <div className="text-[10px] font-mono tracking-[0.18em] text-muted-foreground uppercase">
-                Championship
-              </div>
-              <div className="mt-2 font-display text-2xl">{season}</div>
-              <div className="text-[10px] text-muted-foreground mt-1">
-                {ctx?.history_round
-                  ? `Official standings through round ${ctx.history_round}`
-                  : "Official standings unavailable"}
-              </div>
-              {(dashboardError ||
-                ctx?.history_status === "partial" ||
-                ctx?.history_status === "unavailable") && (
-                <div role="status" className="text-[10px] text-muted-foreground mt-1">
-                  {dashboardError || ctx?.history_status === "unavailable"
-                    ? "Championship snapshot unavailable"
-                    : "Championship snapshot has partial provider coverage"}
+              <div>
+                <div className="font-display text-2xl leading-none truncate">
+                  {pres.cleanVenue || "Unavailable"}
                 </div>
-              )}
+                <div className="text-[11px] text-muted-foreground truncate mt-1">
+                  {pres.cleanCountry || "Unavailable"}
+                </div>
+              </div>
+            </GlassPanel>
+            <GlassPanel className="p-4 flex flex-col justify-between min-h-[108px]">
+              <div className="flex items-center gap-2 text-[10px] font-mono tracking-[0.18em] text-muted-foreground uppercase">
+                <Cloud className="h-3 w-3" /> Track Weather
+              </div>
+              <div>
+                <div className="font-display text-2xl leading-none">
+                  {weather?.rainfall === true
+                    ? "Rain observed"
+                    : weather?.rainfall === false
+                      ? "Dry conditions"
+                      : "Session idle"}
+                </div>
+                <div className="flex items-center gap-3 text-[11px] text-muted-foreground mt-1">
+                  <span className="inline-flex items-center gap-0.5">
+                    <Thermometer className="h-3 w-3" />{" "}
+                    {weather?.air_temp != null ? `${weather.air_temp.toFixed(0)}°C` : "Live only"}
+                  </span>
+                  <span className="inline-flex items-center gap-0.5">
+                    <Wind className="h-3 w-3" />{" "}
+                    {weather?.wind_speed != null ? `${weather.wind_speed.toFixed(0)} m/s` : "—"}
+                  </span>
+                </div>
+              </div>
+            </GlassPanel>
+            <GlassPanel className="p-4 flex flex-col justify-between min-h-[108px]">
+              <div className="text-[10px] font-mono tracking-[0.18em] text-muted-foreground uppercase">
+                Championship ({season})
+              </div>
+              <div>
+                <div className="font-display text-2xl leading-none truncate">
+                  {topDriver
+                    ? `${topDriver.code || topDriver.name} · ${topDriver.points} pts`
+                    : `${season} Standings`}
+                </div>
+                <div className="text-[11px] text-muted-foreground mt-1">
+                  {ctx?.history_round
+                    ? `Official standings through R${ctx.history_round}`
+                    : "Standings unavailable"}
+                  {(dashboardError || ctx?.history_status === "partial") && " · Partial coverage"}
+                </div>
+              </div>
             </GlassPanel>
           </motion.div>
         </div>
       </section>
 
       {/* SECTION 2: LIVE CONTEXTUAL HUB */}
-      <section className="mx-auto mt-6 lg:mt-8 max-w-[1680px] px-4 sm:px-6 lg:px-12 relative z-20 space-y-6">
+      <section className="mx-auto mt-6 lg:mt-8 max-w-[1440px] px-4 sm:px-6 lg:px-10 relative z-20 space-y-6">
         <RaceWidget year={season} events={schedule} />
         <AnimatePresence mode="wait">
           {/* BEFORE STATE: Countdown, weather, and circuit overview */}
@@ -404,24 +409,25 @@ function Dashboard() {
             >
               <GlassPanel
                 variant="strong"
-                className="grid gap-8 p-8 lg:grid-cols-[1.2fr_1fr] border border-border/40"
+                className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 border border-border/40"
               >
                 <div>
                   <div className="text-[10px] font-mono text-muted-foreground uppercase">
                     Weekend programme
                   </div>
-                  <h2 className="mt-2 font-display text-4xl">
-                    {currentRace?.event_name || "Schedule unavailable"}
+                  <h2 className="mt-1 font-display text-3xl">
+                    {pres.displayName || "Schedule unavailable"}
                   </h2>
-                  <p className="mt-4 text-sm text-muted-foreground">
-                    Explore session times and results as they become available.
+                  <p className="mt-1.5 text-sm text-muted-foreground">
+                    Session timetable and interactive track replay open as sessions publish.
                   </p>
                 </div>
-                <div className="flex items-center">
-                  <Link to="/sessions" className="rounded-full glass px-6 py-3">
-                    View session schedule
-                  </Link>
-                </div>
+                <Link
+                  to="/sessions"
+                  className="inline-flex items-center justify-center gap-2 rounded-full glass-strong px-5 py-2.5 text-sm font-medium shrink-0 hover:bg-white/10 transition"
+                >
+                  View session schedule <ChevronRight className="h-4 w-4" />
+                </Link>
               </GlassPanel>
             </motion.div>
           )}
@@ -681,7 +687,7 @@ function Dashboard() {
       </section>
 
       {/* SECTION 3: STORIES & DOCUMENTARY FEED */}
-      <section className="mx-auto mt-12 max-w-[1680px] px-6 lg:px-12 grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+      <section className="mx-auto mt-10 max-w-[1440px] px-4 sm:px-6 lg:px-10 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {/* Personalization Driver Spotlight (Accent & Alert personalization) */}
         {favoriteDriver && (
           <GlassPanel

@@ -1,45 +1,24 @@
 import { LiveProviderNotice } from "@/components/LiveProviderNotice";
 import { matchesSession } from "@/lib/session";
-import type { LeaderboardEntry, TelemetryPoint, ScheduleEvent } from "@/lib/store";
-import {
-  parseRaceCenterSearch,
-  getVerifiedEventLabel,
-  type RaceCenterSearch,
-} from "@/lib/event-identity";
+import type { LeaderboardEntry, ScheduleEvent } from "@/lib/store";
+import { presentEvent } from "@/lib/event-presentation";
+import { parseRaceCenterSearch, type RaceCenterSearch } from "@/lib/event-identity";
 import type { WeatherReading, RaceControlMsg, LiveDriver } from "@/hooks/useLiveSession";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { useState, useEffect, useMemo, useRef, Suspense, lazy } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { f1Api } from "@/lib/api/client";
-import {
-  getCircuitMap,
-  getSessionDrivers,
-  getSessionLaps,
-  getSessionTyres,
-} from "@/lib/api/telemetry";
+import { getCircuitMap, getSessionTyres } from "@/lib/api/telemetry";
 import { CircuitTrackMap } from "@/components/CircuitTrackMap";
-import {
-  buildReplayFrames,
-  formatLapDuration,
-  formatSectorDuration,
-  normalizeBrakePercent,
-} from "@/lib/replay-helpers";
+import { TrackReplayEngine } from "@/components/TrackReplayEngine";
+import { PageHeader } from "@/components/PageHeader";
 import { VALID_SESSIONS, MIN_SUPPORTED_YEAR } from "@/lib/event-identity";
 import { useLiveSession, type SessionState } from "@/hooks/useLiveSession";
 import { useSessionContext } from "@/hooks/useSessionContext";
 import {
-  useTelemetryStore,
-  useCanonicalStore,
-  getDriversListByYear,
-  getDriverByYear,
-} from "@/lib/store";
-
-const TelemetryCharts = lazy(() => import("@/components/TelemetryCharts"));
-import {
   Radio,
   Archive,
-  Clock,
   Thermometer,
   Wind,
   Droplets,
@@ -47,15 +26,11 @@ import {
   AlertTriangle,
   Flag,
   RefreshCw,
-  Play,
-  Pause,
-  RotateCcw,
-  Zap,
   ChevronDown,
   ChevronRight,
-  Activity,
   CalendarDays,
   Compass,
+  Play,
 } from "lucide-react";
 import { GlassPanel } from "@/components/GlassPanel";
 import { cn } from "@/lib/utils";
@@ -540,8 +515,8 @@ function RaceCenter() {
       : resolvedSchedule || [];
 
   const event = activeSchedule.find((e) => e.round_number === selectedRound);
-  const eventLabelInfo = getVerifiedEventLabel(event, scheduleLoading);
-  const raceLabel = eventLabelInfo.label;
+  const pres = presentEvent(event);
+  const raceLabel = pres.displayName;
 
   const isArchiveSession =
     search.mode === "archive" ||
@@ -557,34 +532,18 @@ function RaceCenter() {
     live.session_info?.year === season &&
     live.session_info?.session_name === selectedSession &&
     matchesSession(event, selectedSession, live.session_info?.date_start);
-  const {
-    driver1,
-    driver2,
-    driver1Data,
-    driver2Data,
-    scrubberPosition,
-    isPlaying,
-    setDriver1,
-    setDriver2,
-    setDriver1Data,
-    setDriver2Data,
-    setScrubberPosition,
-    setIsPlaying,
-  } = useTelemetryStore();
 
   const navigate = useNavigate();
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
-  const [rightPanelTab, setRightPanelTab] = useState<"circuit" | "telemetry" | "logs">(
-    search.mode === "replay" ? "telemetry" : "circuit",
+  const [rightPanelTab, setRightPanelTab] = useState<"replay" | "circuit">(
+    search.mode === "replay" || isArchiveSession ? "replay" : "circuit",
   );
 
-  const [telemetryLoading, setTelemetryLoading] = useState(false);
-  const [telemetryError, setTelemetryError] = useState<string | null>(null);
-  const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
-  const [showDetailedTelemetry, setShowDetailedTelemetry] = useState<boolean>(true);
-  const [lapChoice, setLapChoice] = useState<string>(
-    typeof selectedLap === "number" ? String(selectedLap) : "fastest",
-  );
+  useEffect(() => {
+    if (search.mode === "replay") {
+      setRightPanelTab("replay");
+    }
+  }, [search.mode]);
 
   const canQueryHistoricalSession = season >= MIN_SUPPORTED_YEAR && selectedRound > 0;
 
@@ -595,259 +554,12 @@ function RaceCenter() {
     staleTime: 1000 * 60 * 60,
   });
 
-  const sessionDriversQuery = useQuery({
-    queryKey: ["session-drivers", season, selectedRound, selectedSession],
-    queryFn: () => getSessionDrivers(season, selectedRound, selectedSession),
-    enabled: canQueryHistoricalSession,
-    staleTime: 1000 * 60 * 60,
-  });
-
-  const sessionLapsQuery = useQuery({
-    queryKey: ["session-laps", season, selectedRound, selectedSession, driver1],
-    queryFn: () => getSessionLaps(season, selectedRound, selectedSession, driver1),
-    enabled: canQueryHistoricalSession && Boolean(driver1),
-    staleTime: 1000 * 60 * 30,
-  });
-
   const sessionTyresQuery = useQuery({
     queryKey: ["session-tyres", season, selectedRound, selectedSession],
     queryFn: () => getSessionTyres(season, selectedRound, selectedSession),
     enabled: canQueryHistoricalSession,
     staleTime: 1000 * 60 * 30,
   });
-
-  const driverOptions = useMemo(() => {
-    const apiDrivers = sessionDriversQuery.data ?? [];
-    if (apiDrivers.length > 0) {
-      return apiDrivers.map((d) => {
-        const abbr = d.abbreviation || d.name_acronym || d.driver_number;
-        return {
-          number: d.driver_number,
-          abbr,
-          name: d.full_name || d.broadcast_name || abbr || `#${d.driver_number}`,
-          color: d.team_color?.startsWith("#") ? d.team_color : `#${d.team_color || "9CA3AF"}`,
-        };
-      });
-    }
-    const db = getDriversListByYear(season);
-    return Object.entries(db).map(([num, d]) => ({
-      number: num,
-      abbr: d.abbr,
-      name: d.name,
-      color: d.color,
-    }));
-  }, [sessionDriversQuery.data, season]);
-
-  useEffect(() => {
-    if (driverOptions.length === 0) return;
-    if (!driverOptions.some((d) => d.number === driver1)) {
-      setDriver1(driverOptions[0].number);
-    }
-    if (!driverOptions.some((d) => d.number === driver2) || driver2 === driver1) {
-      const alt = driverOptions.find((d) => d.number !== driver1) ?? driverOptions[0];
-      if (alt && alt.number !== driver2) setDriver2(alt.number);
-    }
-  }, [driverOptions, driver1, driver2, setDriver1, setDriver2]);
-
-  const d1Option = driverOptions.find((d) => d.number === driver1);
-  const d2Option = driverOptions.find((d) => d.number === driver2);
-  const d1Fallback = getDriverByYear(season, driver1);
-  const d2Fallback = getDriverByYear(season, driver2);
-  const d1Meta = {
-    abbr: d1Option?.abbr || d1Fallback.abbr || `#${driver1}`,
-    name: d1Option?.name || d1Fallback.name || `Driver #${driver1}`,
-    color: d1Option?.color || d1Fallback.color || "#e10600",
-  };
-  const d2Meta = {
-    abbr: d2Option?.abbr || d2Fallback.abbr || `#${driver2}`,
-    name: d2Option?.name || d2Fallback.name || `Driver #${driver2}`,
-    color: d2Option?.color || d2Fallback.color || "#27F4D2",
-  };
-
-  const DRIVER_COLOR_1 = d1Meta.color || "#e10600";
-  const DRIVER_COLOR_2 =
-    d2Meta.color && d2Meta.color.toLowerCase() !== DRIVER_COLOR_1.toLowerCase()
-      ? d2Meta.color
-      : "#06b6d4";
-
-  const selectedLapObj = useMemo(() => {
-    if (lapChoice === "fastest") return null;
-    const lapNum = Number(lapChoice);
-    return (sessionLapsQuery.data ?? []).find((l) => l.lap_number === lapNum) ?? null;
-  }, [lapChoice, sessionLapsQuery.data]);
-
-  const replayFrames = useMemo(
-    () => buildReplayFrames(driver1Data, driver2Data, 260),
-    [driver1Data, driver2Data],
-  );
-
-  const telemetryAnalysis = useMemo(() => {
-    if (driver1Data.length === 0) return null;
-    const d1Speeds = driver1Data.map((p) => p.speed || 0);
-    const d2Speeds = driver2Data.map((p) => p.speed || 0);
-
-    const d1MaxSpeed = Math.max(...d1Speeds);
-    const d2MaxSpeed = driver2Data.length > 0 ? Math.max(...d2Speeds) : 0;
-
-    const d1AvgThrottle =
-      driver1Data.reduce((acc, p) => acc + (p.throttle || 0), 0) / driver1Data.length;
-    const d2AvgThrottle =
-      driver2Data.length > 0
-        ? driver2Data.reduce((acc, p) => acc + (p.throttle || 0), 0) / driver2Data.length
-        : 0;
-
-    const d1Brakes =
-      (driver1Data.filter((p) => (normalizeBrakePercent(p.brake) ?? 0) > 5).length /
-        driver1Data.length) *
-      100;
-    const d2Brakes =
-      driver2Data.length > 0
-        ? (driver2Data.filter((p) => (normalizeBrakePercent(p.brake) ?? 0) > 5).length /
-            driver2Data.length) *
-          100
-        : 0;
-
-    return {
-      d1MaxSpeed,
-      d2MaxSpeed,
-      d1AvgThrottle: Math.round(d1AvgThrottle),
-      d2AvgThrottle: Math.round(d2AvgThrottle),
-      d1Brakes: Math.round(d1Brakes),
-      d2Brakes: Math.round(d2Brakes),
-      speedDelta: d1MaxSpeed - d2MaxSpeed,
-      throttleDelta: Math.round(d1AvgThrottle - d2AvgThrottle),
-    };
-  }, [driver1Data, driver2Data]);
-
-  const telemetryRequest = useRef(0);
-  const autoReplayKeyRef = useRef<string>("");
-
-  async function loadTelemetry() {
-    const request = ++telemetryRequest.current;
-    const parsedLap = lapChoice === "fastest" ? undefined : Number(lapChoice);
-    setDriver1Data([]);
-    setDriver2Data([]);
-    setTelemetryError(null);
-    setTelemetryLoading(true);
-    setIsPlaying(false);
-    setScrubberPosition(0);
-    try {
-      const [r1, r2] = await Promise.allSettled([
-        f1Api.getTelemetry(season, selectedRound, selectedSession, driver1, parsedLap),
-        f1Api.getTelemetry(season, selectedRound, selectedSession, driver2, parsedLap),
-      ]);
-      if (request !== telemetryRequest.current) return;
-      const d1 = r1.status === "fulfilled" ? r1.value.data || [] : [];
-      const d2 = r2.status === "fulfilled" ? r2.value.data || [] : [];
-      setDriver1Data(d1);
-      setDriver2Data(d2);
-      const sessionKey = `${season}-${selectedRound}-${selectedSession}`;
-      const hasPoints = d1.length > 0 || d2.length > 0;
-      useCanonicalStore.getState().setTelemetryAvailability(sessionKey, hasPoints);
-      if (!hasPoints) {
-        setTelemetryError(
-          `FastF1 car telemetry is not published for ${season} R${selectedRound} ${selectedSession}.`,
-        );
-      }
-    } catch (e) {
-      console.error("[Telemetry] load failed:", e);
-      const sessionKey = `${season}-${selectedRound}-${selectedSession}`;
-      useCanonicalStore.getState().setTelemetryAvailability(sessionKey, false);
-      setTelemetryError("Failed to fetch telemetry from the archive backend.");
-    } finally {
-      if (request === telemetryRequest.current) setTelemetryLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    setDriver1Data([]);
-    setDriver2Data([]);
-    setTelemetryError(null);
-    setIsPlaying(false);
-    setScrubberPosition(0);
-    telemetryRequest.current += 1;
-    setTelemetryLoading(false);
-    return () => {
-      telemetryRequest.current += 1;
-    };
-  }, [
-    season,
-    selectedRound,
-    selectedSession,
-    driver1,
-    driver2,
-    lapChoice,
-    setDriver1Data,
-    setDriver2Data,
-    setIsPlaying,
-    setScrubberPosition,
-  ]);
-
-  // Switch straight to telemetry and auto-sync when entering via Replay links
-  useEffect(() => {
-    if (search.mode !== "replay") return;
-    setRightPanelTab("telemetry");
-    if (!canQueryHistoricalSession || !driver1) return;
-    const key = `${season}-${selectedRound}-${selectedSession}-${driver1}-${driver2}-${lapChoice}`;
-    if (autoReplayKeyRef.current === key) return;
-    autoReplayKeyRef.current = key;
-    void loadTelemetry();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search.mode, season, selectedRound, selectedSession, driver1, driver2, lapChoice]);
-
-  useEffect(() => {
-    if (!isPlaying || replayFrames.length === 0) return;
-
-    const intervalMs = Math.max(12, Math.round(45 / playbackSpeed));
-    const interval = setInterval(() => {
-      const currentPos = useTelemetryStore.getState().scrubberPosition;
-      if (currentPos >= replayFrames.length - 1) {
-        setScrubberPosition(0);
-      } else {
-        setScrubberPosition(currentPos + 1);
-      }
-    }, intervalMs);
-
-    return () => clearInterval(interval);
-  }, [isPlaying, replayFrames.length, playbackSpeed, setScrubberPosition]);
-
-  const cursorIndex =
-    replayFrames.length > 0 ? Math.min(replayFrames.length - 1, Math.max(0, scrubberPosition)) : 0;
-  const activeFrame = replayFrames[cursorIndex] ?? null;
-
-  const trackDrivers = useMemo(() => {
-    if (!activeFrame) return [];
-    const list = [
-      {
-        code: d1Meta.abbr,
-        color: DRIVER_COLOR_1,
-        progress: activeFrame.progress,
-        speed: activeFrame.speedA,
-      },
-    ];
-    if (driver2Data.length > 0) {
-      const d2Dist = driver2Data[driver2Data.length - 1]?.distance || 1;
-      const matchedBProgress =
-        activeFrame.timeB !== null && driver1Data[driver1Data.length - 1]?.distance
-          ? Math.min(1, Math.max(0, activeFrame.distance / (d2Dist || activeFrame.distance || 1)))
-          : activeFrame.progress;
-      list.push({
-        code: d2Meta.abbr,
-        color: DRIVER_COLOR_2,
-        progress: matchedBProgress,
-        speed: activeFrame.speedB,
-      });
-    }
-    return list;
-  }, [
-    activeFrame,
-    d1Meta.abbr,
-    d2Meta.abbr,
-    DRIVER_COLOR_1,
-    DRIVER_COLOR_2,
-    driver2Data,
-    driver1Data,
-  ]);
 
   const trackStatus = showLive ? live.session_info?.track_status || "UNKNOWN" : "UNKNOWN";
 
@@ -862,38 +574,6 @@ function RaceCenter() {
       },
     });
   };
-
-  const DriverSelector = ({
-    value,
-    onChange,
-    color,
-    label,
-  }: {
-    value: string;
-    onChange: (v: string) => void;
-    color: string;
-    label: string;
-  }) => (
-    <div className="relative flex items-center shrink-0">
-      <span
-        className="w-2 h-2 rounded-full absolute left-3 z-10 pointer-events-none"
-        style={{ backgroundColor: color }}
-      />
-      <select
-        aria-label={label}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="appearance-none min-w-[118px] pl-7 pr-7 py-2 rounded-xl glass text-xs font-mono font-bold cursor-pointer outline-none border border-white/12 bg-background/80 text-foreground uppercase tracking-wider"
-      >
-        {driverOptions.map((d) => (
-          <option key={d.number} value={d.number} className="bg-background">
-            {d.abbr} #{d.number}
-          </option>
-        ))}
-      </select>
-      <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none text-muted-foreground" />
-    </div>
-  );
 
   if (search.error) {
     return (
@@ -977,18 +657,20 @@ function RaceCenter() {
   }
 
   return (
-    <div className="min-h-screen overflow-x-clip px-4 sm:px-6 pb-32 pt-8 sm:pt-12 lg:px-12 space-y-6">
-      <LiveProviderNotice />
+    <div className="apex-page pb-24 space-y-6">
+      {!search.mode && <LiveProviderNotice />}
       {showLive && live.status === "partial" && (
-        <p role="status" className="glass p-4 text-sm">
+        <p role="status" className="apex-card p-4 text-sm text-amber-200">
           Partial live coverage: {Object.keys(live.errors ?? {}).join(", ")} unavailable. Available
           channels remain visible.
         </p>
       )}
       {showLive && live.leaderboard.length > 0 && (
-        <details className="glass rounded-xl p-4">
-          <summary className="cursor-pointer py-2">Latest recorded laps and sectors</summary>
-          <div className="overflow-x-auto">
+        <details className="apex-card p-4">
+          <summary className="cursor-pointer py-1.5 text-sm font-medium">
+            Latest recorded laps and sectors
+          </summary>
+          <div className="overflow-x-auto mt-2">
             <table className="w-full text-sm">
               <thead>
                 <tr>
@@ -1028,551 +710,259 @@ function RaceCenter() {
           </p>
         </details>
       )}
-      {!isArchiveSession && !live.is_live && (
-        <p role="status" className="glass rounded-xl p-4 text-sm">
-          Live timing is unavailable, stale or disconnected. No cached rows are presented as current
-          timing. Select an archive session for recorded data.
-        </p>
-      )}
-      {event?.has_conflict && event.conflict && (
+
+      {pres.hasConflict && (
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex items-start gap-3 text-xs font-mono text-amber-200/90">
           <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
           <div className="space-y-1">
             <div className="font-bold uppercase tracking-wider text-amber-400 text-[10px]">
-              Event Identity Disagreement
+              Provider Schedule Disagreement ({pres.cleanVenue || "Venue Agreed"})
             </div>
-            <div>{event.conflict.description}</div>
-            <div className="text-[10px] text-muted-foreground">
-              FastF1: {String(event.conflict.fastf1?.event_name || "")} (
-              {String(event.conflict.fastf1?.country || "")},{" "}
-              {String(event.conflict.fastf1?.location || "")}) · Jolpica:{" "}
-              {String(event.conflict.jolpica?.event_name || "")} (
-              {String(event.conflict.jolpica?.country || "")},{" "}
-              {String(event.conflict.jolpica?.location || "")},{" "}
-              {String(event.conflict.jolpica?.circuit_name || "")})
-            </div>
+            <div>{pres.conflictDetail}</div>
           </div>
         </div>
       )}
-      {/* 1. BROADCAST PANEL */}
-      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-5 border-b border-border/40 pb-6 z-10 relative">
-        <div>
-          <div className="flex items-center gap-3">
-            {showLive ? (
-              <span className="flex items-center gap-2 bg-[#ff3333]/15 border border-[#ff3333]/30 px-3 py-1 rounded-full text-[9px] font-mono font-bold text-[#ff3333] tracking-widest uppercase">
-                <Radio className="w-3.5 h-3.5 animate-pulse" /> LIVE STREAM
-              </span>
-            ) : (
-              <span className="flex items-center gap-2 glass-pill px-3 py-1 rounded-full text-[9px] font-mono font-bold text-muted-foreground tracking-widest uppercase">
-                <Archive className="w-3.5 h-3.5" />{" "}
-                {search.mode === "replay" ? "REPLAY STUDIO" : "ARCHIVE ANALYSIS"}
-              </span>
-            )}
-            <h1 className="font-display text-4xl leading-none">Race Center</h1>
-          </div>
-          <p className="font-mono text-[9px] text-muted-foreground uppercase tracking-widest mt-3 flex flex-wrap items-center gap-2.5 font-bold">
-            <span>{season} · Grand Prix Weekend</span>
-            <span className="w-1 h-1 rounded-full bg-border" />
-            <span>Round {selectedRound}</span>
-            <span className="w-1 h-1 rounded-full bg-border" />
-            <span className="text-foreground/80">{raceLabel}</span>
-            <span className="w-1 h-1 rounded-full bg-border" />
-            <span className="text-primary font-black">{selectedSession}</span>
-          </p>
-        </div>
 
-        {/* In-page session explorer (2018..currentYear) */}
-        <div className="flex flex-wrap items-center gap-2.5 text-xs font-mono">
-          <select
-            aria-label="Season year"
-            value={season}
-            onChange={(e) => updateRouteSearch({ year: Number(e.target.value), round: 1 })}
-            className="rounded-xl glass border border-white/12 bg-background/80 px-3 py-2 text-xs font-mono text-foreground"
-          >
-            {Array.from(
-              { length: Math.max(1, new Date().getFullYear() - MIN_SUPPORTED_YEAR + 1) },
-              (_, i) => new Date().getFullYear() - i,
-            ).map((y) => (
-              <option key={y} value={y}>
-                {y}
-              </option>
-            ))}
-          </select>
-
-          <select
-            aria-label="Grand Prix round"
-            value={selectedRound}
-            onChange={(e) => updateRouteSearch({ round: Number(e.target.value) })}
-            className="rounded-xl glass border border-white/12 bg-background/80 px-3 py-2 text-xs font-mono text-foreground max-w-[210px] truncate"
-          >
-            {(activeSchedule.length > 0
-              ? activeSchedule
-              : Array.from({ length: 24 }, (_, idx) => ({
-                  round_number: idx + 1,
-                  event_name: `Round ${idx + 1}`,
-                }))
-            ).map((ev) => (
-              <option key={ev.round_number} value={ev.round_number}>
-                R{ev.round_number} · {ev.event_name}
-              </option>
-            ))}
-          </select>
-
-          <select
-            aria-label="Session type"
-            value={selectedSession}
-            onChange={(e) => updateRouteSearch({ session: e.target.value })}
-            className="rounded-xl glass border border-white/12 bg-background/80 px-3 py-2 text-xs font-mono text-foreground"
-          >
-            {VALID_SESSIONS.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-
-          {showLive && (
-            <div className="flex items-center gap-2 px-3 py-1.5 glass rounded-xl text-[9px] text-muted-foreground font-bold uppercase tracking-wider">
-              {live.ws_connected ? (
-                <>
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> timing
-                  loops live
-                </>
-              ) : (
-                <>
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" /> timing
-                  loops polling
-                </>
-              )}
-            </div>
-          )}
-          {showLive && live.last_update && (
-            <span className="text-muted-foreground/60 text-[9px] uppercase tracking-widest font-semibold">
-              Updated {new Date(live.last_update).toLocaleTimeString()}
+      <PageHeader
+        eyebrow={`${season} · Round ${selectedRound} · ${selectedSession}`}
+        title="Race Center"
+        subtitle={
+          <span>
+            {raceLabel}
+            {pres.cleanVenue ? ` · ${pres.cleanVenue}` : ""}
+            {showLive && live.last_update
+              ? ` · Updated ${new Date(live.last_update).toLocaleTimeString()}`
+              : ""}
+          </span>
+        }
+        badges={
+          showLive ? (
+            <span className="inline-flex items-center gap-1.5 bg-[#ff3333]/15 border border-[#ff3333]/35 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold text-[#ff3333] uppercase tracking-wider">
+              <Radio className="w-3 h-3 animate-pulse" />
+              {live.ws_connected ? "Live WS" : "Live Polling"}
             </span>
-          )}
-        </div>
-      </div>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 glass-pill px-2.5 py-0.5 rounded-full text-[10px] font-mono text-muted-foreground uppercase tracking-wider">
+              <Archive className="w-3 h-3" />
+              {search.mode === "replay"
+                ? "Track Replay"
+                : isArchiveSession
+                  ? "Archive"
+                  : "Upcoming"}
+            </span>
+          )
+        }
+        actions={
+          <>
+            <select
+              aria-label="Season year"
+              value={season}
+              onChange={(e) => updateRouteSearch({ year: Number(e.target.value), round: 1 })}
+              className="apex-control font-mono"
+            >
+              {Array.from(
+                { length: Math.max(1, new Date().getFullYear() - MIN_SUPPORTED_YEAR + 1) },
+                (_, i) => new Date().getFullYear() - i,
+              ).map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
 
-      {/* 2. LIVE STATE ALERTS */}
+            <select
+              aria-label="Grand Prix round"
+              value={selectedRound}
+              onChange={(e) => updateRouteSearch({ round: Number(e.target.value) })}
+              className="apex-control font-mono max-w-[230px] truncate"
+            >
+              {(activeSchedule.length > 0
+                ? activeSchedule
+                : Array.from({ length: 24 }, (_, idx) => ({
+                    round_number: idx + 1,
+                    event_name: `Round ${idx + 1}`,
+                    country: "",
+                    location: "",
+                    circuit_name: null,
+                    has_conflict: false,
+                    conflict: null,
+                  }))
+              ).map((ev) => {
+                const evPres = presentEvent(ev as ScheduleEvent);
+                return (
+                  <option key={ev.round_number} value={ev.round_number}>
+                    R{ev.round_number} · {evPres.displayName}
+                  </option>
+                );
+              })}
+            </select>
+
+            <select
+              aria-label="Session type"
+              value={selectedSession}
+              onChange={(e) => updateRouteSearch({ session: e.target.value })}
+              className="apex-control font-mono"
+            >
+              {VALID_SESSIONS.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </>
+        }
+      />
+
+      {/* Live state alerts */}
       <TrackStatusBanner status={trackStatus} />
       {live.race_control.length > 0 && <RaceControlTicker messages={live.race_control} />}
 
-      {/* 3. CORE TWO-COLUMN BROADCAST VIEW */}
-      <div className="grid gap-6 lg:grid-cols-[minmax(410px,445px)_minmax(0,1fr)]">
-        {/* LEFT COLUMN: Timing Tower */}
-        <div className="min-w-0 space-y-4">
-          <div className="flex justify-between items-center px-1">
-            <span className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase flex items-center gap-2">
-              <CalendarDays className="w-4 h-4 text-muted-foreground/45" /> Timing Tower
-            </span>
+      {/* Right panel mode toggle */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="apex-tab-bar" role="tablist" aria-label="Race Center views">
+          {[
+            { id: "replay" as const, label: "Track Replay", icon: Play },
+            { id: "circuit" as const, label: "Circuit & Stints", icon: Compass },
+          ].map((tab) => {
+            const Icon = tab.icon;
+            const active = rightPanelTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setRightPanelTab(tab.id)}
+                className={cn("apex-tab", active && "apex-tab-active")}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+        {showLive && live.weather && <WeatherBar weather={live.weather} />}
+      </div>
+
+      {/* Primary Interactive Track Workspace (full width on replay for 20-car clarity) */}
+      {rightPanelTab === "replay" && (
+        <TrackReplayEngine
+          year={season}
+          round={selectedRound}
+          session={selectedSession}
+          trackLabel={circuitMapQuery.data?.circuit_name || pres.cleanVenue}
+          eventName={raceLabel}
+        />
+      )}
+
+      {rightPanelTab === "circuit" && (
+        <GlassPanel className="p-6 space-y-6 border border-white/10">
+          <div className="flex flex-wrap justify-between items-start gap-4 border-b border-border/20 pb-4">
+            <div>
+              <span className="apex-eyebrow">
+                {circuitMapQuery.data?.source
+                  ? `${circuitMapQuery.data.source} Track Geometry`
+                  : "Circuit Layout"}
+              </span>
+              <h3 className="font-display text-2xl mt-1">
+                {circuitMapQuery.data?.circuit_name || pres.cleanCircuit || raceLabel}
+              </h3>
+              {circuitMapQuery.data?.reference_driver && (
+                <p className="mt-1 text-[11px] font-mono text-muted-foreground">
+                  Reference lap: {circuitMapQuery.data.reference_driver} ·{" "}
+                  {circuitMapQuery.data.corners.length} verified corners
+                </p>
+              )}
+            </div>
           </div>
 
-          {showLive ? (
-            <div className="bg-[#0b0b14]/10 rounded-3xl border border-border/40 overflow-hidden">
-              <LeaderboardTable
-                rows={live.leaderboard}
-                loading={false}
-                expanded={expandedRow}
-                setExpanded={setExpandedRow}
-              />
+          <div className="aspect-[16/10] w-full max-h-[380px] rounded-2xl glass-subtle p-4 flex items-center justify-center">
+            <CircuitTrackMap
+              circuitMap={circuitMapQuery.data}
+              loading={circuitMapQuery.isLoading}
+              trackName={raceLabel}
+              className="w-full h-full max-h-[340px]"
+            />
+          </div>
+
+          {sessionTyresQuery.data && Object.keys(sessionTyresQuery.data).length > 0 && (
+            <div className="pt-2 border-t border-border/20 space-y-2.5">
+              <div className="apex-eyebrow">
+                Tyre stint summary ({Object.keys(sessionTyresQuery.data).length} cars)
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-2 max-h-48 overflow-y-auto pr-1">
+                {Object.entries(sessionTyresQuery.data).map(([drvNum, stints]) => (
+                  <div
+                    key={drvNum}
+                    className="rounded-xl glass-subtle px-2.5 py-2 flex items-center justify-between gap-2 text-[10px] font-mono"
+                  >
+                    <span className="font-bold text-foreground">#{drvNum}</span>
+                    <span className="flex items-center gap-1">
+                      {stints.map((st, idx) => {
+                        const c = COMPOUND[st.compound?.toUpperCase()] ?? {
+                          color: "#9CA3AF",
+                          label: st.compound?.slice(0, 1) || "?",
+                        };
+                        return (
+                          <span
+                            key={idx}
+                            title={`${st.compound} (L${st.start_lap ?? st.lap ?? "?"}–${st.end_lap ?? "?"})`}
+                            className="inline-flex h-4 w-4 items-center justify-center rounded-full border text-[8px] font-black"
+                            style={{ borderColor: c.color, color: c.color }}
+                          >
+                            {c.label}
+                          </span>
+                        );
+                      })}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
-          ) : isArchiveSession ? (
-            <ArchiveLeaderboard
-              year={season}
-              round={selectedRound}
-              session={selectedSession}
+          )}
+        </GlassPanel>
+      )}
+
+      {/* Official Classification / Live Timing Tower */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between px-1">
+          <span className="apex-eyebrow flex items-center gap-2">
+            <CalendarDays className="w-4 h-4 text-muted-foreground/60" />
+            {showLive
+              ? "Live Timing Tower"
+              : isArchiveSession
+                ? "Session Classification"
+                : "Timing Status"}
+          </span>
+        </div>
+
+        {showLive ? (
+          <div className="apex-card overflow-hidden">
+            <LeaderboardTable
+              rows={live.leaderboard}
+              loading={false}
               expanded={expandedRow}
               setExpanded={setExpandedRow}
             />
-          ) : (
-            <GlassPanel className="p-8 py-20 text-center flex flex-col items-center justify-center gap-4 border border-border/40">
-              <Flag className="w-8 h-8 text-muted-foreground/30" />
-              <div>
-                <h3 className="font-display text-2xl">Live timing is offline</h3>
-                <p className="text-xs text-muted-foreground mt-2 leading-relaxed max-w-xs mx-auto">
-                  Live timing appears when the session begins. Enjoy telemetry replays and calendar
-                  synchronization.
-                </p>
-              </div>
-            </GlassPanel>
-          )}
-        </div>
-
-        {/* RIGHT COLUMN: Interactive Telemetry Compare / Circuit Vector */}
-        <div className="min-w-0 space-y-4">
-          {/* Segmented controls tabs */}
-          <div className="flex items-center gap-1 bg-white/5 p-1 rounded-2xl border border-border/40 self-start backdrop-blur-md max-w-max">
-            {[
-              { id: "circuit", label: "Circuit Profile", icon: Compass },
-              { id: "telemetry", label: "Telemetry compare", icon: Activity },
-            ].map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setRightPanelTab(tab.id as "circuit" | "telemetry" | "logs")}
-                  className={cn(
-                    "px-4 py-2 rounded-xl text-[10px] font-mono font-bold uppercase tracking-wider transition duration-300 flex items-center gap-1.5",
-                    rightPanelTab === tab.id
-                      ? "bg-foreground/10 text-foreground border border-transparent shadow-lg"
-                      : "text-muted-foreground hover:text-foreground border border-transparent",
-                  )}
-                >
-                  <Icon className="w-3.5 h-3.5 text-muted-foreground/50" />
-                  {tab.label}
-                </button>
-              );
-            })}
           </div>
-
-          {/* TAB 1: Circuit Profile */}
-          {rightPanelTab === "circuit" && (
-            <GlassPanel className="p-6 space-y-6 border border-white/12">
-              <div className="flex flex-wrap justify-between items-start gap-4 border-b border-border/20 pb-4">
-                <div>
-                  <span className="text-[9px] font-mono text-muted-foreground/60 tracking-widest uppercase font-bold">
-                    {circuitMapQuery.data?.source
-                      ? `${circuitMapQuery.data.source} Track Geometry`
-                      : "Track Telemetry Geometry"}
-                  </span>
-                  <h3 className="font-display text-2xl mt-1">
-                    {circuitMapQuery.data?.circuit_name || raceLabel}
-                  </h3>
-                  {circuitMapQuery.data?.reference_driver && (
-                    <p className="mt-1 text-[10px] font-mono text-muted-foreground uppercase tracking-widest">
-                      Reference lap: {circuitMapQuery.data.reference_driver} ·{" "}
-                      {circuitMapQuery.data.corners.length} corners
-                    </p>
-                  )}
-                </div>
-                {showLive && live.weather && <WeatherBar weather={live.weather} />}
-              </div>
-
-              <div className="aspect-[16/10] w-full max-h-[340px] rounded-2xl glass-subtle p-4 flex items-center justify-center">
-                <CircuitTrackMap
-                  circuitMap={circuitMapQuery.data}
-                  loading={circuitMapQuery.isLoading}
-                  trackName={raceLabel}
-                  drivers={trackDrivers}
-                  className="w-full h-full max-h-[300px]"
-                />
-              </div>
-
-              {sessionTyresQuery.data && Object.keys(sessionTyresQuery.data).length > 0 && (
-                <div className="pt-2 border-t border-border/20 space-y-2.5">
-                  <div className="text-[9px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
-                    Stint strategy snapshot ({Object.keys(sessionTyresQuery.data).length} cars)
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 max-h-40 overflow-y-auto pr-1">
-                    {Object.entries(sessionTyresQuery.data)
-                      .slice(0, 12)
-                      .map(([drvNum, stints]) => {
-                        const drvMeta = driverOptions.find((d) => d.number === drvNum);
-                        return (
-                          <div
-                            key={drvNum}
-                            className="rounded-xl glass-subtle px-2.5 py-2 flex items-center justify-between gap-2 text-[10px] font-mono"
-                          >
-                            <span className="font-bold text-foreground">
-                              {drvMeta?.abbr || `#${drvNum}`}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              {stints.map((st, idx) => {
-                                const c = COMPOUND[st.compound?.toUpperCase()] ?? {
-                                  color: "#9CA3AF",
-                                  label: st.compound?.slice(0, 1) || "?",
-                                };
-                                return (
-                                  <span
-                                    key={idx}
-                                    title={`${st.compound} (L${st.start_lap ?? st.lap ?? "?"}–${st.end_lap ?? "?"})`}
-                                    className="inline-flex h-4 w-4 items-center justify-center rounded-full border text-[8px] font-black"
-                                    style={{ borderColor: c.color, color: c.color }}
-                                  >
-                                    {c.label}
-                                  </span>
-                                );
-                              })}
-                            </span>
-                          </div>
-                        );
-                      })}
-                  </div>
-                </div>
-              )}
-            </GlassPanel>
-          )}
-
-          {/* TAB 2: Telemetry Replay & Compare */}
-          {rightPanelTab === "telemetry" && (
-            <div className="space-y-4">
-              <GlassPanel className="p-5 sm:p-6 border border-white/12 space-y-5">
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/20 pb-4">
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    <DriverSelector
-                      label="Primary driver"
-                      value={driver1}
-                      onChange={setDriver1}
-                      color={DRIVER_COLOR_1}
-                    />
-                    <span className="text-muted-foreground/40 font-mono text-[10px]">VS</span>
-                    <DriverSelector
-                      label="Comparison driver"
-                      value={driver2}
-                      onChange={setDriver2}
-                      color={DRIVER_COLOR_2}
-                    />
-                    <select
-                      aria-label="Lap selector"
-                      value={lapChoice}
-                      onChange={(e) => setLapChoice(e.target.value)}
-                      className="rounded-xl glass border border-white/12 bg-background/80 px-3 py-2 text-xs font-mono text-foreground max-w-[180px]"
-                    >
-                      <option value="fastest">Fastest lap</option>
-                      {(sessionLapsQuery.data ?? []).map((lap) => (
-                        <option key={lap.lap_number} value={String(lap.lap_number)}>
-                          L{lap.lap_number} · {formatLapDuration(lap.lap_time)}{" "}
-                          {lap.compound ? `(${lap.compound.slice(0, 1)})` : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={loadTelemetry}
-                      disabled={telemetryLoading}
-                      className="inline-flex items-center justify-center gap-2 rounded-full bg-foreground px-4 py-2 text-xs font-bold text-background transition hover:bg-foreground/90 disabled:opacity-50"
-                    >
-                      {telemetryLoading ? "Syncing..." : "Sync telemetry"}
-                    </button>
-                  </div>
-                </div>
-
-                {selectedLapObj && (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] font-mono">
-                    <div className="rounded-xl glass-subtle px-3 py-2">
-                      <span className="text-muted-foreground block text-[9px]">LAP TIME</span>
-                      <span className="text-foreground font-bold tabular-nums">
-                        {formatLapDuration(selectedLapObj.lap_time)}
-                      </span>
-                    </div>
-                    <div className="rounded-xl glass-subtle px-3 py-2">
-                      <span className="text-muted-foreground block text-[9px]">SECTOR 1</span>
-                      <span className="text-foreground tabular-nums">
-                        {formatSectorDuration(selectedLapObj.sector1)}
-                      </span>
-                    </div>
-                    <div className="rounded-xl glass-subtle px-3 py-2">
-                      <span className="text-muted-foreground block text-[9px]">SECTOR 2</span>
-                      <span className="text-foreground tabular-nums">
-                        {formatSectorDuration(selectedLapObj.sector2)}
-                      </span>
-                    </div>
-                    <div className="rounded-xl glass-subtle px-3 py-2">
-                      <span className="text-muted-foreground block text-[9px]">
-                        SECTOR 3 / TYRE
-                      </span>
-                      <span className="text-foreground tabular-nums">
-                        {formatSectorDuration(selectedLapObj.sector3)}{" "}
-                        {selectedLapObj.compound ? `· ${selectedLapObj.compound}` : ""}
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                {telemetryError && driver1Data.length === 0 && (
-                  <p
-                    role="status"
-                    className="rounded-2xl glass-subtle p-4 text-xs font-mono text-amber-300"
-                  >
-                    {telemetryError}
-                  </p>
-                )}
-
-                {replayFrames.length > 0 ? (
-                  <div className="space-y-4">
-                    {/* Track + Live Telemetry HUD */}
-                    <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr] items-start">
-                      <div className="relative h-[260px] sm:h-[290px] w-full rounded-2xl glass-subtle p-3 flex items-center justify-center overflow-hidden">
-                        <CircuitTrackMap
-                          circuitMap={circuitMapQuery.data}
-                          loading={circuitMapQuery.isLoading}
-                          trackName={raceLabel}
-                          drivers={trackDrivers}
-                          showCorners={false}
-                          className="w-full h-full max-h-[260px]"
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2.5 content-start min-w-0">
-                        <div className="rounded-2xl glass-subtle p-3 min-w-0">
-                          <div className="text-[9px] font-mono uppercase tracking-[0.16em] text-muted-foreground truncate">
-                            {d1Meta.abbr} Cursor
-                          </div>
-                          <div className="font-display text-2xl sm:text-3xl mt-1 tabular-nums whitespace-nowrap">
-                            {activeFrame?.speedA ?? "—"}{" "}
-                            <span className="text-xs font-mono text-muted-foreground">km/h</span>
-                          </div>
-                          <div className="text-[10px] font-mono text-muted-foreground mt-1 tabular-nums">
-                            G{activeFrame?.gearA ?? "—"} · THR {activeFrame?.throttleA ?? 0}% ·{" "}
-                            {activeFrame?.drsA ? "DRS ON" : `BRK ${activeFrame?.brakeA ?? 0}%`}
-                          </div>
-                        </div>
-
-                        <div className="rounded-2xl glass-subtle p-3 min-w-0">
-                          <div
-                            className="text-[9px] font-mono uppercase tracking-[0.16em] truncate"
-                            style={{ color: DRIVER_COLOR_2 }}
-                          >
-                            {d2Meta.abbr} Cursor
-                          </div>
-                          <div className="font-display text-2xl sm:text-3xl mt-1 tabular-nums whitespace-nowrap">
-                            {activeFrame?.speedB ?? "—"}{" "}
-                            <span className="text-xs font-mono text-muted-foreground">km/h</span>
-                          </div>
-                          <div className="text-[10px] font-mono text-muted-foreground mt-1 tabular-nums">
-                            G{activeFrame?.gearB ?? "—"} · THR {activeFrame?.throttleB ?? 0}% · DRS{" "}
-                            {activeFrame?.drsB ? "ON" : "OFF"}
-                          </div>
-                        </div>
-
-                        {telemetryAnalysis && (
-                          <>
-                            <div className="rounded-2xl glass-subtle p-3 min-w-0">
-                              <div className="text-[9px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
-                                Peak Speed
-                              </div>
-                              <div className="text-xs sm:text-sm font-mono font-bold mt-1 tabular-nums">
-                                {d1Meta.abbr} {telemetryAnalysis.d1MaxSpeed} vs {d2Meta.abbr}{" "}
-                                {telemetryAnalysis.d2MaxSpeed}
-                              </div>
-                            </div>
-                            <div className="rounded-2xl glass-subtle p-3 min-w-0">
-                              <div className="text-[9px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
-                                Live Delta / Dist
-                              </div>
-                              <div className="text-xs sm:text-sm font-mono font-bold mt-1 tabular-nums">
-                                {activeFrame?.deltaSec !== null &&
-                                activeFrame?.deltaSec !== undefined
-                                  ? `${activeFrame.deltaSec >= 0 ? "+" : ""}${activeFrame.deltaSec.toFixed(3)}s`
-                                  : "—"}{" "}
-                                · {Math.round(activeFrame?.distance ?? 0)}m
-                              </div>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Synchronized Scrubber & Speed Controls */}
-                    <div className="flex flex-wrap items-center justify-between gap-3 glass-subtle p-3.5 rounded-2xl">
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          aria-label={isPlaying ? "Pause lap playback" : "Play lap playback"}
-                          onClick={() => setIsPlaying(!isPlaying)}
-                          className="h-9 w-9 rounded-full bg-foreground text-background flex items-center justify-center hover:scale-105 transition"
-                        >
-                          {isPlaying ? (
-                            <Pause className="h-4 w-4 fill-current" />
-                          ) : (
-                            <Play className="h-4 w-4 fill-current ml-0.5" />
-                          )}
-                        </button>
-                        <button
-                          type="button"
-                          aria-label="Restart lap playback"
-                          onClick={() => setScrubberPosition(0)}
-                          className="h-9 w-9 rounded-full glass flex items-center justify-center hover:bg-white/10 transition"
-                        >
-                          <RotateCcw className="h-4 w-4" />
-                        </button>
-                      </div>
-                      <div className="flex-1 min-w-[140px] px-2">
-                        <input
-                          aria-label="Lap position"
-                          type="range"
-                          min="0"
-                          max={Math.max(0, replayFrames.length - 1)}
-                          value={cursorIndex}
-                          onChange={(e) => setScrubberPosition(Number(e.target.value))}
-                          className="w-full h-1.5 bg-foreground/15 rounded-full appearance-none outline-none accent-primary cursor-pointer"
-                        />
-                      </div>
-                      <div className="flex items-center gap-1">
-                        {[0.5, 1, 2, 4].map((s) => (
-                          <button
-                            type="button"
-                            key={s}
-                            onClick={() => setPlaybackSpeed(s)}
-                            className={cn(
-                              "text-[10px] font-mono font-bold px-2.5 py-1 rounded-lg transition",
-                              playbackSpeed === s
-                                ? "bg-foreground text-background"
-                                : "text-muted-foreground hover:bg-white/10",
-                            )}
-                          >
-                            {s}x
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => setShowDetailedTelemetry(!showDetailedTelemetry)}
-                      className={cn(
-                        "w-full rounded-xl py-2.5 text-xs font-mono font-bold uppercase tracking-wider transition border flex items-center justify-center gap-2",
-                        showDetailedTelemetry
-                          ? "bg-primary/10 text-primary border-primary/25"
-                          : "glass text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      <Activity className="w-4 h-4 text-primary" />
-                      {showDetailedTelemetry
-                        ? "Hide Multi-Channel Traces"
-                        : "Show Multi-Channel Traces"}
-                    </button>
-
-                    {showDetailedTelemetry && (
-                      <Suspense
-                        fallback={
-                          <div className="rounded-2xl glass-subtle p-8 text-center text-xs font-mono text-muted-foreground">
-                            Loading multi-channel telemetry charts…
-                          </div>
-                        }
-                      >
-                        <TelemetryCharts
-                          frames={replayFrames}
-                          cursorIndex={cursorIndex}
-                          onSelectIndex={(idx) => setScrubberPosition(idx)}
-                          driver1Label={d1Meta.abbr}
-                          driver1Color={DRIVER_COLOR_1}
-                          driver2Label={driver2Data.length > 0 ? d2Meta.abbr : undefined}
-                          driver2Color={DRIVER_COLOR_2}
-                        />
-                      </Suspense>
-                    )}
-                  </div>
-                ) : (
-                  <GlassPanel className="p-8 py-16 text-center border border-border/40 flex flex-col items-center justify-center gap-4">
-                    <Activity className="w-8 h-8 text-muted-foreground/30" />
-                    <div>
-                      <h3 className="font-display text-2xl">
-                        {telemetryLoading ? "Loading FastF1 Telemetry..." : "Ready for Lap Replay"}
-                      </h3>
-                      <p className="text-xs text-muted-foreground mt-2 leading-relaxed max-w-sm mx-auto">
-                        Select any two drivers and a lap above, then click Sync telemetry to compare
-                        speed, throttle, braking, gearshifts, RPM, DRS, and live track positions.
-                      </p>
-                    </div>
-                  </GlassPanel>
-                )}
-              </GlassPanel>
-            </div>
-          )}
-        </div>
+        ) : isArchiveSession ? (
+          <ArchiveLeaderboard
+            year={season}
+            round={selectedRound}
+            session={selectedSession}
+            expanded={expandedRow}
+            setExpanded={setExpandedRow}
+          />
+        ) : (
+          <GlassPanel className="p-8 text-center flex flex-col items-center justify-center gap-3 border border-white/10">
+            <Flag className="w-7 h-7 text-muted-foreground/40" />
+            <h3 className="font-display text-2xl">Session Not Live</h3>
+            <p className="text-sm text-muted-foreground max-w-md leading-relaxed">
+              Live timing opens automatically during active sessions. Switch season, round, or
+              session above to inspect completed classifications or launch any 2023+ track replay.
+            </p>
+          </GlassPanel>
+        )}
       </div>
     </div>
   );

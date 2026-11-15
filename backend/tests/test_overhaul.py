@@ -289,6 +289,124 @@ class OverhaulBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cmap["reference_driver"], "VER")
 
 
+class TestVisualTrackReplayEngine(unittest.IsolatedAsyncioTestCase):
+    async def test_bin_positions_interpolates_short_gaps_and_omits_missing_retired_cars(self):
+        from app.services.openf1_history import compute_track_bounds, _bin_positions_by_second
+
+        bounds = compute_track_bounds([(0.0, 0.0), (1000.0, 1000.0)])
+        rows_by_driver = {
+            "1": [(0.0, 0.0, 0.0), (2.0, 200.0, 200.0), (10.0, 1000.0, 1000.0)],
+            "24": [(0.0, 500.0, 500.0)],
+        }
+        frames = _bin_positions_by_second(rows_by_driver, bounds, 0, 10)
+        self.assertEqual(len(frames), 11)
+        # t=1 is halfway between (0,0) and (200,200) -> raw (100,100)
+        self.assertEqual(frames[1]["t"], 1)
+        self.assertIn("1", frames[1]["cars"])
+        # Gap from t=2 to t=10 is 8s (> 2.5s), so t=5 must NOT invent an interpolated coordinate
+        self.assertNotIn("1", frames[5]["cars"])
+        # Retired car #24 at t=0 only must NOT appear past t=1
+        self.assertIn("24", frames[0]["cars"])
+        self.assertIn("24", frames[1]["cars"])
+        self.assertNotIn("24", frames[3]["cars"])
+
+    async def test_replay_metadata_pre_2023_unavailable(self):
+        from app.services import openf1_history
+
+        meta = await openf1_history.get_replay_metadata(2022, 1, "Race")
+        self.assertFalse(meta["replay_available"])
+        self.assertIn("2023", meta["reason"])
+
+    async def test_replay_routes_and_metadata_positions_end_to_end(self):
+        from fastapi.testclient import TestClient
+        from app.main import app
+        from app.models.schemas import ScheduleEvent
+        from app.services import f1_service, openf1_history
+
+        openf1_history._sessions_cache.clear()
+        openf1_history._drivers_cache.clear()
+        openf1_history._laps_raw_cache.clear()
+        openf1_history._circuit_cache.clear()
+        openf1_history._replay_meta_cache.clear()
+        openf1_history._replay_chunk_cache.clear()
+
+        sessions_payload = [{
+            "session_key": 9991,
+            "meeting_key": 1291,
+            "session_name": "Race",
+            "location": "Melbourne",
+            "country_name": "Australia",
+            "circuit_short_name": "Melbourne",
+            "date_start": "2024-03-24T04:00:00+00:00",
+            "date_end": "2024-03-24T05:30:00+00:00",
+        }]
+        drivers_payload = [
+            {"driver_number": 55, "name_acronym": "SAI", "full_name": "Carlos Sainz", "team_name": "Ferrari", "team_colour": "E80020"},
+            {"driver_number": 1, "name_acronym": "VER", "full_name": "Max Verstappen", "team_name": "Red Bull Racing", "team_colour": "3671C6"},
+        ]
+        laps_payload = [{
+            "driver_number": 55,
+            "lap_number": 1,
+            "date_start": "2024-03-24T04:03:00+00:00",
+            "lap_duration": 80.0,
+            "duration_sector_1": 28.0,
+            "duration_sector_2": 24.0,
+        }]
+        loc_payload = [
+            {"driver_number": 55, "date": f"2024-03-24T04:03:{i:02d}.000+00:00", "x": float(i * 50), "y": float((i % 7) * 40)}
+            for i in range(0, 60)
+        ] + [
+            {"driver_number": 1, "date": f"2024-03-24T04:03:{i:02d}.000+00:00", "x": float(i * 48), "y": float((i % 7) * 38)}
+            for i in range(0, 60)
+        ] + [
+            {"driver_number": 55, "date": f"2024-03-24T04:04:{i:02d}.000+00:00", "x": float((60 - i) * 50), "y": float((i % 5) * 35)}
+            for i in range(0, 21)
+        ]
+        pos_payload = [
+            {"driver_number": 1, "position": 1, "date": "2024-03-24T04:03:00+00:00"},
+            {"driver_number": 55, "position": 2, "date": "2024-03-24T04:03:00+00:00"},
+            {"driver_number": 55, "position": 1, "date": "2024-03-24T04:04:00+00:00"},
+        ]
+
+        async def fake_get_json(url_or_path, params=None):
+            if url_or_path == "/sessions":
+                return sessions_payload
+            if url_or_path == "/drivers":
+                return drivers_payload
+            if url_or_path == "/laps":
+                return laps_payload
+            if url_or_path == "/position":
+                return pos_payload
+            if "/location" in url_or_path:
+                return loc_payload
+            return []
+
+        aus_ev = ScheduleEvent(round_number=3, country="Australia", location="Melbourne", event_name="Australian Grand Prix", session5_date="2024-03-24T04:00:00Z")
+        with (
+            patch.object(f1_service, "get_schedule", AsyncMock(return_value=[aus_ev])),
+            patch.object(openf1_history, "_get_json", side_effect=fake_get_json),
+        ):
+            client = TestClient(app)
+            meta_res = client.get("/api/replay/session-meta?year=2024&round=3&session=Race")
+            self.assertEqual(meta_res.status_code, 200)
+            meta_data = meta_res.json()["data"]
+            self.assertTrue(meta_data["replay_available"])
+            self.assertEqual(len(meta_data["drivers"]), 2)
+            self.assertGreaterEqual(len(meta_data["circuit"]["sectors"]), 2)
+            self.assertEqual(meta_data["race_start_offset"], 175)
+
+            pos_res = client.get("/api/replay/positions?year=2024&round=3&session=Race&start_s=180&end_s=240")
+            self.assertEqual(pos_res.status_code, 200)
+            pos_data = pos_res.json()["data"]
+            self.assertEqual(pos_data["start_s"], 180)
+            self.assertEqual(len(pos_data["frames"]), 61)
+            self.assertIn("55", pos_data["frames"][10]["cars"])
+            self.assertIn("1", pos_data["frames"][10]["cars"])
+
+            bad_res = client.get("/api/replay/positions?year=2024&round=3&session=Race&start_s=0&end_s=900")
+            self.assertEqual(bad_res.status_code, 422)
+
+
 if __name__ == "__main__":
     unittest.main()
 

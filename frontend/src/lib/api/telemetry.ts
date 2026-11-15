@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { api, type APIResponse } from "./client";
-import type { TelemetryPoint } from "../store";
 
 export const circuitPointSchema = z.object({
   x: z.number(),
@@ -14,6 +13,20 @@ export const circuitCornerSchema = z.object({
   y: z.number(),
 });
 
+export const circuitSectorSchema = z.object({
+  sector: z.number(),
+  label: z.string(),
+  x: z.number(),
+  y: z.number(),
+});
+
+export const circuitStartFinishSchema = z.object({
+  x: z.number(),
+  y: z.number(),
+  dx: z.number(),
+  dy: z.number(),
+});
+
 export const circuitMapSchema = z.object({
   available: z.boolean(),
   year: z.number().optional(),
@@ -25,6 +38,8 @@ export const circuitMapSchema = z.object({
   reference_driver: z.string().nullable().optional(),
   points: z.array(circuitPointSchema).default([]),
   corners: z.array(circuitCornerSchema).default([]),
+  sectors: z.array(circuitSectorSchema).optional().default([]),
+  start_finish: circuitStartFinishSchema.nullable().optional(),
 });
 
 export type CircuitMapData = z.infer<typeof circuitMapSchema>;
@@ -113,20 +128,6 @@ export async function getSessionLaps(
   return parsed.success ? parsed.data : [];
 }
 
-export async function getLapTelemetry(
-  year: number,
-  round: number,
-  session: string,
-  driver: string,
-  lap?: number,
-): Promise<TelemetryPoint[]> {
-  const res = (await api.get<never, APIResponse<TelemetryPoint[]>>("/api/telemetry", {
-    params: { year, round, session, driver, lap },
-  })) as APIResponse<TelemetryPoint[]>;
-  if (!res?.success || !Array.isArray(res.data)) return [];
-  return res.data;
-}
-
 export async function getSessionTyres(
   year: number,
   round: number,
@@ -138,4 +139,98 @@ export async function getSessionTyres(
   if (!res?.success || !res.data || typeof res.data !== "object") return {};
   const parsed = z.record(z.string(), z.array(tyreStintSchema)).safeParse(res.data);
   return parsed.success ? parsed.data : {};
+}
+
+export const replayDriverSchema = z.object({
+  number: z.string(),
+  abbr: z.string(),
+  full_name: z.string(),
+  team: z.string(),
+  color: z.string(),
+});
+
+export type ReplayDriver = z.infer<typeof replayDriverSchema>;
+
+export const replayLapSpanSchema = z.object({
+  lap: z.number(),
+  t_start: z.number(),
+  t_end: z.number().nullable().optional(),
+  duration: z.number().nullable().optional(),
+});
+
+export type ReplayLapSpan = z.infer<typeof replayLapSpanSchema>;
+
+export const replayPositionEventSchema = z.object({
+  t: z.number(),
+  driver_number: z.string(),
+  position: z.number(),
+});
+
+export type ReplayPositionEvent = z.infer<typeof replayPositionEventSchema>;
+
+export const replayMetadataSchema = z.object({
+  replay_available: z.boolean(),
+  year: z.number(),
+  round_number: z.number(),
+  session: z.string(),
+  session_key: z.number().optional(),
+  source: z.string().optional().default("OpenF1"),
+  reason: z.string().optional(),
+  t0_iso: z.string().optional(),
+  duration_seconds: z.number().optional(),
+  race_start_offset: z.number().optional().default(0),
+  total_laps: z.number().optional().default(0),
+  chunk_seconds: z.number().optional().default(300),
+  circuit: circuitMapSchema.optional(),
+  drivers: z.array(replayDriverSchema).optional().default([]),
+  laps_by_driver: z.record(z.string(), z.array(replayLapSpanSchema)).optional().default({}),
+  position_events: z.array(replayPositionEventSchema).optional().default([]),
+});
+
+export type ReplayMetadata = z.infer<typeof replayMetadataSchema>;
+
+export const replayFrameSchema = z.object({
+  t: z.number(),
+  cars: z.record(z.string(), z.tuple([z.number(), z.number()])),
+});
+
+export type ReplayFrame = z.infer<typeof replayFrameSchema>;
+
+export const replayPositionsChunkSchema = z.object({
+  session_key: z.number().optional(),
+  start_s: z.number(),
+  end_s: z.number(),
+  frames: z.array(replayFrameSchema),
+});
+
+export type ReplayPositionsChunk = z.infer<typeof replayPositionsChunkSchema>;
+
+export async function getReplayMetadata(
+  year: number,
+  round: number,
+  session = "Race",
+): Promise<ReplayMetadata | null> {
+  const res = (await api.get<never, APIResponse<unknown>>("/api/replay/session-meta", {
+    params: { year, round, session },
+    timeout: 30000,
+  })) as APIResponse<unknown>;
+  if (!res?.success || !res.data) return null;
+  const parsed = replayMetadataSchema.safeParse(res.data);
+  return parsed.success ? parsed.data : null;
+}
+
+export async function getReplayPositions(
+  year: number,
+  round: number,
+  session: string,
+  startS: number,
+  endS: number,
+): Promise<ReplayPositionsChunk | null> {
+  const res = (await api.get<never, APIResponse<unknown>>("/api/replay/positions", {
+    params: { year, round, session, start_s: startS, end_s: endS },
+    timeout: 35000,
+  })) as APIResponse<unknown>;
+  if (!res?.success || !res.data) return null;
+  const parsed = replayPositionsChunkSchema.safeParse(res.data);
+  return parsed.success ? parsed.data : null;
 }

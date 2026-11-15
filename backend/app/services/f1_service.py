@@ -587,8 +587,9 @@ async def get_circuit_map(year: int, round_number: int, session_name: str = "Rac
                 ev = await _schedule_event_for(year, round_number)
                 fallback = await openf1_history.get_circuit_map(year, round_number, session_name, ev)
                 if fallback and fallback.get("available"):
-                    _data_cache[cache_key] = fallback
-                    return fallback
+                    public_fallback = {k: v for k, v in fallback.items() if k != "bounds"}
+                    _data_cache[cache_key] = public_fallback
+                    return public_fallback
             return unavailable
         if session.laps is None or session.laps.empty:
             return unavailable
@@ -630,6 +631,18 @@ async def get_circuit_map(year: int, round_number: int, session_name: str = "Rac
         rotated_pts = [_rotate_xy(float(r["X"]), float(r["Y"]), rotation) for _, r in sampled.iterrows()]
         norm_pts, norm_corners = openf1_history.normalize_track_xy(rotated_pts, corners_raw)
 
+        start_finish = None
+        if len(norm_pts) >= 2:
+            p0, p1 = norm_pts[0], norm_pts[1]
+            dx, dy = p1["x"] - p0["x"], p1["y"] - p0["y"]
+            mag = (dx * dx + dy * dy) ** 0.5 or 1.0
+            start_finish = {
+                "x": p0["x"],
+                "y": p0["y"],
+                "dx": round(dx / mag, 4),
+                "dy": round(dy / mag, 4),
+            }
+
         payload = {
             "available": True,
             "year": year,
@@ -641,12 +654,30 @@ async def get_circuit_map(year: int, round_number: int, session_name: str = "Rac
             "reference_driver": str(fastest.get("Driver", "") or fastest.get("DriverNumber", "")),
             "points": norm_pts,
             "corners": norm_corners,
+            "sectors": [],
+            "start_finish": start_finish,
         }
         _data_cache[cache_key] = payload
         return payload
     except Exception as e:
         logger.warning(f"get_circuit_map unavailable ({year} R{round_number}): {e}")
         return unavailable
+
+
+async def get_replay_metadata(year: int, round_number: int, session_name: str = "Race") -> Dict[str, Any]:
+    ev = await _schedule_event_for(year, round_number)
+    return await openf1_history.get_replay_metadata(year, round_number, session_name, ev)
+
+
+async def get_replay_positions(
+    year: int,
+    round_number: int,
+    session_name: str,
+    start_s: int,
+    end_s: int,
+) -> Optional[Dict[str, Any]]:
+    ev = await _schedule_event_for(year, round_number)
+    return await openf1_history.get_replay_positions(year, round_number, session_name, start_s, end_s, ev)
 
 
 async def get_weather(year: int, round_number: int, session_name: str = "Race") -> Optional[WeatherData]:
