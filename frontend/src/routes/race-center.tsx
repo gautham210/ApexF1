@@ -7,20 +7,25 @@ import {
   type RaceCenterSearch,
 } from "@/lib/event-identity";
 import type { WeatherReading, RaceControlMsg, LiveDriver } from "@/hooks/useLiveSession";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { useState, useEffect, useMemo, useRef } from "react";
-import {
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ReferenceLine,
-} from "recharts";
+import { useState, useEffect, useMemo, useRef, Suspense, lazy } from "react";
 import { f1Api } from "@/lib/api/client";
+import {
+  getCircuitMap,
+  getSessionDrivers,
+  getSessionLaps,
+  getSessionTyres,
+} from "@/lib/api/telemetry";
+import { CircuitTrackMap } from "@/components/CircuitTrackMap";
+import {
+  buildReplayFrames,
+  formatLapDuration,
+  formatSectorDuration,
+  normalizeBrakePercent,
+} from "@/lib/replay-helpers";
+import { VALID_SESSIONS, MIN_SUPPORTED_YEAR } from "@/lib/event-identity";
 import { useLiveSession, type SessionState } from "@/hooks/useLiveSession";
 import { useSessionContext } from "@/hooks/useSessionContext";
 import {
@@ -29,6 +34,8 @@ import {
   getDriversListByYear,
   getDriverByYear,
 } from "@/lib/store";
+
+const TelemetryCharts = lazy(() => import("@/components/TelemetryCharts"));
 import {
   Radio,
   Archive,
@@ -113,7 +120,14 @@ const STATE_CONFIG: Record<SessionState, { label: string; color: string; live: b
 // ── Shared Tyre Chip Widget ──
 function TyreChip({ compound }: { compound?: string | null }) {
   if (!compound || compound === "UNKNOWN")
-    return <span className="text-[9px] text-muted-foreground">Unavailable</span>;
+    return (
+      <span
+        className="text-[10px] font-mono text-muted-foreground/50 whitespace-nowrap"
+        title="Tyre compound unavailable"
+      >
+        —
+      </span>
+    );
   const key = (compound || "UNKNOWN").toUpperCase();
   const cfg = COMPOUND[key] || COMPOUND.UNKNOWN;
   return (
@@ -199,106 +213,7 @@ function RaceControlTicker({ messages }: { messages: RaceControlMsg[] }) {
   );
 }
 
-// ── Telemetry comparison AreaChart Section ──
-function ChartSection({
-  title,
-  d1,
-  d2,
-  dataKey,
-  color1,
-  color2,
-  domain,
-  activeDist,
-}: {
-  title: string;
-  d1: TelemetryPoint[];
-  d2: TelemetryPoint[];
-  dataKey: keyof TelemetryPoint;
-  color1: string;
-  color2: string;
-  domain?: [number, number];
-  activeDist: number;
-}) {
-  const merged = useMemo(() => {
-    return d1.map((p, i) => ({
-      dist: p.distance ? Math.round(p.distance) : p.time ? Math.round(p.time * 10) : i,
-      driver1: p[dataKey],
-      driver2: d2[i]?.[dataKey],
-    }));
-  }, [d1, d2, dataKey]);
-
-  return (
-    <div className="bg-white/[0.01] border border-border/40 rounded-2xl p-4 shadow-xl">
-      <h3 className="font-mono font-bold text-muted-foreground text-[9px] tracking-widest mb-3 uppercase flex items-center gap-1.5">
-        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color1 }} />
-        {title}
-      </h3>
-      <ResponsiveContainer width="100%" height={90}>
-        <AreaChart data={merged} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-          <defs>
-            <linearGradient id={`g1-${dataKey}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={color1} stopOpacity={0.2} />
-              <stop offset="95%" stopColor={color1} stopOpacity={0} />
-            </linearGradient>
-            <linearGradient id={`g2-${dataKey}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={color2} stopOpacity={0.2} />
-              <stop offset="95%" stopColor={color2} stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.01)" vertical={false} />
-          <XAxis dataKey="dist" tick={false} tickLine={false} axisLine={false} />
-          <YAxis
-            domain={domain}
-            tick={{ fill: "rgba(255,255,255,0.25)", fontSize: 8, fontFamily: "monospace" }}
-            tickLine={false}
-            axisLine={false}
-            width={36}
-          />
-          <Tooltip
-            cursor={{ stroke: "rgba(255,255,255,0.08)", strokeWidth: 1 }}
-            contentStyle={{
-              background: "rgba(10,10,18,0.95)",
-              backdropFilter: "blur(12px)",
-              border: "1px solid rgba(255,255,255,0.08)",
-              borderRadius: 12,
-              fontSize: 9,
-              fontFamily: "sans-serif",
-              color: "#fff",
-              padding: "4px 8px",
-            }}
-            labelStyle={{ display: "none" }}
-          />
-          <Area
-            type="monotone"
-            dataKey="driver1"
-            stroke={color1}
-            fill={`url(#g1-${dataKey})`}
-            strokeWidth={1}
-            dot={false}
-            activeDot={false}
-          />
-          <Area
-            type="monotone"
-            dataKey="driver2"
-            stroke={color2}
-            fill={`url(#g2-${dataKey})`}
-            strokeWidth={1}
-            dot={false}
-            activeDot={false}
-          />
-          {activeDist > 0 && (
-            <ReferenceLine
-              x={activeDist}
-              stroke="rgba(255,255,255,0.3)"
-              strokeWidth={1}
-              strokeDasharray="3 3"
-            />
-          )}
-        </AreaChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
+// ── Telemetry charts are lazy-loaded in @/components/TelemetryCharts ───────────
 
 // ── Shared Leaderboard Table ──
 function LeaderboardTable({
@@ -339,7 +254,7 @@ function LeaderboardTable({
     );
   }
 
-  const COLS = "28px minmax(64px, 1fr) minmax(60px, 90px) 30px 58px 62px 28px";
+  const COLS = "24px minmax(88px, 1.1fr) minmax(70px, 0.85fr) 30px 58px 60px 26px";
 
   return (
     <div
@@ -349,7 +264,7 @@ function LeaderboardTable({
       aria-label="Timing Tower Leaderboard"
     >
       <div
-        className="grid items-center px-4 py-3 border-b border-border/40 bg-white/[0.005] min-w-[340px] text-[8px] font-mono text-muted-foreground tracking-widest uppercase font-bold"
+        className="grid items-center gap-x-2 px-4 py-3 border-b border-border/40 bg-white/[0.005] min-w-[388px] text-[8px] font-mono text-muted-foreground tracking-widest uppercase font-bold whitespace-nowrap"
         style={{ gridTemplateColumns: COLS }}
       >
         <span>Pos</span>
@@ -374,10 +289,10 @@ function LeaderboardTable({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: Math.min(i * 0.012, 0.3) }}
-              className="border-b border-border/20 last:border-0 min-w-[340px]"
+              className="border-b border-border/20 last:border-0 min-w-[388px]"
             >
               <div
-                className="grid items-center px-4 py-3.5 cursor-pointer hover:bg-foreground/[0.015] transition-colors"
+                className="grid items-center gap-x-2 px-4 py-3.5 cursor-pointer hover:bg-foreground/[0.015] transition-colors"
                 style={{
                   gridTemplateColumns: COLS,
                   borderLeft: `3px solid ${isTop3 ? teamCol : "transparent"}`,
@@ -402,11 +317,11 @@ function LeaderboardTable({
                 </span>
 
                 {/* Driver */}
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <span className="font-display text-base font-bold text-foreground">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-display text-base font-bold text-foreground whitespace-nowrap shrink-0">
                     {entry.abbreviation}
                   </span>
-                  <span className="font-mono text-[9px] text-muted-foreground font-bold hidden md:block truncate">
+                  <span className="font-mono text-[9px] text-muted-foreground font-bold hidden xl:block truncate">
                     {entry.driver_name}
                   </span>
                 </div>
@@ -657,19 +572,114 @@ function RaceCenter() {
     setIsPlaying,
   } = useTelemetryStore();
 
+  const navigate = useNavigate();
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
-  const [rightPanelTab, setRightPanelTab] = useState<"circuit" | "telemetry" | "logs">("circuit");
+  const [rightPanelTab, setRightPanelTab] = useState<"circuit" | "telemetry" | "logs">(
+    search.mode === "replay" ? "telemetry" : "circuit",
+  );
 
   const [telemetryLoading, setTelemetryLoading] = useState(false);
+  const [telemetryError, setTelemetryError] = useState<string | null>(null);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
-  const [showDetailedTelemetry, setShowDetailedTelemetry] = useState(false);
+  const [showDetailedTelemetry, setShowDetailedTelemetry] = useState<boolean>(true);
+  const [lapChoice, setLapChoice] = useState<string>(
+    typeof selectedLap === "number" ? String(selectedLap) : "fastest",
+  );
 
-  const db = getDriversListByYear(season);
-  const d1Meta = getDriverByYear(season, driver1);
-  const d2Meta = getDriverByYear(season, driver2);
+  const canQueryHistoricalSession = season >= MIN_SUPPORTED_YEAR && selectedRound > 0;
+
+  const circuitMapQuery = useQuery({
+    queryKey: ["circuit-map", season, selectedRound, selectedSession],
+    queryFn: () => getCircuitMap(season, selectedRound, selectedSession),
+    enabled: canQueryHistoricalSession,
+    staleTime: 1000 * 60 * 60,
+  });
+
+  const sessionDriversQuery = useQuery({
+    queryKey: ["session-drivers", season, selectedRound, selectedSession],
+    queryFn: () => getSessionDrivers(season, selectedRound, selectedSession),
+    enabled: canQueryHistoricalSession,
+    staleTime: 1000 * 60 * 60,
+  });
+
+  const sessionLapsQuery = useQuery({
+    queryKey: ["session-laps", season, selectedRound, selectedSession, driver1],
+    queryFn: () => getSessionLaps(season, selectedRound, selectedSession, driver1),
+    enabled: canQueryHistoricalSession && Boolean(driver1),
+    staleTime: 1000 * 60 * 30,
+  });
+
+  const sessionTyresQuery = useQuery({
+    queryKey: ["session-tyres", season, selectedRound, selectedSession],
+    queryFn: () => getSessionTyres(season, selectedRound, selectedSession),
+    enabled: canQueryHistoricalSession,
+    staleTime: 1000 * 60 * 30,
+  });
+
+  const driverOptions = useMemo(() => {
+    const apiDrivers = sessionDriversQuery.data ?? [];
+    if (apiDrivers.length > 0) {
+      return apiDrivers.map((d) => {
+        const abbr = d.abbreviation || d.name_acronym || d.driver_number;
+        return {
+          number: d.driver_number,
+          abbr,
+          name: d.full_name || d.broadcast_name || abbr || `#${d.driver_number}`,
+          color: d.team_color?.startsWith("#") ? d.team_color : `#${d.team_color || "9CA3AF"}`,
+        };
+      });
+    }
+    const db = getDriversListByYear(season);
+    return Object.entries(db).map(([num, d]) => ({
+      number: num,
+      abbr: d.abbr,
+      name: d.name,
+      color: d.color,
+    }));
+  }, [sessionDriversQuery.data, season]);
+
+  useEffect(() => {
+    if (driverOptions.length === 0) return;
+    if (!driverOptions.some((d) => d.number === driver1)) {
+      setDriver1(driverOptions[0].number);
+    }
+    if (!driverOptions.some((d) => d.number === driver2) || driver2 === driver1) {
+      const alt = driverOptions.find((d) => d.number !== driver1) ?? driverOptions[0];
+      if (alt && alt.number !== driver2) setDriver2(alt.number);
+    }
+  }, [driverOptions, driver1, driver2, setDriver1, setDriver2]);
+
+  const d1Option = driverOptions.find((d) => d.number === driver1);
+  const d2Option = driverOptions.find((d) => d.number === driver2);
+  const d1Fallback = getDriverByYear(season, driver1);
+  const d2Fallback = getDriverByYear(season, driver2);
+  const d1Meta = {
+    abbr: d1Option?.abbr || d1Fallback.abbr || `#${driver1}`,
+    name: d1Option?.name || d1Fallback.name || `Driver #${driver1}`,
+    color: d1Option?.color || d1Fallback.color || "#e10600",
+  };
+  const d2Meta = {
+    abbr: d2Option?.abbr || d2Fallback.abbr || `#${driver2}`,
+    name: d2Option?.name || d2Fallback.name || `Driver #${driver2}`,
+    color: d2Option?.color || d2Fallback.color || "#27F4D2",
+  };
 
   const DRIVER_COLOR_1 = d1Meta.color || "#e10600";
-  const DRIVER_COLOR_2 = d2Meta.color || "#27F4D2";
+  const DRIVER_COLOR_2 =
+    d2Meta.color && d2Meta.color.toLowerCase() !== DRIVER_COLOR_1.toLowerCase()
+      ? d2Meta.color
+      : "#06b6d4";
+
+  const selectedLapObj = useMemo(() => {
+    if (lapChoice === "fastest") return null;
+    const lapNum = Number(lapChoice);
+    return (sessionLapsQuery.data ?? []).find((l) => l.lap_number === lapNum) ?? null;
+  }, [lapChoice, sessionLapsQuery.data]);
+
+  const replayFrames = useMemo(
+    () => buildReplayFrames(driver1Data, driver2Data, 260),
+    [driver1Data, driver2Data],
+  );
 
   const telemetryAnalysis = useMemo(() => {
     if (driver1Data.length === 0) return null;
@@ -687,10 +697,14 @@ function RaceCenter() {
         : 0;
 
     const d1Brakes =
-      (driver1Data.filter((p) => (p.brake || 0) > 0.1).length / driver1Data.length) * 100;
+      (driver1Data.filter((p) => (normalizeBrakePercent(p.brake) ?? 0) > 5).length /
+        driver1Data.length) *
+      100;
     const d2Brakes =
       driver2Data.length > 0
-        ? (driver2Data.filter((p) => (p.brake || 0) > 0.1).length / driver2Data.length) * 100
+        ? (driver2Data.filter((p) => (normalizeBrakePercent(p.brake) ?? 0) > 5).length /
+            driver2Data.length) *
+          100
         : 0;
 
     return {
@@ -705,75 +719,22 @@ function RaceCenter() {
     };
   }, [driver1Data, driver2Data]);
 
-  const scaledTracks = useMemo(() => {
-    const combined = [...driver1Data, ...driver2Data].filter(
-      (p) => typeof p.x === "number" && typeof p.y === "number",
-    );
-    if (combined.length === 0) return { d1Scaled: [], d2Scaled: [] };
-
-    let minX = Infinity;
-    let maxX = -Infinity;
-    let minY = Infinity;
-    let maxY = -Infinity;
-
-    combined.forEach((p) => {
-      if (p.x! < minX) minX = p.x!;
-      if (p.x! > maxX) maxX = p.x!;
-      if (p.y! < minY) minY = p.y!;
-      if (p.y! > maxY) maxY = p.y!;
-    });
-
-    const width = maxX - minX;
-    const height = maxY - minY;
-    const maxDim = Math.max(width, height) || 1;
-
-    const margin = 10;
-    const size = 100 - 2 * margin;
-    const scale = size / maxDim;
-
-    const offsetX = margin + (size - width * scale) / 2;
-    const offsetY = margin + (size - height * scale) / 2;
-
-    const scaleList = (list: TelemetryPoint[]) => {
-      return list
-        .filter((p) => typeof p.x === "number" && typeof p.y === "number")
-        .map((p) => ({
-          ...p,
-          x: offsetX + (p.x! - minX) * scale,
-          y: offsetY + (maxY - p.y!) * scale,
-        }));
-    };
-
-    return {
-      d1Scaled: scaleList(driver1Data),
-      d2Scaled: scaleList(driver2Data),
-    };
-  }, [driver1Data, driver2Data]);
-
   const telemetryRequest = useRef(0);
+  const autoReplayKeyRef = useRef<string>("");
+
   async function loadTelemetry() {
     const request = ++telemetryRequest.current;
+    const parsedLap = lapChoice === "fastest" ? undefined : Number(lapChoice);
     setDriver1Data([]);
     setDriver2Data([]);
+    setTelemetryError(null);
     setTelemetryLoading(true);
     setIsPlaying(false);
     setScrubberPosition(0);
     try {
       const [r1, r2] = await Promise.allSettled([
-        f1Api.getTelemetry(
-          season,
-          selectedRound,
-          selectedSession,
-          driver1,
-          selectedLap === "all" ? undefined : (selectedLap as number),
-        ),
-        f1Api.getTelemetry(
-          season,
-          selectedRound,
-          selectedSession,
-          driver2,
-          selectedLap === "all" ? undefined : (selectedLap as number),
-        ),
+        f1Api.getTelemetry(season, selectedRound, selectedSession, driver1, parsedLap),
+        f1Api.getTelemetry(season, selectedRound, selectedSession, driver2, parsedLap),
       ]);
       if (request !== telemetryRequest.current) return;
       const d1 = r1.status === "fulfilled" ? r1.value.data || [] : [];
@@ -783,10 +744,16 @@ function RaceCenter() {
       const sessionKey = `${season}-${selectedRound}-${selectedSession}`;
       const hasPoints = d1.length > 0 || d2.length > 0;
       useCanonicalStore.getState().setTelemetryAvailability(sessionKey, hasPoints);
+      if (!hasPoints) {
+        setTelemetryError(
+          `FastF1 car telemetry is not published for ${season} R${selectedRound} ${selectedSession}.`,
+        );
+      }
     } catch (e) {
       console.error("[Telemetry] load failed:", e);
       const sessionKey = `${season}-${selectedRound}-${selectedSession}`;
       useCanonicalStore.getState().setTelemetryAvailability(sessionKey, false);
+      setTelemetryError("Failed to fetch telemetry from the archive backend.");
     } finally {
       if (request === telemetryRequest.current) setTelemetryLoading(false);
     }
@@ -795,6 +762,7 @@ function RaceCenter() {
   useEffect(() => {
     setDriver1Data([]);
     setDriver2Data([]);
+    setTelemetryError(null);
     setIsPlaying(false);
     setScrubberPosition(0);
     telemetryRequest.current += 1;
@@ -808,96 +776,118 @@ function RaceCenter() {
     selectedSession,
     driver1,
     driver2,
-    selectedLap,
+    lapChoice,
     setDriver1Data,
     setDriver2Data,
     setIsPlaying,
     setScrubberPosition,
   ]);
 
+  // Switch straight to telemetry and auto-sync when entering via Replay links
   useEffect(() => {
-    if (!isPlaying || driver1Data.length === 0) return;
+    if (search.mode !== "replay") return;
+    setRightPanelTab("telemetry");
+    if (!canQueryHistoricalSession || !driver1) return;
+    const key = `${season}-${selectedRound}-${selectedSession}-${driver1}-${driver2}-${lapChoice}`;
+    if (autoReplayKeyRef.current === key) return;
+    autoReplayKeyRef.current = key;
+    void loadTelemetry();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search.mode, season, selectedRound, selectedSession, driver1, driver2, lapChoice]);
 
+  useEffect(() => {
+    if (!isPlaying || replayFrames.length === 0) return;
+
+    const intervalMs = Math.max(12, Math.round(45 / playbackSpeed));
     const interval = setInterval(() => {
       const currentPos = useTelemetryStore.getState().scrubberPosition;
-      if (currentPos >= driver1Data.length - 1) {
+      if (currentPos >= replayFrames.length - 1) {
         setScrubberPosition(0);
       } else {
-        setScrubberPosition(currentPos + playbackSpeed);
+        setScrubberPosition(currentPos + 1);
       }
-    }, 45);
+    }, intervalMs);
 
     return () => clearInterval(interval);
-  }, [isPlaying, driver1Data.length, playbackSpeed, setScrubberPosition]);
+  }, [isPlaying, replayFrames.length, playbackSpeed, setScrubberPosition]);
 
-  const activePt1 = driver1Data[scrubberPosition] || null;
-  const activePt2 = useMemo(() => {
-    if (!activePt1 || driver2Data.length === 0) return null;
-    if (typeof activePt1.distance === "number") {
-      let bestPt = driver2Data[0];
-      let minDiff = Math.abs((bestPt.distance || 0) - activePt1.distance);
-      for (let i = 1; i < driver2Data.length; i++) {
-        const pt = driver2Data[i];
-        const diff = Math.abs((pt.distance || 0) - activePt1.distance);
-        if (diff < minDiff) {
-          minDiff = diff;
-          bestPt = pt;
-        }
-      }
-      return bestPt;
+  const cursorIndex =
+    replayFrames.length > 0 ? Math.min(replayFrames.length - 1, Math.max(0, scrubberPosition)) : 0;
+  const activeFrame = replayFrames[cursorIndex] ?? null;
+
+  const trackDrivers = useMemo(() => {
+    if (!activeFrame) return [];
+    const list = [
+      {
+        code: d1Meta.abbr,
+        color: DRIVER_COLOR_1,
+        progress: activeFrame.progress,
+        speed: activeFrame.speedA,
+      },
+    ];
+    if (driver2Data.length > 0) {
+      const d2Dist = driver2Data[driver2Data.length - 1]?.distance || 1;
+      const matchedBProgress =
+        activeFrame.timeB !== null && driver1Data[driver1Data.length - 1]?.distance
+          ? Math.min(1, Math.max(0, activeFrame.distance / (d2Dist || activeFrame.distance || 1)))
+          : activeFrame.progress;
+      list.push({
+        code: d2Meta.abbr,
+        color: DRIVER_COLOR_2,
+        progress: matchedBProgress,
+        speed: activeFrame.speedB,
+      });
     }
-    const ratio = driver2Data.length / driver1Data.length;
-    const idx = Math.min(Math.round(scrubberPosition * ratio), driver2Data.length - 1);
-    return driver2Data[idx] || null;
-  }, [activePt1, driver2Data, scrubberPosition, driver1Data.length]);
-
-  const activeDist = activePt1?.distance ? Math.round(activePt1.distance) : scrubberPosition;
-
-  const telemetryTrackPathD = useMemo(() => {
-    const track = scaledTracks.d1Scaled;
-    if (track.length === 0) return "";
-    return (
-      track.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ") +
-      " Z"
-    );
-  }, [scaledTracks.d1Scaled]);
-
-  const car1Coord = scaledTracks.d1Scaled[scrubberPosition] || null;
-  const car2Coord = useMemo(() => {
-    if (scaledTracks.d2Scaled.length === 0) return null;
-    if (activePt2) {
-      const originalIdx = driver2Data.indexOf(activePt2);
-      if (originalIdx !== -1) {
-        return scaledTracks.d2Scaled[originalIdx] || null;
-      }
-    }
-    return scaledTracks.d2Scaled[scrubberPosition] || null;
-  }, [scaledTracks.d2Scaled, activePt2, driver2Data, scrubberPosition]);
+    return list;
+  }, [
+    activeFrame,
+    d1Meta.abbr,
+    d2Meta.abbr,
+    DRIVER_COLOR_1,
+    DRIVER_COLOR_2,
+    driver2Data,
+    driver1Data,
+  ]);
 
   const trackStatus = showLive ? live.session_info?.track_status || "UNKNOWN" : "UNKNOWN";
+
+  const updateRouteSearch = (patch: Partial<RaceCenterSearch>) => {
+    void navigate({
+      to: "/race-center",
+      search: {
+        mode: patch.mode ?? (search.mode || "archive"),
+        year: patch.year ?? season,
+        round: patch.round ?? selectedRound,
+        session: patch.session ?? selectedSession,
+      },
+    });
+  };
 
   const DriverSelector = ({
     value,
     onChange,
     color,
+    label,
   }: {
     value: string;
     onChange: (v: string) => void;
     color: string;
+    label: string;
   }) => (
-    <div className="relative flex items-center">
+    <div className="relative flex items-center shrink-0">
       <span
-        className="w-1.5 h-1.5 rounded-full mr-[-20px] z-10"
+        className="w-2 h-2 rounded-full absolute left-3 z-10 pointer-events-none"
         style={{ backgroundColor: color }}
       />
       <select
+        aria-label={label}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="appearance-none pl-8 pr-7 py-1.5 rounded-lg text-[9px] font-mono font-bold cursor-pointer outline-none bg-white/5 border border-border/40 text-foreground uppercase tracking-wider"
+        className="appearance-none min-w-[118px] pl-7 pr-7 py-2 rounded-xl glass text-xs font-mono font-bold cursor-pointer outline-none border border-white/12 bg-background/80 text-foreground uppercase tracking-wider"
       >
-        {Object.entries(db).map(([num, d]) => (
-          <option key={num} value={num} className="bg-background">
-            {d.abbr} #{num}
+        {driverOptions.map((d) => (
+          <option key={d.number} value={d.number} className="bg-background">
+            {d.abbr} #{d.number}
           </option>
         ))}
       </select>
@@ -987,7 +977,7 @@ function RaceCenter() {
   }
 
   return (
-    <div className="min-h-screen px-6 pb-32 pt-12 lg:px-12 space-y-6">
+    <div className="min-h-screen overflow-x-clip px-4 sm:px-6 pb-32 pt-8 sm:pt-12 lg:px-12 space-y-6">
       <LiveProviderNotice />
       {showLive && live.status === "partial" && (
         <p role="status" className="glass p-4 text-sm">
@@ -1065,7 +1055,7 @@ function RaceCenter() {
         </div>
       )}
       {/* 1. BROADCAST PANEL */}
-      <div className="flex flex-wrap items-center justify-between gap-6 border-b border-border/40 pb-6 z-10 relative">
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-5 border-b border-border/40 pb-6 z-10 relative">
         <div>
           <div className="flex items-center gap-3">
             {showLive ? (
@@ -1073,13 +1063,14 @@ function RaceCenter() {
                 <Radio className="w-3.5 h-3.5 animate-pulse" /> LIVE STREAM
               </span>
             ) : (
-              <span className="flex items-center gap-2 bg-white/5 border border-border/40 px-3 py-1 rounded-full text-[9px] font-mono font-bold text-muted-foreground tracking-widest uppercase">
-                <Archive className="w-3.5 h-3.5" /> ARCHIVE ANALYSIS
+              <span className="flex items-center gap-2 glass-pill px-3 py-1 rounded-full text-[9px] font-mono font-bold text-muted-foreground tracking-widest uppercase">
+                <Archive className="w-3.5 h-3.5" />{" "}
+                {search.mode === "replay" ? "REPLAY STUDIO" : "ARCHIVE ANALYSIS"}
               </span>
             )}
             <h1 className="font-display text-4xl leading-none">Race Center</h1>
           </div>
-          <p className="font-mono text-[9px] text-muted-foreground uppercase tracking-widest mt-3 flex items-center gap-3 font-bold">
+          <p className="font-mono text-[9px] text-muted-foreground uppercase tracking-widest mt-3 flex flex-wrap items-center gap-2.5 font-bold">
             <span>{season} · Grand Prix Weekend</span>
             <span className="w-1 h-1 rounded-full bg-border" />
             <span>Round {selectedRound}</span>
@@ -1090,9 +1081,58 @@ function RaceCenter() {
           </p>
         </div>
 
-        <div className="flex items-center gap-4 text-xs font-mono">
+        {/* In-page session explorer (2018..currentYear) */}
+        <div className="flex flex-wrap items-center gap-2.5 text-xs font-mono">
+          <select
+            aria-label="Season year"
+            value={season}
+            onChange={(e) => updateRouteSearch({ year: Number(e.target.value), round: 1 })}
+            className="rounded-xl glass border border-white/12 bg-background/80 px-3 py-2 text-xs font-mono text-foreground"
+          >
+            {Array.from(
+              { length: Math.max(1, new Date().getFullYear() - MIN_SUPPORTED_YEAR + 1) },
+              (_, i) => new Date().getFullYear() - i,
+            ).map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+          </select>
+
+          <select
+            aria-label="Grand Prix round"
+            value={selectedRound}
+            onChange={(e) => updateRouteSearch({ round: Number(e.target.value) })}
+            className="rounded-xl glass border border-white/12 bg-background/80 px-3 py-2 text-xs font-mono text-foreground max-w-[210px] truncate"
+          >
+            {(activeSchedule.length > 0
+              ? activeSchedule
+              : Array.from({ length: 24 }, (_, idx) => ({
+                  round_number: idx + 1,
+                  event_name: `Round ${idx + 1}`,
+                }))
+            ).map((ev) => (
+              <option key={ev.round_number} value={ev.round_number}>
+                R{ev.round_number} · {ev.event_name}
+              </option>
+            ))}
+          </select>
+
+          <select
+            aria-label="Session type"
+            value={selectedSession}
+            onChange={(e) => updateRouteSearch({ session: e.target.value })}
+            className="rounded-xl glass border border-white/12 bg-background/80 px-3 py-2 text-xs font-mono text-foreground"
+          >
+            {VALID_SESSIONS.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+
           {showLive && (
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-white/[0.02] border border-border/40 rounded-xl text-[9px] text-muted-foreground font-bold uppercase tracking-wider">
+            <div className="flex items-center gap-2 px-3 py-1.5 glass rounded-xl text-[9px] text-muted-foreground font-bold uppercase tracking-wider">
               {live.ws_connected ? (
                 <>
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> timing
@@ -1119,9 +1159,9 @@ function RaceCenter() {
       {live.race_control.length > 0 && <RaceControlTicker messages={live.race_control} />}
 
       {/* 3. CORE TWO-COLUMN BROADCAST VIEW */}
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-6 lg:grid-cols-[minmax(410px,445px)_minmax(0,1fr)]">
         {/* LEFT COLUMN: Timing Tower */}
-        <div className="xl:col-span-1 min-w-0 space-y-4">
+        <div className="min-w-0 space-y-4">
           <div className="flex justify-between items-center px-1">
             <span className="text-[10px] font-mono font-bold text-muted-foreground tracking-widest uppercase flex items-center gap-2">
               <CalendarDays className="w-4 h-4 text-muted-foreground/45" /> Timing Tower
@@ -1160,7 +1200,7 @@ function RaceCenter() {
         </div>
 
         {/* RIGHT COLUMN: Interactive Telemetry Compare / Circuit Vector */}
-        <div className="lg:col-span-2 min-w-0 space-y-4">
+        <div className="min-w-0 space-y-4">
           {/* Segmented controls tabs */}
           <div className="flex items-center gap-1 bg-white/5 p-1 rounded-2xl border border-border/40 self-start backdrop-blur-md max-w-max">
             {[
@@ -1188,48 +1228,115 @@ function RaceCenter() {
 
           {/* TAB 1: Circuit Profile */}
           {rightPanelTab === "circuit" && (
-            <GlassPanel className="p-6 space-y-6 border border-border/40">
-              <div className="flex justify-between items-start border-b border-border/20 pb-4">
+            <GlassPanel className="p-6 space-y-6 border border-white/12">
+              <div className="flex flex-wrap justify-between items-start gap-4 border-b border-border/20 pb-4">
                 <div>
                   <span className="text-[9px] font-mono text-muted-foreground/60 tracking-widest uppercase font-bold">
-                    Track Profile
+                    {circuitMapQuery.data?.source
+                      ? `${circuitMapQuery.data.source} Track Geometry`
+                      : "Track Telemetry Geometry"}
                   </span>
-                  <h3 className="font-display text-2xl mt-1">{raceLabel}</h3>
+                  <h3 className="font-display text-2xl mt-1">
+                    {circuitMapQuery.data?.circuit_name || raceLabel}
+                  </h3>
+                  {circuitMapQuery.data?.reference_driver && (
+                    <p className="mt-1 text-[10px] font-mono text-muted-foreground uppercase tracking-widest">
+                      Reference lap: {circuitMapQuery.data.reference_driver} ·{" "}
+                      {circuitMapQuery.data.corners.length} corners
+                    </p>
+                  )}
                 </div>
                 {showLive && live.weather && <WeatherBar weather={live.weather} />}
               </div>
 
-              {telemetryTrackPathD ? (
-                <svg
-                  aria-label="Circuit trace from archived telemetry"
-                  className="w-full h-[220px]"
-                  viewBox="0 0 100 100"
-                >
-                  <path
-                    d={telemetryTrackPathD}
-                    fill="none"
-                    stroke="var(--primary)"
-                    strokeWidth="1"
-                  />
-                </svg>
-              ) : (
-                <p className="py-12 text-center text-sm text-muted-foreground">
-                  Verified circuit geometry unavailable. Load an archived lap in Telemetry to view
-                  its recorded trace.
-                </p>
+              <div className="aspect-[16/10] w-full max-h-[340px] rounded-2xl glass-subtle p-4 flex items-center justify-center">
+                <CircuitTrackMap
+                  circuitMap={circuitMapQuery.data}
+                  loading={circuitMapQuery.isLoading}
+                  trackName={raceLabel}
+                  drivers={trackDrivers}
+                  className="w-full h-full max-h-[300px]"
+                />
+              </div>
+
+              {sessionTyresQuery.data && Object.keys(sessionTyresQuery.data).length > 0 && (
+                <div className="pt-2 border-t border-border/20 space-y-2.5">
+                  <div className="text-[9px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
+                    Stint strategy snapshot ({Object.keys(sessionTyresQuery.data).length} cars)
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 max-h-40 overflow-y-auto pr-1">
+                    {Object.entries(sessionTyresQuery.data)
+                      .slice(0, 12)
+                      .map(([drvNum, stints]) => {
+                        const drvMeta = driverOptions.find((d) => d.number === drvNum);
+                        return (
+                          <div
+                            key={drvNum}
+                            className="rounded-xl glass-subtle px-2.5 py-2 flex items-center justify-between gap-2 text-[10px] font-mono"
+                          >
+                            <span className="font-bold text-foreground">
+                              {drvMeta?.abbr || `#${drvNum}`}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              {stints.map((st, idx) => {
+                                const c = COMPOUND[st.compound?.toUpperCase()] ?? {
+                                  color: "#9CA3AF",
+                                  label: st.compound?.slice(0, 1) || "?",
+                                };
+                                return (
+                                  <span
+                                    key={idx}
+                                    title={`${st.compound} (L${st.start_lap ?? st.lap ?? "?"}–${st.end_lap ?? "?"})`}
+                                    className="inline-flex h-4 w-4 items-center justify-center rounded-full border text-[8px] font-black"
+                                    style={{ borderColor: c.color, color: c.color }}
+                                  >
+                                    {c.label}
+                                  </span>
+                                );
+                              })}
+                            </span>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
               )}
             </GlassPanel>
           )}
 
-          {/* TAB 2: Telemetry compare */}
+          {/* TAB 2: Telemetry Replay & Compare */}
           {rightPanelTab === "telemetry" && (
             <div className="space-y-4">
-              <GlassPanel className="p-6 border border-border/40 space-y-6">
-                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border/20 pb-4">
-                  <div className="flex items-center gap-3">
-                    <DriverSelector value={driver1} onChange={setDriver1} color={DRIVER_COLOR_1} />
-                    <span className="text-muted-foreground/30 font-mono text-xs">VS</span>
-                    <DriverSelector value={driver2} onChange={setDriver2} color={DRIVER_COLOR_2} />
+              <GlassPanel className="p-5 sm:p-6 border border-white/12 space-y-5">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/20 pb-4">
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <DriverSelector
+                      label="Primary driver"
+                      value={driver1}
+                      onChange={setDriver1}
+                      color={DRIVER_COLOR_1}
+                    />
+                    <span className="text-muted-foreground/40 font-mono text-[10px]">VS</span>
+                    <DriverSelector
+                      label="Comparison driver"
+                      value={driver2}
+                      onChange={setDriver2}
+                      color={DRIVER_COLOR_2}
+                    />
+                    <select
+                      aria-label="Lap selector"
+                      value={lapChoice}
+                      onChange={(e) => setLapChoice(e.target.value)}
+                      className="rounded-xl glass border border-white/12 bg-background/80 px-3 py-2 text-xs font-mono text-foreground max-w-[180px]"
+                    >
+                      <option value="fastest">Fastest lap</option>
+                      {(sessionLapsQuery.data ?? []).map((lap) => (
+                        <option key={lap.lap_number} value={String(lap.lap_number)}>
+                          L{lap.lap_number} · {formatLapDuration(lap.lap_time)}{" "}
+                          {lap.compound ? `(${lap.compound.slice(0, 1)})` : ""}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
@@ -1237,217 +1344,227 @@ function RaceCenter() {
                       disabled={telemetryLoading}
                       className="inline-flex items-center justify-center gap-2 rounded-full bg-foreground px-4 py-2 text-xs font-bold text-background transition hover:bg-foreground/90 disabled:opacity-50"
                     >
-                      {telemetryLoading ? "Loading traces..." : "Sync telemetry"}
+                      {telemetryLoading ? "Syncing..." : "Sync telemetry"}
                     </button>
                   </div>
                 </div>
 
-                {driver1Data.length > 0 ? (
-                  <div
-                    className={cn(
-                      "grid gap-6",
-                      showDetailedTelemetry ? "lg:grid-cols-[1.2fr_1fr]" : "grid-cols-1",
-                    )}
+                {selectedLapObj && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] font-mono">
+                    <div className="rounded-xl glass-subtle px-3 py-2">
+                      <span className="text-muted-foreground block text-[9px]">LAP TIME</span>
+                      <span className="text-foreground font-bold tabular-nums">
+                        {formatLapDuration(selectedLapObj.lap_time)}
+                      </span>
+                    </div>
+                    <div className="rounded-xl glass-subtle px-3 py-2">
+                      <span className="text-muted-foreground block text-[9px]">SECTOR 1</span>
+                      <span className="text-foreground tabular-nums">
+                        {formatSectorDuration(selectedLapObj.sector1)}
+                      </span>
+                    </div>
+                    <div className="rounded-xl glass-subtle px-3 py-2">
+                      <span className="text-muted-foreground block text-[9px]">SECTOR 2</span>
+                      <span className="text-foreground tabular-nums">
+                        {formatSectorDuration(selectedLapObj.sector2)}
+                      </span>
+                    </div>
+                    <div className="rounded-xl glass-subtle px-3 py-2">
+                      <span className="text-muted-foreground block text-[9px]">
+                        SECTOR 3 / TYRE
+                      </span>
+                      <span className="text-foreground tabular-nums">
+                        {formatSectorDuration(selectedLapObj.sector3)}{" "}
+                        {selectedLapObj.compound ? `· ${selectedLapObj.compound}` : ""}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {telemetryError && driver1Data.length === 0 && (
+                  <p
+                    role="status"
+                    className="rounded-2xl glass-subtle p-4 text-xs font-mono text-amber-300"
                   >
-                    {/* Visual Spline coordinate maps */}
-                    <div>
-                      <div className="text-[9px] font-mono tracking-widest text-muted-foreground uppercase font-bold mb-4">
-                        Archived lap position
-                      </div>
-                      <div className="relative aspect-[16/10] w-full rounded-2xl bg-gradient-to-br from-surface to-background/50 border border-border/40 p-4 flex items-center justify-center">
-                        <svg
-                          className="w-full h-full max-h-[260px] max-w-[340px]"
-                          viewBox="0 0 100 100"
-                        >
-                          <path
-                            d={telemetryTrackPathD}
-                            fill="none"
-                            stroke="rgba(255,255,255,0.03)"
-                            strokeWidth="4"
-                            strokeLinecap="round"
-                          />
-                          <path
-                            d={telemetryTrackPathD}
-                            fill="none"
-                            stroke="var(--primary) opacity-20"
-                            strokeWidth="1.5"
-                            strokeLinecap="round"
-                          />
+                    {telemetryError}
+                  </p>
+                )}
 
-                          {/* Active car coordinates indicator */}
-                          {car1Coord && (
-                            <circle
-                              cx={car1Coord.x}
-                              cy={car1Coord.y}
-                              r="3.5"
-                              fill={DRIVER_COLOR_1}
-                            />
-                          )}
-                          {car2Coord && (
-                            <circle
-                              cx={car2Coord.x}
-                              cy={car2Coord.y}
-                              r="3.5"
-                              fill={DRIVER_COLOR_2}
-                            />
-                          )}
-                        </svg>
+                {replayFrames.length > 0 ? (
+                  <div className="space-y-4">
+                    {/* Track + Live Telemetry HUD */}
+                    <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr] items-start">
+                      <div className="relative h-[260px] sm:h-[290px] w-full rounded-2xl glass-subtle p-3 flex items-center justify-center overflow-hidden">
+                        <CircuitTrackMap
+                          circuitMap={circuitMapQuery.data}
+                          loading={circuitMapQuery.isLoading}
+                          trackName={raceLabel}
+                          drivers={trackDrivers}
+                          showCorners={false}
+                          className="w-full h-full max-h-[260px]"
+                        />
                       </div>
 
-                      {/* Scrubber panel controls */}
-                      <div className="mt-4 flex items-center justify-between gap-4 bg-white/[0.01] border border-border/40 p-4 rounded-2xl">
-                        <div className="flex items-center gap-2.5">
-                          <button
-                            aria-label={isPlaying ? "Pause lap playback" : "Play lap playback"}
-                            onClick={() => setIsPlaying(!isPlaying)}
-                            className="h-8 w-8 rounded-full bg-foreground text-background flex items-center justify-center hover:scale-105 transition"
+                      <div className="grid grid-cols-2 gap-2.5 content-start min-w-0">
+                        <div className="rounded-2xl glass-subtle p-3 min-w-0">
+                          <div className="text-[9px] font-mono uppercase tracking-[0.16em] text-muted-foreground truncate">
+                            {d1Meta.abbr} Cursor
+                          </div>
+                          <div className="font-display text-2xl sm:text-3xl mt-1 tabular-nums whitespace-nowrap">
+                            {activeFrame?.speedA ?? "—"}{" "}
+                            <span className="text-xs font-mono text-muted-foreground">km/h</span>
+                          </div>
+                          <div className="text-[10px] font-mono text-muted-foreground mt-1 tabular-nums">
+                            G{activeFrame?.gearA ?? "—"} · THR {activeFrame?.throttleA ?? 0}% ·{" "}
+                            {activeFrame?.drsA ? "DRS ON" : `BRK ${activeFrame?.brakeA ?? 0}%`}
+                          </div>
+                        </div>
+
+                        <div className="rounded-2xl glass-subtle p-3 min-w-0">
+                          <div
+                            className="text-[9px] font-mono uppercase tracking-[0.16em] truncate"
+                            style={{ color: DRIVER_COLOR_2 }}
                           >
-                            {isPlaying ? (
-                              <Pause className="h-4.5 w-4.5 fill-current" />
-                            ) : (
-                              <Play className="h-4.5 w-4.5 fill-current ml-0.5" />
-                            )}
-                          </button>
-                          <button
-                            aria-label="Restart lap playback"
-                            onClick={() => setScrubberPosition(0)}
-                            className="h-8 w-8 rounded-full glass flex items-center justify-center hover:bg-white/10 transition"
-                          >
-                            <RotateCcw className="h-4 w-4" />
-                          </button>
+                            {d2Meta.abbr} Cursor
+                          </div>
+                          <div className="font-display text-2xl sm:text-3xl mt-1 tabular-nums whitespace-nowrap">
+                            {activeFrame?.speedB ?? "—"}{" "}
+                            <span className="text-xs font-mono text-muted-foreground">km/h</span>
+                          </div>
+                          <div className="text-[10px] font-mono text-muted-foreground mt-1 tabular-nums">
+                            G{activeFrame?.gearB ?? "—"} · THR {activeFrame?.throttleB ?? 0}% · DRS{" "}
+                            {activeFrame?.drsB ? "ON" : "OFF"}
+                          </div>
                         </div>
-                        <div className="flex-1 px-4">
-                          <input
-                            aria-label="Lap position"
-                            type="range"
-                            min="0"
-                            max={driver1Data.length - 1}
-                            value={scrubberPosition}
-                            onChange={(e) => setScrubberPosition(Number(e.target.value))}
-                            className="w-full h-1 bg-foreground/10 rounded-full appearance-none outline-none accent-primary cursor-pointer"
-                          />
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {[1, 2, 4].map((s) => (
-                            <button
-                              key={s}
-                              onClick={() => setPlaybackSpeed(s)}
-                              className={cn(
-                                "text-[9px] font-mono font-bold px-2 py-1 rounded-md transition",
-                                playbackSpeed === s
-                                  ? "bg-foreground/10 text-foreground"
-                                  : "text-muted-foreground hover:bg-white/5",
-                              )}
-                            >
-                              {s}x
-                            </button>
-                          ))}
-                        </div>
-                      </div>
 
-                      {/* Toggle button to expand telemetry traces */}
-                      <button
-                        onClick={() => setShowDetailedTelemetry(!showDetailedTelemetry)}
-                        className={cn(
-                          "mt-4 w-full rounded-xl py-3 text-xs font-mono font-bold uppercase tracking-wider transition border duration-300 flex items-center justify-center gap-2",
-                          showDetailedTelemetry
-                            ? "bg-primary/10 text-primary border-primary/20"
-                            : "glass text-muted-foreground hover:text-foreground",
+                        {telemetryAnalysis && (
+                          <>
+                            <div className="rounded-2xl glass-subtle p-3 min-w-0">
+                              <div className="text-[9px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+                                Peak Speed
+                              </div>
+                              <div className="text-xs sm:text-sm font-mono font-bold mt-1 tabular-nums">
+                                {d1Meta.abbr} {telemetryAnalysis.d1MaxSpeed} vs {d2Meta.abbr}{" "}
+                                {telemetryAnalysis.d2MaxSpeed}
+                              </div>
+                            </div>
+                            <div className="rounded-2xl glass-subtle p-3 min-w-0">
+                              <div className="text-[9px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+                                Live Delta / Dist
+                              </div>
+                              <div className="text-xs sm:text-sm font-mono font-bold mt-1 tabular-nums">
+                                {activeFrame?.deltaSec !== null &&
+                                activeFrame?.deltaSec !== undefined
+                                  ? `${activeFrame.deltaSec >= 0 ? "+" : ""}${activeFrame.deltaSec.toFixed(3)}s`
+                                  : "—"}{" "}
+                                · {Math.round(activeFrame?.distance ?? 0)}m
+                              </div>
+                            </div>
+                          </>
                         )}
-                      >
-                        <Activity className="w-4 h-4 text-primary" />
-                        {showDetailedTelemetry
-                          ? "Hide Detailed Telemetry Traces"
-                          : "Enable Enthusiast Telemetry Mode"}
-                      </button>
+                      </div>
                     </div>
 
-                    {/* Speeds & Pedals trace compare dashboards (Visible in Enthusiast mode only) */}
-                    {showDetailedTelemetry && (
-                      <motion.div
-                        initial={{ opacity: 0, x: 20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        className="space-y-4"
-                      >
-                        {telemetryAnalysis && (
-                          <div className="grid grid-cols-2 gap-3">
-                            <GlassPanel className="p-4 border border-border/40 text-center">
-                              <div className="text-[8px] font-mono text-muted-foreground uppercase tracking-widest font-bold">
-                                Top Speed
-                              </div>
-                              <div className="font-display text-2xl mt-1.5">
-                                {telemetryAnalysis.d1MaxSpeed || activePt1?.speed || 0}
-                                <span className="text-xs text-muted-foreground"> km/h</span>
-                              </div>
-                              <div className="text-[8px] font-mono text-muted-foreground mt-0.5">
-                                Cursor: {activePt1?.speed || 0} km/h
-                              </div>
-                              <div className="text-[8px] font-mono text-primary font-bold uppercase tracking-wider mt-1">
-                                {d1Meta.abbr}
-                              </div>
-                            </GlassPanel>
-                            <GlassPanel className="p-4 border border-border/40 text-center">
-                              <div className="text-[8px] font-mono text-muted-foreground uppercase tracking-widest font-bold">
-                                Top Speed
-                              </div>
-                              <div className="font-display text-2xl mt-1.5">
-                                {telemetryAnalysis.d2MaxSpeed || activePt2?.speed || 0}
-                                <span className="text-xs text-muted-foreground"> km/h</span>
-                              </div>
-                              <div className="text-[8px] font-mono text-muted-foreground mt-0.5">
-                                Cursor: {activePt2?.speed || 0} km/h
-                              </div>
-                              <div
-                                className="text-[8px] font-mono text-primary font-bold uppercase tracking-wider mt-1"
-                                style={{ color: DRIVER_COLOR_2 }}
-                              >
-                                {d2Meta.abbr}
-                              </div>
-                            </GlassPanel>
-                          </div>
-                        )}
+                    {/* Synchronized Scrubber & Speed Controls */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 glass-subtle p-3.5 rounded-2xl">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          aria-label={isPlaying ? "Pause lap playback" : "Play lap playback"}
+                          onClick={() => setIsPlaying(!isPlaying)}
+                          className="h-9 w-9 rounded-full bg-foreground text-background flex items-center justify-center hover:scale-105 transition"
+                        >
+                          {isPlaying ? (
+                            <Pause className="h-4 w-4 fill-current" />
+                          ) : (
+                            <Play className="h-4 w-4 fill-current ml-0.5" />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="Restart lap playback"
+                          onClick={() => setScrubberPosition(0)}
+                          className="h-9 w-9 rounded-full glass flex items-center justify-center hover:bg-white/10 transition"
+                        >
+                          <RotateCcw className="h-4 w-4" />
+                        </button>
+                      </div>
+                      <div className="flex-1 min-w-[140px] px-2">
+                        <input
+                          aria-label="Lap position"
+                          type="range"
+                          min="0"
+                          max={Math.max(0, replayFrames.length - 1)}
+                          value={cursorIndex}
+                          onChange={(e) => setScrubberPosition(Number(e.target.value))}
+                          className="w-full h-1.5 bg-foreground/15 rounded-full appearance-none outline-none accent-primary cursor-pointer"
+                        />
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {[0.5, 1, 2, 4].map((s) => (
+                          <button
+                            type="button"
+                            key={s}
+                            onClick={() => setPlaybackSpeed(s)}
+                            className={cn(
+                              "text-[10px] font-mono font-bold px-2.5 py-1 rounded-lg transition",
+                              playbackSpeed === s
+                                ? "bg-foreground text-background"
+                                : "text-muted-foreground hover:bg-white/10",
+                            )}
+                          >
+                            {s}x
+                          </button>
+                        ))}
+                      </div>
+                    </div>
 
-                        <ChartSection
-                          title="Speed trace (km/h)"
-                          d1={driver1Data}
-                          d2={driver2Data}
-                          dataKey="speed"
-                          color1={DRIVER_COLOR_1}
-                          color2={DRIVER_COLOR_2}
-                          domain={[50, 350]}
-                          activeDist={activeDist}
+                    <button
+                      type="button"
+                      onClick={() => setShowDetailedTelemetry(!showDetailedTelemetry)}
+                      className={cn(
+                        "w-full rounded-xl py-2.5 text-xs font-mono font-bold uppercase tracking-wider transition border flex items-center justify-center gap-2",
+                        showDetailedTelemetry
+                          ? "bg-primary/10 text-primary border-primary/25"
+                          : "glass text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      <Activity className="w-4 h-4 text-primary" />
+                      {showDetailedTelemetry
+                        ? "Hide Multi-Channel Traces"
+                        : "Show Multi-Channel Traces"}
+                    </button>
+
+                    {showDetailedTelemetry && (
+                      <Suspense
+                        fallback={
+                          <div className="rounded-2xl glass-subtle p-8 text-center text-xs font-mono text-muted-foreground">
+                            Loading multi-channel telemetry charts…
+                          </div>
+                        }
+                      >
+                        <TelemetryCharts
+                          frames={replayFrames}
+                          cursorIndex={cursorIndex}
+                          onSelectIndex={(idx) => setScrubberPosition(idx)}
+                          driver1Label={d1Meta.abbr}
+                          driver1Color={DRIVER_COLOR_1}
+                          driver2Label={driver2Data.length > 0 ? d2Meta.abbr : undefined}
+                          driver2Color={DRIVER_COLOR_2}
                         />
-                        <ChartSection
-                          title="Throttle logs (%)"
-                          d1={driver1Data}
-                          d2={driver2Data}
-                          dataKey="throttle"
-                          color1={DRIVER_COLOR_1}
-                          color2={DRIVER_COLOR_2}
-                          domain={[0, 100]}
-                          activeDist={activeDist}
-                        />
-                        <ChartSection
-                          title="Brake traces (0-1)"
-                          d1={driver1Data}
-                          d2={driver2Data}
-                          dataKey="brake"
-                          color1={DRIVER_COLOR_1}
-                          color2={DRIVER_COLOR_2}
-                          domain={[0, 1]}
-                          activeDist={activeDist}
-                        />
-                      </motion.div>
+                      </Suspense>
                     )}
                   </div>
                 ) : (
-                  <GlassPanel className="p-8 py-20 text-center border border-border/40 flex flex-col items-center justify-center gap-4">
+                  <GlassPanel className="p-8 py-16 text-center border border-border/40 flex flex-col items-center justify-center gap-4">
                     <Activity className="w-8 h-8 text-muted-foreground/30" />
                     <div>
-                      <h3 className="font-display text-2xl">Race replay offline</h3>
-                      <p className="text-xs text-muted-foreground mt-2 leading-relaxed max-w-xs mx-auto">
-                        Select a driver pair above and sync telemetry to compare speed traces and
-                        braking maps.
+                      <h3 className="font-display text-2xl">
+                        {telemetryLoading ? "Loading FastF1 Telemetry..." : "Ready for Lap Replay"}
+                      </h3>
+                      <p className="text-xs text-muted-foreground mt-2 leading-relaxed max-w-sm mx-auto">
+                        Select any two drivers and a lap above, then click Sync telemetry to compare
+                        speed, throttle, braking, gearshifts, RPM, DRS, and live track positions.
                       </p>
                     </div>
                   </GlassPanel>

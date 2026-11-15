@@ -6,6 +6,7 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone
 from cachetools import TTLCache
 from app.services.metadata import team_display_name
+from app.services import openf1_history
 from app.models.schemas import (
     SessionInfo, LeaderboardEntry, LapTime,
     TelemetryPoint, WeatherData, RaceControlMessage,
@@ -16,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 # In-memory TTL caches
 _session_cache: TTLCache = TTLCache(maxsize=20, ttl=600)   # sessions live 10 min
+_failed_session_cache: TTLCache = TTLCache(maxsize=64, ttl=300)  # avoid re-hitting broken F1 CDN on every endpoint
 _data_cache: TTLCache = TTLCache(maxsize=200, ttl=300)     # general data: 5 min
 _news_cache: TTLCache = TTLCache(maxsize=5, ttl=600)       # news: 10 min
 
@@ -84,7 +86,27 @@ TEAM_COLORS: Dict[str, str] = {
     "Haas F1 Team": "#B6BABD",
     "Audi": "#C0C0C0",           # was "Kick Sauber"
     "Cadillac": "#BA0000",
+    "Alfa Romeo": "#C92D4B",
+    "Kick Sauber": "#52E252",
+    "Stake F1 Team Kick Sauber": "#52E252",
+    "Sauber": "#52E252",
+    "AlphaTauri": "#5E8FAA",
+    "Alpha Tauri": "#5E8FAA",
+    "Scuderia AlphaTauri Honda": "#5E8FAA",
+    "Toro Rosso": "#469BFF",
+    "Renault": "#FFF500",
+    "Racing Point": "#F596C8",
+    "Force India": "#F596C8",
 }
+
+
+def _team_color(name: str, year: int) -> str:
+    if not name:
+        return "#888888"
+    if name in TEAM_COLORS and (year < 2026 or name not in ("Sauber", "Kick Sauber", "Stake F1 Team Kick Sauber", "Alfa Romeo")):
+        return TEAM_COLORS[name]
+    norm = normalize_constructor(name, year)
+    return TEAM_COLORS.get(norm, TEAM_COLORS.get(name, "#888888"))
 
 COMPOUND_COLORS: Dict[str, str] = {
     "SOFT": "#FF3333",
@@ -273,6 +295,9 @@ import asyncio
 def _load_session_sync(year: int, round_number: int, session_name: str = "Race", 
                        laps: bool = False, telemetry: bool = False, weather: bool = False, messages: bool = False):
     """Load and cache a FastF1 session synchronously, loading only requested data channels."""
+    fail_key = (year, round_number, session_name)
+    if fail_key in _failed_session_cache:
+        return None
     cache_key = f"session_{year}_{round_number}_{session_name}_{laps}_{telemetry}_{weather}_{messages}"
     if cache_key in _session_cache:
         return _session_cache[cache_key]
@@ -282,7 +307,16 @@ def _load_session_sync(year: int, round_number: int, session_name: str = "Race",
         _session_cache[cache_key] = session
         return session
     except Exception as e:
-        logger.error(f"_load_session error ({year} R{round_number} {session_name}): {e}")
+        _failed_session_cache[fail_key] = str(e)
+        logger.warning(f"FastF1 _load_session unavailable ({year} R{round_number} {session_name}): {e}")
+        return None
+
+
+async def _schedule_event_for(year: int, round_number: int) -> Optional[ScheduleEvent]:
+    try:
+        events = await get_schedule(year)
+        return next((e for e in events if e.round_number == round_number), None)
+    except Exception:
         return None
 
 async def _load_session(year: int, round_number: int, session_name: str = "Race", 
@@ -328,15 +362,16 @@ async def get_leaderboard(year: int, round_number: int, session_name: str = "Rac
         entries = []
         for pos, (_, row) in enumerate(results.iterrows(), start=1):
             team = str(row.get("TeamName", ""))
+            raw_pos = row.get("Position")
             entries.append(LeaderboardEntry(
-                position=int(row["Position"]) if pd.notna(row.get("Position")) else 0,
+                position=int(raw_pos) if pd.notna(raw_pos) else pos,
                 status=_safe_val(row.get("Status")),
                 laps=_safe_val(row.get("Laps")),
                 driver_number=str(row.get("DriverNumber", "")),
                 driver_name=str(row.get("FullName", "")),
                 abbreviation=str(row.get("Abbreviation", "")),
                 team=team,
-                team_color=TEAM_COLORS.get(team, "#888888"),
+                team_color=_team_color(team, year),
                 gap_to_leader=str(row.get("Time", "")) if pd.notna(row.get("Time")) else None,
                 points=_safe_val(row.get("Points"), 0),
             ))
@@ -345,6 +380,46 @@ async def get_leaderboard(year: int, round_number: int, session_name: str = "Rac
     except Exception as e:
         logger.error(f"get_leaderboard error: {e}")
         return []
+
+
+def _safe_int(val) -> Optional[int]:
+    v = _safe_val(val)
+    if v is None:
+        return None
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_float(val) -> Optional[float]:
+    v = _safe_val(val)
+    if v is None:
+        return None
+    try:
+        f = float(v)
+        return None if np.isnan(f) or np.isinf(f) else f
+    except (TypeError, ValueError):
+        return None
+
+
+def _pick_driver_laps(laps_df, driver: str):
+    cleaned = str(driver).strip()
+    try:
+        if hasattr(laps_df, "pick_drivers"):
+            picked = laps_df.pick_drivers(cleaned)
+        else:
+            picked = laps_df.pick_driver(cleaned)
+        if picked is not None and not picked.empty:
+            return picked
+    except Exception:
+        pass
+    mask = pd.Series(False, index=laps_df.index)
+    if "DriverNumber" in laps_df.columns:
+        mask = mask | (laps_df["DriverNumber"].astype(str).str.strip() == cleaned)
+    if "Driver" in laps_df.columns:
+        mask = mask | (laps_df["Driver"].astype(str).str.strip().str.upper() == cleaned.upper())
+    return laps_df[mask]
 
 
 async def get_laps(year: int, round_number: int, session_name: str = "Race",
@@ -356,29 +431,47 @@ async def get_laps(year: int, round_number: int, session_name: str = "Race",
     try:
         session = await _load_session(year, round_number, session_name, laps=True, telemetry=False, weather=False, messages=False)
         if session is None:
+            if year >= 2023:
+                ev = await _schedule_event_for(year, round_number)
+                fallback = await openf1_history.get_laps(year, round_number, session_name, driver, ev)
+                if fallback:
+                    _data_cache[cache_key] = fallback
+                return fallback
+            return []
+        if session.laps is None or session.laps.empty:
             return []
 
         laps = session.laps
         if driver:
-            laps = laps[laps["DriverNumber"] == driver]
+            laps = _pick_driver_laps(laps, driver)
+            if laps.empty:
+                return []
 
-        best_lap_time = laps["LapTime"].min()
+        valid_times = laps["LapTime"].dropna() if "LapTime" in laps.columns else pd.Series(dtype="timedelta64[ns]")
+        best_lap_time = valid_times.min() if not valid_times.empty else pd.NaT
+
+        if "LapNumber" in laps.columns:
+            laps = laps.sort_values(by=["DriverNumber", "LapNumber"] if not driver and "DriverNumber" in laps.columns else ["LapNumber"])
+
         result = []
         for _, lap in laps.iterrows():
-            lap_time = _safe_val(lap.get("LapTime"))
+            raw_compound = _safe_val(lap.get("Compound"))
+            compound = str(raw_compound).strip() if raw_compound is not None and str(raw_compound).strip().lower() not in ("", "nan", "none") else None
+            lap_td = lap.get("LapTime")
+            is_best = bool(pd.notna(best_lap_time) and pd.notna(lap_td) and lap_td == best_lap_time)
             result.append(LapTime(
                 driver_number=str(lap.get("DriverNumber", "")),
-                lap_number=int(_safe_val(lap.get("LapNumber"), 0)),
-                lap_time=_timedelta_to_str(lap.get("LapTime")),
+                lap_number=_safe_int(lap.get("LapNumber")) or 0,
+                lap_time=_timedelta_to_str(lap_td),
                 sector1=_timedelta_to_str(lap.get("Sector1Time")),
                 sector2=_timedelta_to_str(lap.get("Sector2Time")),
                 sector3=_timedelta_to_str(lap.get("Sector3Time")),
-                compound=str(lap.get("Compound", "UNKNOWN")),
-                tyre_life=int(_safe_val(lap.get("TyreLife"), 0)),
-                is_personal_best=bool(lap.get("IsPersonalBest", False)),
-                is_overall_best=(lap.get("LapTime") == best_lap_time),
-                pit_in=bool(lap.get("PitInTime") and not pd.isna(lap.get("PitInTime"))),
-                pit_out=bool(lap.get("PitOutTime") and not pd.isna(lap.get("PitOutTime"))),
+                compound=compound,
+                tyre_life=_safe_int(lap.get("TyreLife")),
+                is_personal_best=bool(lap.get("IsPersonalBest", False)) if pd.notna(lap.get("IsPersonalBest")) else None,
+                is_overall_best=is_best,
+                pit_in=bool(pd.notna(lap.get("PitInTime"))),
+                pit_out=bool(pd.notna(lap.get("PitOutTime"))),
             ))
         _data_cache[cache_key] = result
         return result
@@ -396,50 +489,164 @@ async def get_telemetry(year: int, round_number: int, session_name: str,
     try:
         session = await _load_session(year, round_number, session_name, laps=True, telemetry=True, weather=False, messages=False)
         if session is None:
+            if year >= 2023:
+                ev = await _schedule_event_for(year, round_number)
+                fallback = await openf1_history.get_telemetry(year, round_number, session_name, driver, lap_number, ev)
+                if fallback:
+                    _data_cache[cache_key] = fallback
+                return fallback
+            return []
+        if session.laps is None or session.laps.empty:
             return []
 
-        driver_laps = session.laps.pick_driver(driver)
+        driver_laps = _pick_driver_laps(session.laps, driver)
         if driver_laps.empty:
             return []
-        if lap_number:
-            lap = driver_laps[driver_laps["LapNumber"] == lap_number].iloc[0]
+
+        if lap_number is not None:
+            matching = driver_laps[driver_laps["LapNumber"] == lap_number]
+            if matching.empty:
+                return []
+            lap = matching.iloc[0]
         else:
             lap = driver_laps.pick_fastest()
+            if lap is None:
+                return []
 
         try:
             telemetry = lap.get_telemetry()
-        except:
-            return []
-        
-        if telemetry.empty:
+        except Exception:
             return []
 
-        # Downsample to ~500 points max
-        if len(telemetry) > 500:
-            telemetry = telemetry.iloc[::len(telemetry)//500]
+        if telemetry is None or telemetry.empty:
+            return []
+
+        # Downsample evenly up to ~650 points while keeping start/finish endpoints
+        if len(telemetry) > 650:
+            step = max(1, len(telemetry) // 650)
+            telemetry = telemetry.iloc[::step]
 
         points = []
         for _, row in telemetry.iterrows():
             t = row.get("Time")
-            time_s = t.total_seconds() if isinstance(t, pd.Timedelta) else 0
+            time_s = t.total_seconds() if isinstance(t, pd.Timedelta) else 0.0
+            raw_brake = row.get("Brake")
+            if raw_brake is None or (not isinstance(raw_brake, (bool, np.bool_)) and pd.isna(raw_brake)):
+                brake_val = None
+            elif isinstance(raw_brake, (bool, np.bool_)):
+                brake_val = 1.0 if raw_brake else 0.0
+            else:
+                brake_val = _safe_float(raw_brake)
+
             points.append(TelemetryPoint(
                 time=round(time_s, 3),
-                speed=_safe_val(row.get("Speed")),
-                rpm=_safe_val(row.get("RPM")),
-                throttle=_safe_val(row.get("Throttle")),
-                brake=float(row.get("Brake", 0)),
-                gear=int(_safe_val(row.get("nGear"), 0)),
-                drs=int(_safe_val(row.get("DRS"), 0)),
-                distance=_safe_val(row.get("Distance")),
-                x=_safe_val(row.get("X")),
-                y=_safe_val(row.get("Y")),
-                z=_safe_val(row.get("Z")),
+                speed=_safe_float(row.get("Speed")),
+                rpm=_safe_float(row.get("RPM")),
+                throttle=_safe_float(row.get("Throttle")),
+                brake=brake_val,
+                gear=_safe_int(row.get("nGear")),
+                drs=_safe_int(row.get("DRS")),
+                distance=_safe_float(row.get("Distance")),
+                x=_safe_float(row.get("X")),
+                y=_safe_float(row.get("Y")),
+                z=_safe_float(row.get("Z")),
             ))
         _data_cache[cache_key] = points
         return points
     except Exception as e:
         logger.error(f"get_telemetry error: {e}")
         return []
+
+
+def _rotate_xy(x: float, y: float, angle_deg: float) -> tuple[float, float]:
+    rad = np.deg2rad(angle_deg)
+    c, s = float(np.cos(rad)), float(np.sin(rad))
+    return (x * c - y * s, x * s + y * c)
+
+
+async def get_circuit_map(year: int, round_number: int, session_name: str = "Race") -> Dict[str, Any]:
+    """Extract verified circuit X/Y coordinates and corner markers from FastF1 telemetry."""
+    cache_key = f"circuit_map_{year}_{round_number}_{session_name}"
+    if cache_key in _data_cache:
+        return _data_cache[cache_key]
+
+    unavailable = {
+        "available": False,
+        "year": year,
+        "round_number": round_number,
+        "session": session_name,
+        "source": "FastF1",
+        "points": [],
+        "corners": [],
+        "rotation": 0.0,
+    }
+    try:
+        session = await _load_session(year, round_number, session_name, laps=True, telemetry=True, weather=False, messages=False)
+        if session is None:
+            if year >= 2023:
+                ev = await _schedule_event_for(year, round_number)
+                fallback = await openf1_history.get_circuit_map(year, round_number, session_name, ev)
+                if fallback and fallback.get("available"):
+                    _data_cache[cache_key] = fallback
+                    return fallback
+            return unavailable
+        if session.laps is None or session.laps.empty:
+            return unavailable
+
+        fastest = session.laps.pick_fastest()
+        if fastest is None:
+            return unavailable
+        tel = fastest.get_telemetry()
+        if tel is None or tel.empty or "X" not in tel.columns or "Y" not in tel.columns:
+            return unavailable
+
+        coords = tel[["X", "Y"]].dropna()
+        if len(coords) < 20:
+            return unavailable
+
+        step = max(1, len(coords) // 320)
+        sampled = coords.iloc[::step]
+
+        rotation = 0.0
+        corners_raw = []
+        try:
+            cinfo = session.get_circuit_info()
+            if cinfo is not None:
+                rotation = float(getattr(cinfo, "rotation", 0.0) or 0.0)
+                if getattr(cinfo, "corners", None) is not None and not cinfo.corners.empty:
+                    for _, crow in cinfo.corners.iterrows():
+                        cx, cy = _safe_float(crow.get("X")), _safe_float(crow.get("Y"))
+                        if cx is not None and cy is not None:
+                            rx, ry = _rotate_xy(cx, cy, rotation)
+                            corners_raw.append({
+                                "number": _safe_int(crow.get("Number")),
+                                "letter": str(crow.get("Letter", "") or "").strip(),
+                                "x": rx,
+                                "y": ry,
+                            })
+        except Exception:
+            rotation = 0.0
+
+        rotated_pts = [_rotate_xy(float(r["X"]), float(r["Y"]), rotation) for _, r in sampled.iterrows()]
+        norm_pts, norm_corners = openf1_history.normalize_track_xy(rotated_pts, corners_raw)
+
+        payload = {
+            "available": True,
+            "year": year,
+            "round_number": round_number,
+            "session": session_name,
+            "source": "FastF1",
+            "circuit_name": str(getattr(session.event, "Location", "") or getattr(session.event, "EventName", "")),
+            "rotation": rotation,
+            "reference_driver": str(fastest.get("Driver", "") or fastest.get("DriverNumber", "")),
+            "points": norm_pts,
+            "corners": norm_corners,
+        }
+        _data_cache[cache_key] = payload
+        return payload
+    except Exception as e:
+        logger.warning(f"get_circuit_map unavailable ({year} R{round_number}): {e}")
+        return unavailable
 
 
 async def get_weather(year: int, round_number: int, session_name: str = "Race") -> Optional[WeatherData]:
@@ -449,18 +656,28 @@ async def get_weather(year: int, round_number: int, session_name: str = "Race") 
 
     try:
         session = await _load_session(year, round_number, session_name, laps=False, telemetry=False, weather=True, messages=False)
-        if session is None or session.weather_data is None or session.weather_data.empty:
+        if session is None:
+            if year >= 2023:
+                ev = await _schedule_event_for(year, round_number)
+                fallback = await openf1_history.get_weather(year, round_number, session_name, ev)
+                if fallback is not None:
+                    _data_cache[cache_key] = fallback
+                return fallback
+            return None
+        if session.weather_data is None or session.weather_data.empty:
             return None  # Do NOT fabricate weather data
 
         last = session.weather_data.iloc[-1]
+        raw_rain = last.get("Rainfall")
+        rainfall = bool(raw_rain) if raw_rain is not None and pd.notna(raw_rain) else None
         data = WeatherData(
-            air_temp=_safe_val(last.get("AirTemp")),
-            track_temp=_safe_val(last.get("TrackTemp")),
-            humidity=_safe_val(last.get("Humidity")),
-            pressure=_safe_val(last.get("Pressure")),
-            wind_speed=_safe_val(last.get("WindSpeed")),
-            wind_direction=_safe_val(last.get("WindDirection")),
-            rainfall=bool(last.get("Rainfall", False)),
+            air_temp=_safe_float(last.get("AirTemp")),
+            track_temp=_safe_float(last.get("TrackTemp")),
+            humidity=_safe_float(last.get("Humidity")),
+            pressure=_safe_float(last.get("Pressure")),
+            wind_speed=_safe_float(last.get("WindSpeed")),
+            wind_direction=_safe_float(last.get("WindDirection")),
+            rainfall=rainfall,
         )
         _data_cache[cache_key] = data
         return data
@@ -476,7 +693,15 @@ async def get_race_control(year: int, round_number: int, session_name: str = "Ra
 
     try:
         session = await _load_session(year, round_number, session_name, laps=False, telemetry=False, weather=False, messages=True)
-        if session is None or session.race_control_messages is None:
+        if session is None:
+            if year >= 2023:
+                ev = await _schedule_event_for(year, round_number)
+                fallback = await openf1_history.get_race_control(year, round_number, session_name, ev)
+                if fallback:
+                    _data_cache[cache_key] = fallback
+                return fallback
+            return []
+        if session.race_control_messages is None:
             return []
 
         messages = []
@@ -496,14 +721,22 @@ async def get_race_control(year: int, round_number: int, session_name: str = "Ra
         return []
 
 
-async def get_drivers(year: int, round_number: int) -> List[Driver]:
-    cache_key = f"drivers_{year}_{round_number}"
+async def get_drivers(year: int, round_number: int, session_name: str = "Race") -> List[Driver]:
+    cache_key = f"drivers_{year}_{round_number}_{session_name}"
     if cache_key in _data_cache:
         return _data_cache[cache_key]
 
     try:
-        session = await _load_session(year, round_number, "Race", laps=False, telemetry=False, weather=False, messages=False)
+        session = await _load_session(year, round_number, session_name, laps=False, telemetry=False, weather=False, messages=False)
         if session is None:
+            if year >= 2023:
+                ev = await _schedule_event_for(year, round_number)
+                fallback = await openf1_history.get_drivers(year, round_number, session_name, ev)
+                if fallback:
+                    _data_cache[cache_key] = fallback
+                return fallback
+            return []
+        if session.results is None or session.results.empty:
             return []
 
         drivers = []
@@ -514,10 +747,10 @@ async def get_drivers(year: int, round_number: int) -> List[Driver]:
                 full_name=str(row.get("FullName", "")),
                 abbreviation=str(row.get("Abbreviation", "")),
                 team_name=team,
-                team_color=TEAM_COLORS.get(team, "#888888"),
+                team_color=_team_color(team, year),
                 nationality=str(row.get("CountryCode", "")),
                 points=_safe_val(row.get("Points"), 0),
-                position=int(_safe_val(row.get("Position"), 0)) or None,
+                position=_safe_int(row.get("Position")),
             ))
         _data_cache[cache_key] = drivers
         return drivers
@@ -754,14 +987,18 @@ async def get_season_context(year: int) -> Dict[str, Any]:
 
     # Filter schedule
     completed = sorted([e for e in schedule if e.is_completed], key=lambda x: x.round_number)
-    upcoming = sorted([e for e in schedule if not e.is_completed and e.session5_date and pd.to_datetime(e.session5_date, utc=True) >= now], key=lambda x: x.round_number)
+    non_completed = sorted([e for e in schedule if not e.is_completed], key=lambda x: x.round_number)
+    upcoming = sorted(
+        [e for e in non_completed if e.session5_date and pd.to_datetime(e.session5_date, utc=True) + pd.Timedelta(hours=4) >= now],
+        key=lambda x: x.round_number,
+    )
 
-    # Use the same normalized schedule consumed by every route.
+    # Use the same normalized schedule consumed by every route. Include race duration (~4h) so active GP isn't dropped mid-race.
     active_event = None
-    for event in upcoming:
+    for event in non_completed:
         start = pd.to_datetime(event.session1_date, utc=True) if event.session1_date else None
         end = pd.to_datetime(event.session5_date, utc=True) if event.session5_date else None
-        if start is not None and end is not None and start <= now < end:
+        if start is not None and end is not None and start <= now < (end + pd.Timedelta(hours=4)):
             active_event = event
             break
 
@@ -873,7 +1110,7 @@ async def get_season_results(year: int) -> Dict[str, Any]:
                     driver_name=f"{driver.givenName} {driver.familyName}".strip(),
                     abbreviation=driver.code or "",
                     team=constructor.name,
-                    team_color=TEAM_COLORS.get(constructor.name, "#888888"),
+                    team_color=_team_color(constructor.name, year),
                     status=result.status,
                     laps=result.laps,
                     points=result.points,

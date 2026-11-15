@@ -38,8 +38,8 @@ function StandingsPage() {
   const standings = tab === "drivers" ? data?.driver_standings : data?.constructor_standings;
   const rows = standings?.rows ?? [];
   return (
-    <div className="min-h-screen px-5 lg:px-12 pt-10 pb-32">
-      <div className="max-w-[1680px] mx-auto">
+    <div className="min-h-screen overflow-x-clip px-4 sm:px-5 lg:px-12 pt-8 sm:pt-10 pb-32">
+      <div className="max-w-[1680px] mx-auto w-full min-w-0">
         <header className="relative overflow-hidden rounded-3xl min-h-56 p-8 mb-8">
           <img
             src={heroDriver}
@@ -74,7 +74,7 @@ function StandingsPage() {
           data={data}
           retry={() => void query.refetch()}
         />
-        <div className="flex gap-2 my-6" role="group" aria-label="Championship category">
+        <div className="flex flex-wrap gap-2 my-6" role="group" aria-label="Championship category">
           {(["drivers", "constructors", "engines"] as const).map((t) => (
             <button
               className={`px-4 py-3 rounded-full text-sm ${tab === t ? "bg-foreground text-background" : "glass"}`}

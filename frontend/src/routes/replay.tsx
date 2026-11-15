@@ -1,9 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { useMemo } from "react";
-import { Play, Radio, Film, Compass } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Play, Radio, Film, Compass, RefreshCw } from "lucide-react";
 import { useSessionContext } from "@/hooks/useSessionContext";
-import { useCanonicalStore } from "@/lib/store";
+import { f1Api } from "@/lib/api/client";
+import { useCanonicalStore, type LeaderboardEntry } from "@/lib/store";
 import { GlassPanel } from "@/components/GlassPanel";
 
 import heroRace from "@/assets/hero-race.jpg";
@@ -28,8 +30,59 @@ export const Route = createFileRoute("/replay")({
 });
 
 function ReplayPage() {
-  const { schedule, season } = useSessionContext();
-  const { sessionResults } = useCanonicalStore();
+  const { schedule: contextSchedule, season: contextSeason } = useSessionContext();
+  const { sessionResults: contextResults } = useCanonicalStore();
+  const currentYear = new Date().getFullYear();
+  const [selectedYear, setSelectedYear] = useState<number>(contextSeason || currentYear);
+
+  useEffect(() => {
+    if (contextSeason) setSelectedYear(contextSeason);
+  }, [contextSeason]);
+
+  const season = selectedYear;
+  const availableYears = useMemo(
+    () =>
+      Array.from({ length: Math.max(1, currentYear - 2018 + 1) }, (_, idx) => currentYear - idx),
+    [currentYear],
+  );
+
+  const scheduleQuery = useQuery({
+    queryKey: ["replay-schedule", season],
+    queryFn: async () => {
+      const res = await f1Api.getSchedule(season);
+      return Array.isArray(res?.data) ? res.data : [];
+    },
+    enabled: season !== contextSeason || contextSchedule.length === 0,
+    staleTime: 1000 * 60 * 10,
+  });
+
+  const resultsQuery = useQuery<Record<string, LeaderboardEntry[]>>({
+    queryKey: ["replay-results", season],
+    queryFn: async () => {
+      const res = await f1Api.getSeasonResults(season);
+      const raw = res?.data;
+      if (raw && typeof raw === "object" && "results" in raw && raw.results) {
+        return raw.results;
+      }
+      return {};
+    },
+    staleTime: 1000 * 60 * 10,
+  });
+
+  const schedule = useMemo(
+    () =>
+      season === contextSeason && contextSchedule.length > 0
+        ? contextSchedule
+        : (scheduleQuery.data ?? []),
+    [season, contextSeason, contextSchedule, scheduleQuery.data],
+  );
+
+  const sessionResults: Record<string, LeaderboardEntry[]> = useMemo(() => {
+    if (resultsQuery.data && Object.keys(resultsQuery.data).length > 0) {
+      return resultsQuery.data;
+    }
+    return season === contextSeason ? contextResults : {};
+  }, [resultsQuery.data, season, contextSeason, contextResults]);
 
   // Only show races that are actually confirmed complete
   const completedGPs = useMemo(() => {
@@ -93,22 +146,76 @@ function ReplayPage() {
         </div>
       </section>
 
-      <section className="mx-auto -mt-16 max-w-[1680px] px-6 lg:px-12 relative z-20 space-y-12">
-        <div>
-          <div className="text-[10px] font-mono tracking-[0.2em] text-muted-foreground uppercase">
-            Documentary episodes
+      <section className="mx-auto mt-8 max-w-[1680px] px-5 lg:px-12 relative z-20 space-y-10">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+          <div>
+            <div className="text-[10px] font-mono tracking-[0.2em] text-muted-foreground uppercase">
+              Documentary episodes
+            </div>
+            <h2 className="mt-1 font-display text-4xl">Championship series</h2>
           </div>
-          <h2 className="mt-1 font-display text-4xl">Championship series</h2>
+
+          <label className="inline-flex items-center gap-3 text-xs font-mono uppercase tracking-[0.16em] text-muted-foreground">
+            <span>Season</span>
+            <select
+              aria-label="Replay season"
+              value={season}
+              onChange={(e) => setSelectedYear(Number(e.target.value))}
+              className="rounded-xl glass border border-white/12 bg-background/80 px-3.5 py-2 text-xs font-mono text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+            >
+              {availableYears.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
 
-        {episodes.length === 0 ? (
+        {(scheduleQuery.isLoading && schedule.length === 0) ||
+        (resultsQuery.isLoading &&
+          Object.keys(sessionResults).length === 0 &&
+          completedGPs.length > 0) ? (
+          <div className="grid gap-8 sm:grid-cols-2">
+            {[1, 2, 3, 4].map((skeleton) => (
+              <GlassPanel key={skeleton} className="overflow-hidden rounded-3xl animate-pulse">
+                <div className="aspect-[16/9] bg-white/[0.04]" />
+                <div className="p-6 space-y-3">
+                  <div className="h-3 w-36 rounded bg-white/[0.06]" />
+                  <div className="h-7 w-64 rounded bg-white/[0.08]" />
+                  <div className="h-9 w-full rounded-xl bg-white/[0.05] mt-4" />
+                </div>
+              </GlassPanel>
+            ))}
+          </div>
+        ) : (scheduleQuery.isError || resultsQuery.isError) && episodes.length === 0 ? (
+          <GlassPanel className="py-20 px-6 text-center rounded-3xl space-y-4">
+            <Compass className="w-10 h-10 text-muted-foreground/30 mx-auto" />
+            <h3 className="font-display text-3xl">Archive provider temporarily unavailable</h3>
+            <p className="text-sm text-muted-foreground max-w-md mx-auto leading-relaxed">
+              The historical archive backend may be waking up. Retry to load the {season} season
+              episodes and classifications.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                void scheduleQuery.refetch();
+                void resultsQuery.refetch();
+              }}
+              className="inline-flex items-center gap-2 rounded-full bg-foreground text-background px-5 py-2.5 text-xs font-semibold hover:bg-foreground/90 transition"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Retry loading {season}
+            </button>
+          </GlassPanel>
+        ) : episodes.length === 0 ? (
           /* Editorial standby — no fabricated episodes */
-          <GlassPanel className="py-24 text-center border border-border/40 rounded-3xl">
+          <GlassPanel className="py-24 px-6 text-center border border-border/40 rounded-3xl">
             <Compass className="w-12 h-12 text-muted-foreground/20 mx-auto mb-5" />
             <h3 className="font-display text-3xl">No completed events available</h3>
             <p className="mt-3 text-sm text-muted-foreground max-w-sm mx-auto leading-relaxed">
-              No completed events were returned for this season. The schedule or archive provider
-              may be unavailable.
+              No completed events were returned for the {season} season. Select another championship
+              year above or check back once the first Grand Prix finishes.
             </p>
           </GlassPanel>
         ) : (

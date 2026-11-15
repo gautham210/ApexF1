@@ -32,10 +32,6 @@ export interface RaceCenterSearch {
   round?: number;
   session?: string;
   error?: string;
-  rawMode?: unknown;
-  rawYear?: unknown;
-  rawRound?: unknown;
-  rawSession?: unknown;
 }
 
 /**
@@ -54,7 +50,6 @@ export function parseRaceCenterSearch(
 
   // 1. Mode validation: accept both "archive" and "replay"
   if (search.mode !== undefined && search.mode !== null && search.mode !== "") {
-    result.rawMode = search.mode;
     if (search.mode === "archive" || search.mode === "replay") {
       result.mode = search.mode;
     } else if (typeof search.mode === "string") {
@@ -64,7 +59,6 @@ export function parseRaceCenterSearch(
 
   // 2. Year validation: 2018 through currentYear + 1
   if (search.year !== undefined && search.year !== null && search.year !== "") {
-    result.rawYear = search.year;
     const yNum = Number(search.year);
     if (!Number.isInteger(yNum)) {
       result.error = result.error || `Invalid year '${search.year}'. Year must be an integer.`;
@@ -79,7 +73,6 @@ export function parseRaceCenterSearch(
 
   // 3. Round validation: integer between 1 and 24
   if (search.round !== undefined && search.round !== null && search.round !== "") {
-    result.rawRound = search.round;
     const rNum = Number(search.round);
     if (!Number.isInteger(rNum) || rNum < 1 || rNum > 24) {
       result.error =
@@ -92,7 +85,6 @@ export function parseRaceCenterSearch(
 
   // 4. Session validation: must match recognized F1 session types
   if (search.session !== undefined && search.session !== null && search.session !== "") {
-    result.rawSession = search.session;
     if (
       typeof search.session === "string" &&
       VALID_SESSIONS.includes(search.session as ValidSession)

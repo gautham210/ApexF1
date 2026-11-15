@@ -3,7 +3,7 @@ import { createCalendar, sessionKeys, googleCalendarUrl } from "@/lib/calendar";
 import { createFileRoute } from "@tanstack/react-router";
 import { motion } from "framer-motion";
 import { Check, Calendar } from "lucide-react";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useSessionContext } from "@/hooks/useSessionContext";
 import { GlassPanel } from "@/components/GlassPanel";
 import { cn } from "@/lib/utils";
@@ -32,7 +32,49 @@ const integrations = [
 
 function CalendarPage() {
   const { schedule, season } = useSessionContext();
-  const [followed, setFollowed] = useState<Set<number>>(new Set());
+  const followedStorageKey = `apexf1.followed.rounds.v1.${season}`;
+  const loadedKeyRef = useRef<string | null>(null);
+  const [followed, setFollowed] = useState<Set<number>>(() => {
+    try {
+      const raw = localStorage.getItem(followedStorageKey);
+      if (!raw) return new Set();
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed)
+        ? new Set(parsed.filter((n): n is number => typeof n === "number" && Number.isInteger(n)))
+        : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
+  useEffect(() => {
+    if (loadedKeyRef.current !== followedStorageKey) {
+      loadedKeyRef.current = followedStorageKey;
+      try {
+        const raw = localStorage.getItem(followedStorageKey);
+        if (!raw) {
+          setFollowed(new Set());
+          return;
+        }
+        const parsed = JSON.parse(raw);
+        setFollowed(
+          Array.isArray(parsed)
+            ? new Set(
+                parsed.filter((n): n is number => typeof n === "number" && Number.isInteger(n)),
+              )
+            : new Set(),
+        );
+      } catch {
+        setFollowed(new Set());
+      }
+      return;
+    }
+    try {
+      localStorage.setItem(followedStorageKey, JSON.stringify([...followed]));
+    } catch {
+      // Ignore storage quota errors cleanly
+    }
+  }, [followed, followedStorageKey]);
 
   const toggle = (r: number) =>
     setFollowed((s) => {

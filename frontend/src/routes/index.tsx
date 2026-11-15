@@ -115,7 +115,11 @@ function Dashboard() {
   // Canonical store — single source of truth for race results
   const { sessionResults } = useCanonicalStore();
 
-  const { data: dashboard, isError: dashboardError } = useQuery({
+  const {
+    data: dashboard,
+    isPending: dashboardLoading,
+    isError: dashboardError,
+  } = useQuery({
     queryKey: ["dashboard", season],
     queryFn: ({ signal }) => f1Api.getDashboardContext(season, signal),
     staleTime: 60000,
@@ -167,7 +171,11 @@ function Dashboard() {
   });
   const news = newsQuery.data?.articles ?? [];
 
-  const activeEventName = currentRace?.event_name || currentRace?.location || "Event unavailable";
+  const isEventLoading = !currentRace && dashboardLoading && !dashboardError;
+  const activeEventName =
+    currentRace?.event_name ||
+    currentRace?.location ||
+    (isEventLoading ? "Loading weekend schedule…" : "Event unavailable");
   const activeCountry = currentRace?.country || "";
   const weather =
     live.session_info?.year === season &&
@@ -215,10 +223,7 @@ function Dashboard() {
       }
     >
       {/* SECTION 1: CINEMATIC HERO */}
-      <div className="max-w-[1680px] mx-auto px-5 pt-5">
-        <RaceWidget year={season} events={schedule} />
-      </div>
-      <section className="relative h-[72vh] min-h-[540px] lg:h-[560px] lg:min-h-0 w-full overflow-hidden">
+      <section className="relative min-h-[560px] lg:min-h-[600px] w-full overflow-hidden">
         <motion.img
           initial={{ scale: 1.05, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
@@ -254,11 +259,18 @@ function Dashboard() {
               ) : (
                 <span className="flex items-center gap-1.5">
                   <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30" />
-                  {currentRace ? `Round ${currentRace.round_number}` : "Schedule unavailable"}
+                  {currentRace
+                    ? `Round ${currentRace.round_number}`
+                    : isEventLoading
+                      ? "Loading calendar"
+                      : "Schedule unavailable"}
                 </span>
               )}
               <span>·</span>
-              <span>{currentRace?.location || "Location unavailable"}</span>
+              <span>
+                {currentRace?.location ||
+                  (isEventLoading ? "Syncing circuit" : "Location unavailable")}
+              </span>
             </div>
 
             <h1 className="mt-5 font-display text-5xl leading-[0.95] text-balance md:text-7xl">
@@ -307,6 +319,10 @@ function Dashboard() {
               <div className="mt-2">
                 {nextSession ? (
                   <CountdownTimer targetDate={nextSession.date} sessionName={nextSession.name} />
+                ) : isEventLoading ? (
+                  <span className="font-display text-2xl text-muted-foreground animate-pulse">
+                    Syncing…
+                  </span>
                 ) : (
                   <span className="font-display text-2xl text-muted-foreground">Unavailable</span>
                 )}
@@ -374,7 +390,8 @@ function Dashboard() {
       </section>
 
       {/* SECTION 2: LIVE CONTEXTUAL HUB */}
-      <section className="mx-auto -mt-20 max-w-[1680px] px-6 lg:px-12 relative z-20">
+      <section className="mx-auto mt-6 lg:mt-8 max-w-[1680px] px-4 sm:px-6 lg:px-12 relative z-20 space-y-6">
+        <RaceWidget year={season} events={schedule} />
         <AnimatePresence mode="wait">
           {/* BEFORE STATE: Countdown, weather, and circuit overview */}
           {weekendState === "BEFORE" && (

@@ -18,7 +18,18 @@ from app.services.live_service import start_live_service, stop_live_service
 setup_logging()
 logger = logging.getLogger(__name__)
 
-limiter = Limiter(key_func=get_remote_address, default_limits=[f"{settings.RATE_LIMIT_PER_MINUTE}/minute"])
+
+def _client_ip(request: Request) -> str:
+    """Resolve client IP behind Render/Vercel reverse proxies without trusting spoofed left-side XFF entries."""
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        hops = [ip.strip() for ip in forwarded_for.split(",") if ip.strip()]
+        if hops:
+            return hops[-1]
+    return get_remote_address(request)
+
+
+limiter = Limiter(key_func=_client_ip, default_limits=[f"{settings.RATE_LIMIT_PER_MINUTE}/minute"])
 
 
 @asynccontextmanager

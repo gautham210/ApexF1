@@ -1013,3 +1013,74 @@ test("deployment configuration never falls back to a static production origin", 
   ])
     assert.throws(() => resolveApiOrigin(value, false, false));
 });
+
+import {
+  buildReplayFrames,
+  formatLapDuration,
+  interpolateTrackPosition,
+  isDrsOpen,
+  normalizeBrakePercent,
+} from "../src/lib/replay-helpers";
+
+test("parseRaceCenterSearch omits raw debug keys so clean URLs are serialized", () => {
+  const parsed = parseRaceCenterSearch({
+    mode: "replay",
+    year: 2024,
+    round: 5,
+    session: "Qualifying",
+  });
+  assert.deepEqual(Object.keys(parsed).sort(), ["mode", "round", "session", "year"]);
+  assert.equal("rawMode" in parsed, false);
+  assert.equal("rawYear" in parsed, false);
+  assert.equal("rawRound" in parsed, false);
+  assert.equal("rawSession" in parsed, false);
+});
+
+test("replay helpers align multi-channel telemetry, brake scale, DRS, and track coordinates", () => {
+  assert.equal(normalizeBrakePercent(0), 0);
+  assert.equal(normalizeBrakePercent(1), 100);
+  assert.equal(normalizeBrakePercent(72), 72);
+  assert.equal(normalizeBrakePercent(null), null);
+
+  assert.equal(isDrsOpen(10), true);
+  assert.equal(isDrsOpen(12), true);
+  assert.equal(isDrsOpen(8), false);
+  assert.equal(isDrsOpen(null), false);
+
+  assert.equal(formatLapDuration(89.412), "1:29.412");
+  assert.equal(formatLapDuration("1:35.123"), "1:35.123");
+  assert.equal(formatLapDuration(null), "—");
+
+  const midPos = interpolateTrackPosition(
+    [
+      { x: 100, y: 200 },
+      { x: 300, y: 600 },
+    ],
+    0.5,
+  );
+  assert.deepEqual(midPos, { x: 200, y: 400 });
+
+  const frames = buildReplayFrames(
+    [
+      { time: 0, distance: 0, speed: 290, throttle: 100, brake: 0, gear: 8, rpm: 11800, drs: 12 },
+      { time: 1.5, distance: 120, speed: 140, throttle: 0, brake: 1, gear: 3, rpm: 9200, drs: 0 },
+    ],
+    [
+      {
+        time: 0.05,
+        distance: 0,
+        speed: 288,
+        throttle: 100,
+        brake: 0,
+        gear: 8,
+        rpm: 11700,
+        drs: 12,
+      },
+      { time: 1.62, distance: 120, speed: 136, throttle: 0, brake: 1, gear: 3, rpm: 9000, drs: 0 },
+    ],
+  );
+  assert.equal(frames.length, 2);
+  assert.equal(frames[0].drsA, true);
+  assert.equal(frames[1].brakeA, 100);
+  assert.equal(frames[1].deltaSec, -0.12);
+});
