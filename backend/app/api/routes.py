@@ -1,14 +1,39 @@
 import logging
+import re
+from datetime import datetime
+from typing import Optional
+
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 from app.services import f1_service, openf1_service
 from app.websockets.manager import manager
 from app.models.schemas import APIResponse
-from datetime import datetime
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _CURRENT_YEAR = datetime.now().year
+
+_SESSION_ALIASES = {
+    "race": "Race",
+    "r": "Race",
+    "qualifying": "Qualifying",
+    "q": "Qualifying",
+    "quali": "Qualifying",
+    "sprint": "Sprint",
+    "s": "Sprint",
+    "sprint qualifying": "Sprint Qualifying",
+    "sq": "Sprint Qualifying",
+    "sprint shootout": "Sprint Shootout",
+    "ss": "Sprint Shootout",
+    "practice 1": "Practice 1",
+    "fp1": "Practice 1",
+    "practice 2": "Practice 2",
+    "fp2": "Practice 2",
+    "practice 3": "Practice 3",
+    "fp3": "Practice 3",
+}
+
+_DRIVER_RE = re.compile(r"^[A-Za-z0-9_]{1,16}$")
 
 
 def _validate_year(year: int) -> int:
@@ -21,6 +46,25 @@ def _validate_round(round: int) -> int:
     if round < 1 or round > 24:
         raise HTTPException(status_code=422, detail="round must be between 1 and 24")
     return round
+
+
+def _validate_session(session: str) -> str:
+    canonical = _SESSION_ALIASES.get(session.strip().lower())
+    if not canonical:
+        raise HTTPException(
+            status_code=422,
+            detail="session must be one of Race, Qualifying, Sprint, Sprint Qualifying, Sprint Shootout, Practice 1, Practice 2, Practice 3",
+        )
+    return canonical
+
+
+def _validate_driver(driver: Optional[str]) -> Optional[str]:
+    if driver is None or not str(driver).strip():
+        return None
+    cleaned = str(driver).strip()
+    if not _DRIVER_RE.match(cleaned):
+        raise HTTPException(status_code=422, detail="driver must be an alphanumeric driver number or abbreviation")
+    return cleaned
 
 
 # ─── Session State (OpenF1 primary) ──────────────────────────────────────────
@@ -62,10 +106,12 @@ async def schedule(year: int = Query(default=_CURRENT_YEAR)):
 async def drivers(
     year: int = Query(default=_CURRENT_YEAR),
     round: int = Query(default=1),
+    session: str = Query(default="Race"),
 ):
     _validate_year(year)
     _validate_round(round)
-    data = await f1_service.get_drivers(year, round)
+    canonical_session = _validate_session(session)
+    data = await f1_service.get_drivers(year, round, canonical_session)
     return APIResponse(success=True, data=[d.model_dump() for d in data])
 
 
@@ -83,9 +129,10 @@ async def leaderboard(
     """
     _validate_year(year)
     _validate_round(round)
+    canonical_session = _validate_session(session)
 
     # Explicit event coordinates always resolve that archive; live has dedicated endpoints.
-    data = await f1_service.get_leaderboard(year, round, session)
+    data = await f1_service.get_leaderboard(year, round, canonical_session)
     return APIResponse(success=True, data=[e.model_dump() for e in data])
 
 
@@ -158,11 +205,13 @@ async def laps(
     year: int = Query(default=_CURRENT_YEAR),
     round: int = Query(default=1),
     session: str = Query(default="Race"),
-    driver: str = Query(default=None),
+    driver: Optional[str] = Query(default=None),
 ):
     _validate_year(year)
     _validate_round(round)
-    data = await f1_service.get_laps(year, round, session, driver)
+    canonical_session = _validate_session(session)
+    cleaned_driver = _validate_driver(driver)
+    data = await f1_service.get_laps(year, round, canonical_session, cleaned_driver)
     return APIResponse(success=True, data=[l.model_dump() for l in data])
 
 
@@ -172,14 +221,31 @@ async def telemetry(
     round: int = Query(default=1),
     session: str = Query(default="Race"),
     driver: str = Query(default="1"),
-    lap: int = Query(default=None),
+    lap: Optional[int] = Query(default=None),
 ):
     _validate_year(year)
     _validate_round(round)
-    if lap is not None and (lap < 1 or lap > 100):
-        raise HTTPException(status_code=422, detail="lap must be between 1 and 100")
-    data = await f1_service.get_telemetry(year, round, session, driver, lap)
+    canonical_session = _validate_session(session)
+    cleaned_driver = _validate_driver(driver)
+    if not cleaned_driver:
+        raise HTTPException(status_code=422, detail="driver is required")
+    if lap is not None and (lap < 1 or lap > 150):
+        raise HTTPException(status_code=422, detail="lap must be between 1 and 150")
+    data = await f1_service.get_telemetry(year, round, canonical_session, cleaned_driver, lap)
     return APIResponse(success=True, data=[p.model_dump() for p in data])
+
+
+@router.get("/circuit-map", response_model=APIResponse)
+async def circuit_map(
+    year: int = Query(default=_CURRENT_YEAR),
+    round: int = Query(default=1),
+    session: str = Query(default="Race"),
+):
+    _validate_year(year)
+    _validate_round(round)
+    canonical_session = _validate_session(session)
+    data = await f1_service.get_circuit_map(year, round, canonical_session)
+    return APIResponse(success=True, data=data)
 
 
 @router.get("/weather", response_model=APIResponse)
@@ -190,8 +256,9 @@ async def weather(
 ):
     _validate_year(year)
     _validate_round(round)
+    canonical_session = _validate_session(session)
 
-    data = await f1_service.get_weather(year, round, session)
+    data = await f1_service.get_weather(year, round, canonical_session)
     return APIResponse(success=True, data=data.model_dump() if data else None)
 
 
@@ -203,7 +270,8 @@ async def race_control(
 ):
     _validate_year(year)
     _validate_round(round)
-    data = await f1_service.get_race_control(year, round, session)
+    canonical_session = _validate_session(session)
+    data = await f1_service.get_race_control(year, round, canonical_session)
     return APIResponse(success=True, data=[m.model_dump() for m in data])
 
 
@@ -251,7 +319,8 @@ async def track_status(
 ):
     _validate_year(year)
     _validate_round(round)
-    messages = await f1_service.get_race_control(year, round, session)
+    canonical_session = _validate_session(session)
+    messages = await f1_service.get_race_control(year, round, canonical_session)
     flags = [m for m in messages if m.flag]
     latest_flag = flags[-1].flag if flags else "UNKNOWN"
     return APIResponse(success=True, data={"status": latest_flag, "messages": [m.model_dump() for m in flags[-5:]]})
@@ -265,14 +334,37 @@ async def tyres(
 ):
     _validate_year(year)
     _validate_round(round)
-    all_laps = await f1_service.get_laps(year, round, session)
-    tyre_data: dict = {}
+    canonical_session = _validate_session(session)
+    all_laps = await f1_service.get_laps(year, round, canonical_session)
+    by_driver: dict[str, list] = {}
     for lap in all_laps:
-        drv = lap.driver_number
-        if drv not in tyre_data:
-            tyre_data[drv] = []
-        if lap.pit_out:
-            tyre_data[drv].append({"lap": lap.lap_number, "compound": lap.compound, "age": 0})
+        by_driver.setdefault(lap.driver_number, []).append(lap)
+
+    tyre_data: dict[str, list] = {}
+    for drv, drv_laps in by_driver.items():
+        drv_laps.sort(key=lambda item: item.lap_number)
+        stints: list[dict] = []
+        current: Optional[dict] = None
+        for lap in drv_laps:
+            compound = lap.compound if lap.compound and lap.compound.upper() not in ("NONE", "NAN", "UNKNOWN") else None
+            if current is None or lap.pit_out or (compound and current["compound"] and compound != current["compound"]):
+                current = {
+                    "lap": lap.lap_number,
+                    "start_lap": lap.lap_number,
+                    "end_lap": lap.lap_number,
+                    "compound": compound or "UNKNOWN",
+                    "age": lap.tyre_life,
+                    "laps": 1,
+                }
+                stints.append(current)
+            else:
+                current["end_lap"] = lap.lap_number
+                current["laps"] += 1
+                if current["compound"] == "UNKNOWN" and compound:
+                    current["compound"] = compound
+                if lap.tyre_life is not None:
+                    current["age"] = lap.tyre_life
+        tyre_data[drv] = stints
     return APIResponse(success=True, data=tyre_data)
 
 
