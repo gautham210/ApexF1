@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
+import weakref
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Tuple
 
 import httpx
 from cachetools import TTLCache
@@ -36,6 +38,8 @@ _weather_cache = TTLCache(maxsize=128, ttl=3600)
 _rc_cache = TTLCache(maxsize=128, ttl=3600)
 _telemetry_cache = TTLCache(maxsize=256, ttl=3600)
 _circuit_cache = TTLCache(maxsize=128, ttl=43200)
+_replay_meta_cache = TTLCache(maxsize=64, ttl=3600)
+_replay_chunk_cache = TTLCache(maxsize=256, ttl=3600)
 
 _SESSION_NAME_ALIASES: Dict[str, Tuple[str, ...]] = {
     "Race": ("Race",),
@@ -49,13 +53,12 @@ _SESSION_NAME_ALIASES: Dict[str, Tuple[str, ...]] = {
 }
 
 
-def normalize_track_xy(
+def compute_track_bounds(
     raw_points: Sequence[Tuple[float, float]],
-    raw_corners: Sequence[Dict[str, Any]] = (),
     target_size: float = 840.0,
     pad: float = 80.0,
-) -> Tuple[List[Dict[str, float]], List[Dict[str, Any]]]:
-    """Scale rotated track X/Y coordinates and corner markers into a 1000x1000 SVG box."""
+) -> Dict[str, float]:
+    """Compute uniform 1000x1000 SVG projection parameters from raw X/Y points."""
     xs = [p[0] for p in raw_points]
     ys = [p[1] for p in raw_points]
     min_x, max_x = min(xs), max(xs)
@@ -65,21 +68,47 @@ def normalize_track_xy(
     scale = target_size / max(w, h)
     ox = pad + (target_size - w * scale) / 2.0
     oy = pad + (target_size - h * scale) / 2.0
+    return {
+        "min_x": float(min_x),
+        "max_x": float(max_x),
+        "min_y": float(min_y),
+        "max_y": float(max_y),
+        "scale": float(scale),
+        "ox": float(ox),
+        "oy": float(oy),
+    }
 
-    norm_pts = [
-        {"x": round(ox + (x - min_x) * scale, 2), "y": round(oy + (max_y - y) * scale, 2)}
-        for x, y in raw_points
-    ]
-    norm_corners = [
-        {
-            "number": c.get("number"),
-            "letter": str(c.get("letter") or "").strip(),
-            "x": round(ox + (float(c["x"]) - min_x) * scale, 2),
-            "y": round(oy + (max_y - float(c["y"])) * scale, 2),
-        }
-        for c in raw_corners
-        if c.get("x") is not None and c.get("y") is not None
-    ]
+
+def project_xy(x: float, y: float, bounds: Dict[str, float]) -> Tuple[float, float]:
+    """Project a raw X/Y point into the normalized 1000x1000 SVG box."""
+    px = bounds["ox"] + (x - bounds["min_x"]) * bounds["scale"]
+    py = bounds["oy"] + (bounds["max_y"] - y) * bounds["scale"]
+    return (round(px, 2), round(py, 2))
+
+
+def normalize_track_xy(
+    raw_points: Sequence[Tuple[float, float]],
+    raw_corners: Sequence[Dict[str, Any]] = (),
+    target_size: float = 840.0,
+    pad: float = 80.0,
+) -> Tuple[List[Dict[str, float]], List[Dict[str, Any]]]:
+    """Scale rotated track X/Y coordinates and corner markers into a 1000x1000 SVG box."""
+    bounds = compute_track_bounds(raw_points, target_size=target_size, pad=pad)
+
+    norm_pts = []
+    for x, y in raw_points:
+        px, py = project_xy(x, y, bounds)
+        norm_pts.append({"x": px, "y": py})
+    norm_corners = []
+    for c in raw_corners:
+        if c.get("x") is not None and c.get("y") is not None:
+            cx, cy = project_xy(float(c["x"]), float(c["y"]), bounds)
+            norm_corners.append({
+                "number": c.get("number"),
+                "letter": str(c.get("letter") or "").strip(),
+                "x": cx,
+                "y": cy,
+            })
     return norm_pts, norm_corners
 
 
@@ -121,18 +150,62 @@ def _norm_token(value: Optional[str]) -> str:
     return "".join(ch for ch in value.lower() if ch.isalnum())
 
 
+_OPENF1_MIN_INTERVAL = 0.38
+_LOOP_COORDINATION: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, Dict[str, Any]]" = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _get_loop_state() -> Dict[str, Any]:
+    loop = asyncio.get_running_loop()
+    state = _LOOP_COORDINATION.get(loop)
+    if state is None:
+        state = {
+            "gate": asyncio.Lock(),
+            "last_request_ts": 0.0,
+            "inflight": {},
+        }
+        _LOOP_COORDINATION[loop] = state
+    return state
+
+
+async def _coalesce(key: Any, factory: Callable[[], Awaitable[Any]]) -> Any:
+    """Coalesce concurrent identical upstream lookups on the active event loop."""
+    state = _get_loop_state()
+    inflight: Dict[Any, asyncio.Task[Any]] = state["inflight"]
+    task = inflight.get(key)
+    if task is None or task.done():
+        task = asyncio.create_task(factory())
+        inflight[key] = task
+        try:
+            return await asyncio.shield(task)
+        finally:
+            if inflight.get(key) is task:
+                inflight.pop(key, None)
+    return await asyncio.shield(task)
+
+
 async def _get_json(url_or_path: str, params: Optional[Dict[str, Any]] = None) -> Optional[List[Dict[str, Any]]]:
     from app.services import openf1_auth
 
     url = url_or_path if url_or_path.startswith("http") else f"{OPENF1_BASE}{url_or_path}"
     headers = await openf1_auth.headers() if openf1_auth.configured() else {}
+    state = _get_loop_state()
+    backoffs = (0.65, 1.3, 2.2, 3.0)
 
-    for attempt in range(2):
+    for attempt in range(4):
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
+            async with state["gate"]:
+                now = time.monotonic()
+                wait = _OPENF1_MIN_INTERVAL - (now - state["last_request_ts"])
+                if wait > 0:
+                    await asyncio.sleep(wait)
+                state["last_request_ts"] = time.monotonic()
+
+            async with httpx.AsyncClient(timeout=20.0) as client:
                 resp = await client.get(url, params=params, headers=headers)
-            if resp.status_code == 429 and attempt == 0:
-                await asyncio.sleep(0.45)
+            if resp.status_code == 429 and attempt < 3:
+                await asyncio.sleep(backoffs[attempt])
                 continue
             if resp.status_code == 200:
                 payload = resp.json()
@@ -141,6 +214,9 @@ async def _get_json(url_or_path: str, params: Optional[Dict[str, Any]] = None) -
             return None
         except Exception as exc:
             logger.warning("OpenF1 historical request failed (%s): %s", url_or_path, exc)
+            if attempt < 1:
+                await asyncio.sleep(0.5)
+                continue
             return None
     return None
 
@@ -150,11 +226,17 @@ async def _get_year_sessions(year: int) -> List[Dict[str, Any]]:
         return []
     if year in _sessions_cache:
         return _sessions_cache[year]
-    data = await _get_json("/sessions", params={"year": year})
-    rows = data if isinstance(data, list) else []
-    if rows:
-        _sessions_cache[year] = rows
-    return rows
+
+    async def _load() -> List[Dict[str, Any]]:
+        if year in _sessions_cache:
+            return _sessions_cache[year]
+        data = await _get_json("/sessions", params={"year": year})
+        rows = data if isinstance(data, list) else []
+        if rows:
+            _sessions_cache[year] = rows
+        return rows
+
+    return await _coalesce(("sessions", year), _load)
 
 
 async def resolve_session(
@@ -231,35 +313,53 @@ async def resolve_session(
 async def _get_raw_drivers(session_key: int) -> List[Dict[str, Any]]:
     if session_key in _drivers_cache:
         return _drivers_cache[session_key]
-    data = await _get_json("/drivers", params={"session_key": session_key})
-    rows = data if isinstance(data, list) else []
-    if rows:
-        _drivers_cache[session_key] = rows
-    return rows
+
+    async def _load() -> List[Dict[str, Any]]:
+        if session_key in _drivers_cache:
+            return _drivers_cache[session_key]
+        data = await _get_json("/drivers", params={"session_key": session_key})
+        rows = data if isinstance(data, list) else []
+        if rows:
+            _drivers_cache[session_key] = rows
+        return rows
+
+    return await _coalesce(("drivers", session_key), _load)
 
 
 async def _get_raw_stints(session_key: int) -> List[Dict[str, Any]]:
     if session_key in _stints_cache:
         return _stints_cache[session_key]
-    data = await _get_json("/stints", params={"session_key": session_key})
-    rows = data if isinstance(data, list) else []
-    if rows:
-        _stints_cache[session_key] = rows
-    return rows
+
+    async def _load() -> List[Dict[str, Any]]:
+        if session_key in _stints_cache:
+            return _stints_cache[session_key]
+        data = await _get_json("/stints", params={"session_key": session_key})
+        rows = data if isinstance(data, list) else []
+        if rows:
+            _stints_cache[session_key] = rows
+        return rows
+
+    return await _coalesce(("stints", session_key), _load)
 
 
 async def _get_raw_laps(session_key: int, driver_number: Optional[int] = None) -> List[Dict[str, Any]]:
     cache_key = (session_key, driver_number)
     if cache_key in _laps_raw_cache:
         return _laps_raw_cache[cache_key]
-    params: Dict[str, Any] = {"session_key": session_key}
-    if driver_number is not None:
-        params["driver_number"] = driver_number
-    data = await _get_json("/laps", params=params)
-    rows = data if isinstance(data, list) else []
-    if rows:
-        _laps_raw_cache[cache_key] = rows
-    return rows
+
+    async def _load() -> List[Dict[str, Any]]:
+        if cache_key in _laps_raw_cache:
+            return _laps_raw_cache[cache_key]
+        params: Dict[str, Any] = {"session_key": session_key}
+        if driver_number is not None:
+            params["driver_number"] = driver_number
+        data = await _get_json("/laps", params=params)
+        rows = data if isinstance(data, list) else []
+        if rows:
+            _laps_raw_cache[cache_key] = rows
+        return rows
+
+    return await _coalesce(("laps", cache_key), _load)
 
 
 async def _resolve_driver_number(session_key: int, driver: str) -> Optional[int]:
@@ -577,62 +677,107 @@ async def get_circuit_map(
     if sk in _circuit_cache:
         return _circuit_cache[sk]
 
-    raw_laps = await _get_raw_laps(sk)
-    valid = [
-        l for l in raw_laps
-        if l.get("date_start") and isinstance(l.get("lap_duration"), (int, float)) and 40.0 < float(l["lap_duration"]) < 220.0
-    ]
-    if not valid:
-        return None
+    async def _build_circuit() -> Optional[Dict[str, Any]]:
+        if sk in _circuit_cache:
+            return _circuit_cache[sk]
+        raw_laps = await _get_raw_laps(sk)
+        valid = [
+            l for l in raw_laps
+            if l.get("date_start") and isinstance(l.get("lap_duration"), (int, float)) and 40.0 < float(l["lap_duration"]) < 220.0
+        ]
+        if not valid:
+            return None
 
-    fastest = min(valid, key=lambda l: float(l["lap_duration"]))
-    driver_num = int(fastest["driver_number"])
-    start_dt = _parse_iso(fastest["date_start"])
-    if start_dt is None:
-        return None
-    end_dt = start_dt + timedelta(seconds=float(fastest["lap_duration"]) + 0.5)
+        fastest = min(valid, key=lambda l: float(l["lap_duration"]))
+        driver_num = int(fastest["driver_number"])
+        start_dt = _parse_iso(fastest["date_start"])
+        if start_dt is None:
+            return None
+        end_dt = start_dt + timedelta(seconds=float(fastest["lap_duration"]) + 0.5)
 
-    loc_url = (
-        f"{OPENF1_BASE}/location?session_key={sk}&driver_number={driver_num}"
-        f"&date>={_fmt_openf1_ts(start_dt)}&date<={_fmt_openf1_ts(end_dt)}"
-    )
-    loc_raw = await _get_json(loc_url)
-    if not loc_raw:
-        return None
+        loc_url = (
+            f"{OPENF1_BASE}/location?session_key={sk}&driver_number={driver_num}"
+            f"&date>={_fmt_openf1_ts(start_dt)}&date<={_fmt_openf1_ts(end_dt)}"
+        )
+        loc_raw = await _get_json(loc_url)
+        if not loc_raw:
+            return None
 
-    pts_raw: List[Tuple[float, float]] = []
-    for row in sorted(loc_raw, key=lambda r: str(r.get("date") or "")):
-        if row.get("x") is not None and row.get("y") is not None:
-            pts_raw.append((float(row["x"]), float(row["y"])))
+        timed_rows: List[Tuple[datetime, float, float]] = []
+        for row in sorted(loc_raw, key=lambda r: str(r.get("date") or "")):
+            dt_pt = _parse_iso(row.get("date"))
+            if dt_pt is not None and row.get("x") is not None and row.get("y") is not None:
+                timed_rows.append((dt_pt, float(row["x"]), float(row["y"])))
 
-    if len(pts_raw) < 20:
-        return None
-    if len(pts_raw) > 320:
-        step = max(1, len(pts_raw) // 320)
-        pts_raw = pts_raw[::step]
+        if len(timed_rows) < 20:
+            return None
 
-    norm_pts, _ = normalize_track_xy(pts_raw)
+        pts_full = [(x, y) for _, x, y in timed_rows]
+        bounds = compute_track_bounds(pts_full)
 
-    raw_drivers = await _get_raw_drivers(sk)
-    ref_abbr = next(
-        (str(d.get("name_acronym") or "") for d in raw_drivers if int(d.get("driver_number") or -1) == driver_num),
-        str(driver_num),
-    )
+        if len(pts_full) > 320:
+            step = max(1, len(pts_full) // 320)
+            sampled_pts = pts_full[::step]
+        else:
+            sampled_pts = pts_full
 
-    payload = {
-        "available": True,
-        "year": year,
-        "round_number": round_number,
-        "session": session_name,
-        "source": "OpenF1",
-        "circuit_name": str(sess.get("location") or sess.get("circuit_short_name") or ""),
-        "rotation": 0.0,
-        "reference_driver": ref_abbr or str(driver_num),
-        "points": norm_pts,
-        "corners": [],
-    }
-    _circuit_cache[sk] = payload
-    return payload
+        norm_pts = [{"x": px, "y": py} for px, py in (project_xy(x, y, bounds) for x, y in sampled_pts)]
+
+        # Start/finish marker & direction tangent from first points on fastest lap
+        start_finish = None
+        if len(norm_pts) >= 2:
+            p0, p1 = norm_pts[0], norm_pts[1]
+            dx, dy = p1["x"] - p0["x"], p1["y"] - p0["y"]
+            mag = (dx * dx + dy * dy) ** 0.5 or 1.0
+            start_finish = {
+                "x": p0["x"],
+                "y": p0["y"],
+                "dx": round(dx / mag, 4),
+                "dy": round(dy / mag, 4),
+            }
+
+        # Verified sector split markers derived from fastest lap sector timestamps
+        sectors: List[Dict[str, Any]] = []
+        s1_dur = fastest.get("duration_sector_1")
+        s2_dur = fastest.get("duration_sector_2")
+        if isinstance(s1_dur, (int, float)) and s1_dur > 5:
+            s1_dt = start_dt + timedelta(seconds=float(s1_dur))
+            nearest_s1 = min(timed_rows, key=lambda r: abs((r[0] - s1_dt).total_seconds()))
+            if abs((nearest_s1[0] - s1_dt).total_seconds()) <= 2.5:
+                sx, sy = project_xy(nearest_s1[1], nearest_s1[2], bounds)
+                sectors.append({"sector": 2, "label": "S2", "x": sx, "y": sy})
+            if isinstance(s2_dur, (int, float)) and s2_dur > 5:
+                s2_dt = s1_dt + timedelta(seconds=float(s2_dur))
+                nearest_s2 = min(timed_rows, key=lambda r: abs((r[0] - s2_dt).total_seconds()))
+                if abs((nearest_s2[0] - s2_dt).total_seconds()) <= 2.5:
+                    sx, sy = project_xy(nearest_s2[1], nearest_s2[2], bounds)
+                    sectors.append({"sector": 3, "label": "S3", "x": sx, "y": sy})
+
+        raw_drivers = await _get_raw_drivers(sk)
+        ref_abbr = next(
+            (str(d.get("name_acronym") or "") for d in raw_drivers if int(d.get("driver_number") or -1) == driver_num),
+            str(driver_num),
+        )
+
+        payload = {
+            "available": True,
+            "year": year,
+            "round_number": round_number,
+            "session": session_name,
+            "source": "OpenF1",
+            "circuit_name": str(sess.get("location") or sess.get("circuit_short_name") or ""),
+            "rotation": 0.0,
+            "reference_driver": ref_abbr or str(driver_num),
+            "points": norm_pts,
+            "corners": [],
+            "sectors": sectors,
+            "start_finish": start_finish,
+            "bounds": bounds,
+        }
+        _circuit_cache[sk] = payload
+        return payload
+
+    return await _coalesce(("circuit", sk), _build_circuit)
 
 
 async def get_weather(
@@ -696,3 +841,298 @@ async def get_race_control(
         _rc_cache[sk] = messages
     return messages
 
+
+def _bin_positions_by_second(
+    rows_by_driver: Dict[str, List[Tuple[float, float, float]]],
+    bounds: Dict[str, float],
+    start_s: int,
+    end_s: int,
+) -> List[Dict[str, Any]]:
+    """
+    Bin raw driver location samples into 1Hz SVG keyframes over [start_s, end_s].
+    Interpolates linearly only between recorded samples <= 2.5s apart, or snaps within 1.0s.
+    Never invents or extrapolates coordinates across longer data gaps or retired cars.
+    """
+    driver_ids = sorted(rows_by_driver.keys(), key=lambda d: int(d) if d.isdigit() else 999)
+    cursors: Dict[str, int] = {d: 0 for d in driver_ids}
+    frames: List[Dict[str, Any]] = []
+
+    for sec in range(start_s, end_s + 1):
+        cars: Dict[str, List[float]] = {}
+        t_sec = float(sec)
+        for drv in driver_ids:
+            samples = rows_by_driver[drv]
+            n = len(samples)
+            if n == 0:
+                continue
+            idx = cursors[drv]
+            while idx < n and samples[idx][0] < t_sec:
+                idx += 1
+            cursors[drv] = idx
+
+            prev_s = samples[idx - 1] if idx > 0 else None
+            next_s = samples[idx] if idx < n else None
+
+            raw_xy: Optional[Tuple[float, float]] = None
+            if prev_s is not None and next_s is not None:
+                dt_gap = next_s[0] - prev_s[0]
+                if 0.0 < dt_gap <= 2.5:
+                    frac = (t_sec - prev_s[0]) / dt_gap
+                    raw_xy = (
+                        prev_s[1] + (next_s[1] - prev_s[1]) * frac,
+                        prev_s[2] + (next_s[2] - prev_s[2]) * frac,
+                    )
+                elif dt_gap == 0.0:
+                    raw_xy = (prev_s[1], prev_s[2])
+                elif abs(t_sec - prev_s[0]) <= 1.0:
+                    raw_xy = (prev_s[1], prev_s[2])
+                elif abs(next_s[0] - t_sec) <= 1.0:
+                    raw_xy = (next_s[1], next_s[2])
+            elif prev_s is not None and abs(t_sec - prev_s[0]) <= 1.0:
+                raw_xy = (prev_s[1], prev_s[2])
+            elif next_s is not None and abs(next_s[0] - t_sec) <= 1.0:
+                raw_xy = (next_s[1], next_s[2])
+
+            if raw_xy is not None:
+                px, py = project_xy(raw_xy[0], raw_xy[1], bounds)
+                cars[drv] = [px, py]
+
+        frames.append({"t": sec, "cars": cars})
+    return frames
+
+
+async def get_replay_metadata(
+    year: int,
+    round_number: int,
+    session_name: str = "Race",
+    schedule_event: Optional[ScheduleEvent] = None,
+) -> Dict[str, Any]:
+    """Build synchronized metadata, drivers, laps, position changes, and OpenF1 track geometry for visual replay."""
+    if year < 2023:
+        return {
+            "replay_available": False,
+            "year": year,
+            "round_number": round_number,
+            "session": session_name,
+            "source": "OpenF1",
+            "reason": "Positional track replay is available for 2023+ seasons where multi-car GPS coordinates are archived.",
+        }
+
+    sess = await resolve_session(year, round_number, session_name, schedule_event)
+    if not sess:
+        return {
+            "replay_available": False,
+            "year": year,
+            "round_number": round_number,
+            "session": session_name,
+            "source": "OpenF1",
+            "reason": f"No OpenF1 replay archive found for {year} Round {round_number} {session_name}.",
+        }
+
+    sk = int(sess["session_key"])
+    if sk in _replay_meta_cache:
+        return _replay_meta_cache[sk]["payload"]
+
+    t0_dt = _parse_iso(sess.get("date_start"))
+    t1_dt = _parse_iso(sess.get("date_end"))
+    now_utc = datetime.now(timezone.utc)
+    if t0_dt is None or t0_dt > now_utc:
+        return {
+            "replay_available": False,
+            "year": year,
+            "round_number": round_number,
+            "session": session_name,
+            "source": "OpenF1",
+            "reason": "This session has not started yet.",
+        }
+
+    circuit, raw_drivers, raw_laps, raw_positions = await asyncio.gather(
+        get_circuit_map(year, round_number, session_name, schedule_event),
+        _get_raw_drivers(sk),
+        _get_raw_laps(sk),
+        _get_json("/position", params={"session_key": sk}),
+    )
+
+    if not circuit or not circuit.get("available") or not circuit.get("bounds"):
+        return {
+            "replay_available": False,
+            "year": year,
+            "round_number": round_number,
+            "session": session_name,
+            "source": "OpenF1",
+            "reason": f"Track coordinate geometry is not available for {year} Round {round_number} {session_name}.",
+        }
+
+    if not raw_laps and not raw_positions:
+        return {
+            "replay_available": False,
+            "year": year,
+            "round_number": round_number,
+            "session": session_name,
+            "source": "OpenF1",
+            "reason": "Positional car data has not been archived for this session yet.",
+        }
+
+    # Build drivers metadata list
+    drivers_out: List[Dict[str, Any]] = []
+    seen_nums = set()
+    for d in raw_drivers:
+        num = d.get("driver_number")
+        if not isinstance(num, int) or num in seen_nums:
+            continue
+        seen_nums.add(num)
+        raw_col = str(d.get("team_colour") or "").strip().lstrip("#")
+        color = f"#{raw_col}" if len(raw_col) == 6 else "#94A3B8"
+        drivers_out.append({
+            "number": str(num),
+            "abbr": str(d.get("name_acronym") or num).upper(),
+            "full_name": str(d.get("full_name") or d.get("broadcast_name") or f"Car #{num}").strip(),
+            "team": str(d.get("team_name") or "Unknown Team").strip(),
+            "color": color,
+        })
+    drivers_out.sort(key=lambda item: int(item["number"]))
+
+    # Map laps per driver relative to t0_dt
+    laps_by_driver: Dict[str, List[Dict[str, Any]]] = {}
+    max_lap_end = 0.0
+    lap1_starts: List[float] = []
+    max_lap_num = 0
+    for row in raw_laps:
+        num = row.get("driver_number")
+        lap_num = row.get("lap_number")
+        dt_start = _parse_iso(row.get("date_start"))
+        if not isinstance(num, int) or not isinstance(lap_num, int) or lap_num < 1 or dt_start is None:
+            continue
+        t_start = max(0.0, (dt_start - t0_dt).total_seconds())
+        dur = row.get("lap_duration")
+        dur_f = float(dur) if isinstance(dur, (int, float)) and dur > 0 else None
+        t_end = (t_start + dur_f) if dur_f is not None else None
+        if t_end is not None and t_end > max_lap_end:
+            max_lap_end = t_end
+        elif t_start > max_lap_end:
+            max_lap_end = t_start + 90.0
+        if lap_num == 1:
+            lap1_starts.append(t_start)
+        if lap_num > max_lap_num:
+            max_lap_num = lap_num
+        key = str(num)
+        laps_by_driver.setdefault(key, []).append({
+            "lap": lap_num,
+            "t_start": round(t_start, 2),
+            "t_end": round(t_end, 2) if t_end is not None else None,
+            "duration": round(dur_f, 3) if dur_f is not None else None,
+        })
+
+    for lst in laps_by_driver.values():
+        lst.sort(key=lambda item: item["lap"])
+
+    # Compute overall session duration seconds
+    sched_dur = (t1_dt - t0_dt).total_seconds() if t1_dt and t1_dt > t0_dt else 0.0
+    duration_seconds = max(int(round(max(sched_dur, max_lap_end))), 60)
+    race_start_offset = 0
+    if lap1_starts:
+        race_start_offset = max(0, int(min(lap1_starts)) - 5)
+
+    # Extract timestamped race position changes relative to t0_dt
+    pos_events: List[Dict[str, Any]] = []
+    for pr in raw_positions or []:
+        dt_p = _parse_iso(pr.get("date"))
+        num = pr.get("driver_number")
+        pos = pr.get("position")
+        if dt_p is None or not isinstance(num, int) or not isinstance(pos, int) or pos < 1:
+            continue
+        t_rel = max(0.0, min(float(duration_seconds), (dt_p - t0_dt).total_seconds()))
+        pos_events.append({
+            "t": round(t_rel, 2),
+            "driver_number": str(num),
+            "position": pos,
+        })
+    pos_events.sort(key=lambda item: item["t"])
+
+    circuit_public = {k: v for k, v in circuit.items() if k != "bounds"}
+    payload = {
+        "replay_available": True,
+        "year": year,
+        "round_number": round_number,
+        "session": str(sess.get("session_name") or session_name),
+        "session_key": sk,
+        "source": "OpenF1",
+        "t0_iso": t0_dt.isoformat(),
+        "duration_seconds": duration_seconds,
+        "race_start_offset": race_start_offset,
+        "total_laps": max_lap_num,
+        "chunk_seconds": 300,
+        "circuit": circuit_public,
+        "drivers": drivers_out,
+        "laps_by_driver": laps_by_driver,
+        "position_events": pos_events,
+    }
+    _replay_meta_cache[sk] = {
+        "t0_dt": t0_dt,
+        "bounds": circuit["bounds"],
+        "duration_seconds": duration_seconds,
+        "payload": payload,
+    }
+    return payload
+
+
+async def get_replay_positions(
+    year: int,
+    round_number: int,
+    session_name: str,
+    start_s: int,
+    end_s: int,
+    schedule_event: Optional[ScheduleEvent] = None,
+) -> Optional[Dict[str, Any]]:
+    """Fetch and downsample all drivers' positional trajectories over [start_s, end_s] into 1Hz SVG frames."""
+    meta = await get_replay_metadata(year, round_number, session_name, schedule_event)
+    if not meta.get("replay_available"):
+        return None
+    sk = int(meta["session_key"])
+    cached_meta = _replay_meta_cache.get(sk)
+    if not cached_meta:
+        return None
+
+    duration_seconds = int(cached_meta["duration_seconds"])
+    s0 = max(0, int(start_s))
+    s1 = min(duration_seconds, int(end_s))
+    if s1 <= s0:
+        return {"start_s": s0, "end_s": s1, "frames": []}
+
+    chunk_key = (sk, s0, s1)
+    if chunk_key in _replay_chunk_cache:
+        return _replay_chunk_cache[chunk_key]
+
+    t0_dt: datetime = cached_meta["t0_dt"]
+    bounds: Dict[str, float] = cached_meta["bounds"]
+    # Pad window by +/- 2s so boundary keyframes interpolate cleanly across chunk seams
+    fetch_start = t0_dt + timedelta(seconds=max(0, s0 - 2))
+    fetch_end = t0_dt + timedelta(seconds=s1 + 2)
+
+    loc_url = (
+        f"{OPENF1_BASE}/location?session_key={sk}"
+        f"&date>={_fmt_openf1_ts(fetch_start)}&date<={_fmt_openf1_ts(fetch_end)}"
+    )
+    rows = await _get_json(loc_url)
+    rows_by_driver: Dict[str, List[Tuple[float, float, float]]] = {}
+    for row in rows or []:
+        num = row.get("driver_number")
+        dt_pt = _parse_iso(row.get("date"))
+        x, y = row.get("x"), row.get("y")
+        if not isinstance(num, int) or dt_pt is None or x is None or y is None:
+            continue
+        t_rel = (dt_pt - t0_dt).total_seconds()
+        rows_by_driver.setdefault(str(num), []).append((t_rel, float(x), float(y)))
+
+    for lst in rows_by_driver.values():
+        lst.sort(key=lambda item: item[0])
+
+    frames = _bin_positions_by_second(rows_by_driver, bounds, s0, s1)
+    result = {
+        "session_key": sk,
+        "start_s": s0,
+        "end_s": s1,
+        "frames": frames,
+    }
+    _replay_chunk_cache[chunk_key] = result
+    return result

@@ -49,7 +49,8 @@ export function SeasonControls({
           <option value="">Latest available round</option>
           {data?.schedule.map((r) => (
             <option value={r.round} key={r.round}>
-              {r.round} · {r.raceName}
+              {r.round} · {r.raceName.replace(/\s*\[Provider Conflict\]\s*/gi, "").trim()}
+              {r.has_conflict ? " (Provider note)" : ""}
             </option>
           ))}
         </select>

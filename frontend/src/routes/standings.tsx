@@ -38,23 +38,19 @@ function StandingsPage() {
   const standings = tab === "drivers" ? data?.driver_standings : data?.constructor_standings;
   const rows = standings?.rows ?? [];
   return (
-    <div className="min-h-screen overflow-x-clip px-4 sm:px-5 lg:px-12 pt-8 sm:pt-10 pb-32">
-      <div className="max-w-[1680px] mx-auto w-full min-w-0">
-        <header className="relative overflow-hidden rounded-3xl min-h-56 p-8 mb-8">
+    <div className="apex-page pb-24 space-y-6">
+      <div className="w-full min-w-0 space-y-6">
+        <header className="relative overflow-hidden rounded-3xl min-h-[180px] p-6 sm:p-8 border border-white/10">
           <img
             src={heroDriver}
             alt=""
-            className="absolute inset-0 w-full h-full object-cover opacity-35"
+            className="absolute inset-0 w-full h-full object-cover opacity-30"
           />
-          <div className="absolute inset-0 bg-gradient-to-r from-background via-background/70 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-r from-background via-background/80 to-background/30" />
           <div className="relative">
-            <p className="text-xs uppercase tracking-widest text-muted-foreground">
-              Championship archive · {year}
-            </p>
-            <h1 className="font-display text-5xl md:text-6xl mt-4">
-              Every season.
-              <br />
-              Every point.
+            <p className="apex-eyebrow">Championship archive · {year}</p>
+            <h1 className="font-display text-4xl sm:text-5xl md:text-6xl mt-2 leading-tight">
+              Every season. Every point.
             </h1>
           </div>
         </header>
@@ -74,10 +70,10 @@ function StandingsPage() {
           data={data}
           retry={() => void query.refetch()}
         />
-        <div className="flex flex-wrap gap-2 my-6" role="group" aria-label="Championship category">
+        <div className="apex-tab-bar" role="group" aria-label="Championship category">
           {(["drivers", "constructors", "engines"] as const).map((t) => (
             <button
-              className={`px-4 py-3 rounded-full text-sm ${tab === t ? "bg-foreground text-background" : "glass"}`}
+              className={`apex-tab ${tab === t ? "apex-tab-active" : ""}`}
               aria-pressed={tab === t}
               key={t}
               onClick={() => setTab(t)}
@@ -197,32 +193,43 @@ function StandingsPage() {
             <section className="mt-10">
               <h2 className="font-display text-3xl mb-5">{year} race calendar</h2>
               <div className="grid md:grid-cols-2 gap-3">
-                {data.schedule.map((event) => (
-                  <Link
-                    key={event.round}
-                    to="/race-center"
-                    search={{ mode: "archive", year, round: event.round, session: "Race" }}
-                    className="glass rounded-xl p-5 flex items-center justify-between gap-4 hover:bg-foreground/5"
-                  >
-                    <span>
-                      <span className="font-mono text-muted-foreground">
-                        {String(event.round).padStart(2, "0")}
-                      </span>
-                      <span className="ml-3">{event.raceName}</span>
-                      <span className="block ml-9 mt-1 text-xs text-muted-foreground">
-                        {event.Circuit.circuitName} · {event.Circuit.Location.locality},{" "}
-                        {event.Circuit.Location.country}
-                      </span>
-                    </span>
-                    <time
-                      dateTime={event.time ? `${event.date}T${event.time}` : event.date}
-                      className="text-xs text-right text-muted-foreground"
+                {data.schedule.map((event) => {
+                  const cleanRaceName = event.raceName
+                    .replace(/\s*\[Provider Conflict\]\s*/gi, "")
+                    .trim();
+                  return (
+                    <Link
+                      key={event.round}
+                      to="/race-center"
+                      search={{ mode: "archive", year, round: event.round, session: "Race" }}
+                      className="glass rounded-xl p-5 flex items-center justify-between gap-4 hover:bg-foreground/5"
                     >
-                      {event.date}
-                      {event.time ? <span className="block">{event.time} UTC</span> : null}
-                    </time>
-                  </Link>
-                ))}
+                      <span className="min-w-0">
+                        <span className="font-mono text-muted-foreground">
+                          {String(event.round).padStart(2, "0")}
+                        </span>
+                        <span className="ml-3">{cleanRaceName}</span>
+                        {event.has_conflict ? (
+                          <span className="ml-2 inline-block rounded border border-amber-400/35 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-mono uppercase text-amber-300">
+                            Provider note
+                          </span>
+                        ) : null}
+                        <span className="block ml-9 mt-1 text-xs text-muted-foreground truncate">
+                          {event.has_conflict
+                            ? "Venue unconfirmed — provider disagreement"
+                            : `${event.Circuit.circuitName} · ${event.Circuit.Location.locality}, ${event.Circuit.Location.country}`}
+                        </span>
+                      </span>
+                      <time
+                        dateTime={event.time ? `${event.date}T${event.time}` : event.date}
+                        className="text-xs text-right text-muted-foreground shrink-0"
+                      >
+                        {event.date}
+                        {event.time ? <span className="block">{event.time} UTC</span> : null}
+                      </time>
+                    </Link>
+                  );
+                })}
               </div>
             </section>
             <Progression data={data} />

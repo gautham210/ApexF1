@@ -22,7 +22,7 @@ export function LiveProviderNotice() {
           ? "Live provider status unavailable. Archive requests remain independent."
           : query.data?.status === "available"
             ? "Provider reachable. LIVE is shown only for a matched session with recent race-control evidence."
-            : `Live timing unavailable (${query.data?.status.replaceAll("_", " ")}). Historical classifications and recorded telemetry remain available where supported.`}
+            : `Live timing unavailable (${query.data?.status.replaceAll("_", " ")}). Historical classifications and recorded track replays remain available where supported.`}
     </p>
   );
 }
